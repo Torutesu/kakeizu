@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { analyzeKosekiPdf } from '@/lib/gemini-server'
+import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -8,6 +9,18 @@ const ALLOWED_MIME_TYPES = ['application/pdf']
 
 export async function POST(request: NextRequest) {
   try {
+    // 認証と対象案件の編集権限を確認する（戸籍は機微情報のため、権限のない解析実行を拒否）
+    const supabase = await createSupabaseServerClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'ログインが必要です' },
+        { status: 401 }
+      )
+    }
+
     let formData: FormData
     try {
       formData = await request.formData()
@@ -17,6 +30,25 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    const projectId = formData.get('projectId')
+    if (typeof projectId !== 'string' || projectId.trim() === '') {
+      return NextResponse.json(
+        { success: false, error: '案件IDが指定されていません' },
+        { status: 400 }
+      )
+    }
+
+    const { data: canEdit, error: permissionError } = await supabase.rpc('can_edit_project', {
+      p_project: projectId,
+    })
+    if (permissionError || canEdit !== true) {
+      return NextResponse.json(
+        { success: false, error: 'この案件を編集する権限がありません' },
+        { status: 403 }
+      )
+    }
+
     const file = formData.get('file')
 
     if (!(file instanceof File)) {

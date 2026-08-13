@@ -14,16 +14,18 @@ import { Label } from './ui/label'
 import { Alert, AlertDescription } from './ui/alert'
 import { FileUp, Upload, CheckCircle, AlertCircle, Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { geminiService, KosekiAnalysisResult, SaveResult } from '../lib/gemini'
+import { geminiService, KosekiAnalysisResult } from '../lib/gemini'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
 
 interface KosekiUploadDialogProps {
+  projectId: string
   isOpen: boolean
   onClose: () => void
   onDataExtracted: (data: FamilyTreeData) => void
 }
 
 export function KosekiUploadDialog({
+  projectId,
   isOpen,
   onClose,
   onDataExtracted
@@ -31,8 +33,6 @@ export function KosekiUploadDialog({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [result, setResult] = useState<KosekiAnalysisResult | null>(null)
-  const [saveResult, setSaveResult] = useState<SaveResult | null>(null)
-  const [filename, setFilename] = useState('koseki_data')
 
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -40,10 +40,6 @@ export function KosekiUploadDialog({
     if (file.type === 'application/pdf') {
       setSelectedFile(file)
       setResult(null)
-      setSaveResult(null)
-      // ファイル名から拡張子を除いてデフォルトファイル名を設定
-      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '')
-      setFilename(nameWithoutExt)
     } else {
       toast.error('PDFファイルを選択してください')
     }
@@ -54,19 +50,14 @@ export function KosekiUploadDialog({
 
     setIsProcessing(true)
     setResult(null)
-    setSaveResult(null)
 
     try {
-      // Gemini APIで解析
-      const analysisResult = await geminiService.analyzePDF(selectedFile)
+      // Gemini APIで解析（サーバー側で案件の編集権限を確認する）
+      const analysisResult = await geminiService.analyzePDF(selectedFile, projectId)
       setResult(analysisResult)
 
       if (analysisResult.success && analysisResult.data) {
-        // データを保存し、結果（サーバー保存/ローカルバックアップの成否）を画面に反映する
-        const saved = await geminiService.saveToFile(analysisResult.data, filename)
-        setSaveResult(saved)
-
-        // 親コンポーネントにデータを渡す
+        // 親コンポーネントにデータを渡す（家系図へマージ後、自動でDBに保存される）
         onDataExtracted(analysisResult.data)
       }
 
@@ -79,12 +70,11 @@ export function KosekiUploadDialog({
     } finally {
       setIsProcessing(false)
     }
-  }, [selectedFile, filename, onDataExtracted])
+  }, [selectedFile, projectId, onDataExtracted])
 
   const handleClose = useCallback(() => {
     setSelectedFile(null)
     setResult(null)
-    setSaveResult(null)
     setIsProcessing(false)
     onClose()
   }, [onClose])
@@ -96,13 +86,14 @@ export function KosekiUploadDialog({
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${filename}.json`
+      const baseName = selectedFile ? selectedFile.name.replace(/\.[^/.]+$/, '') : 'koseki_data'
+      a.download = `${baseName}.json`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     }
-  }, [result, filename])
+  }, [result, selectedFile])
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -136,21 +127,6 @@ export function KosekiUploadDialog({
             )}
           </div>
 
-          {/* 保存ファイル名 */}
-          <div className="space-y-2">
-            <Label htmlFor="filename">保存ファイル名</Label>
-            <Input
-              id="filename"
-              value={filename}
-              onChange={(e) => setFilename(e.target.value)}
-              placeholder="koseki_data"
-              disabled={isProcessing}
-            />
-            <p className="text-sm text-muted-foreground">
-              .json拡張子は自動で付与されます
-            </p>
-          </div>
-
           {/* 処理中表示 */}
           {isProcessing && (
             <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -174,22 +150,7 @@ export function KosekiUploadDialog({
                       <div className="text-sm">
                         <p>• 抽出された人物: {result.data?.people?.length || 0}人</p>
                         <p>• 抽出された家族関係: {result.data?.families?.length || 0}組</p>
-                        {saveResult && (
-                          <p>
-                            • 保存:{' '}
-                            {saveResult.serverSaved ? 'サーバーに保存済み' : 'サーバー保存に失敗'}
-                            {' / '}
-                            {saveResult.localSaved
-                              ? 'ブラウザ内バックアップ済み'
-                              : 'ブラウザ内バックアップに失敗'}
-                          </p>
-                        )}
-                        {saveResult && !saveResult.serverSaved && (
-                          <p className="text-yellow-700">
-                            ファイル保存に失敗しました（{saveResult.error ?? '原因不明'}）。
-                            「JSONダウンロード」から手動で保存してください。
-                          </p>
-                        )}
+                        <p>• 家系図に取り込み、自動保存されます</p>
                       </div>
                     </div>
                   </AlertDescription>
@@ -213,7 +174,7 @@ export function KosekiUploadDialog({
             <Button variant="outline" onClick={handleClose} disabled={isProcessing}>
               キャンセル
             </Button>
-            
+
             <div className="flex gap-2">
               {result?.success && (
                 <Button variant="outline" onClick={downloadJsonData}>
@@ -221,9 +182,9 @@ export function KosekiUploadDialog({
                   JSONダウンロード
                 </Button>
               )}
-              
-              <Button 
-                onClick={handleUpload} 
+
+              <Button
+                onClick={handleUpload}
                 disabled={!selectedFile || isProcessing}
               >
                 <Upload className="h-4 w-4 mr-2" />
@@ -235,4 +196,4 @@ export function KosekiUploadDialog({
       </DialogContent>
     </Dialog>
   )
-} 
+}

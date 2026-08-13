@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,6 +19,9 @@ import {
   Users,
   GitBranch,
   Settings,
+  ArrowLeft,
+  Eye,
+  RefreshCw,
 } from "lucide-react"
 
 import { FamilyTree, FocusPersonRequest } from "./FamilyTree"
@@ -26,10 +30,18 @@ import { RelationshipEditDialog } from "./RelationshipEditDialog"
 import { AddPersonDialog } from "./AddPersonDialog"
 import { KosekiUploadDialog } from "./KosekiUploadDialog"
 import { SettingsDialog } from "./SettingsDialog"
-import { useFamilyData } from "../hooks/useFamilyData"
+import { useFamilyData, SaveStatus } from "../hooks/useFamilyData"
 import { useZoomSettings } from "../hooks/useZoomSettings"
+import { fetchProject } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { UI_CONFIG } from "../constants/config"
+
+const SAVE_STATUS_LABELS: Record<SaveStatus, string> = {
+  saved: '保存済み',
+  saving: '保存中...',
+  conflict: '競合が発生しました',
+  error: '保存エラー',
+}
 
 // キーボードショートカットをテキスト入力中に発火させないためのガード
 // （Input内のCmd+Zは文字入力の取り消しであって、家系図のアンドゥではない）
@@ -40,13 +52,19 @@ function isTextInputTarget(target: EventTarget | null): boolean {
   )
 }
 
-export default function FamilyTreeApp() {
+interface FamilyTreeAppProps {
+  projectId: string
+}
+
+export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   // データ管理フック
   const {
     persons,
     families,
     isLoading,
     error,
+    saveStatus,
+    canEdit,
     addPerson,
     updatePerson,
     deletePerson,
@@ -55,13 +73,37 @@ export default function FamilyTreeApp() {
     deleteFamily,
     importFamilyTreeData,
     exportFamilyTreeData,
-    saveSnapshot,
+    saveNow,
     canUndo,
     canRedo,
     undo,
     redo,
     refreshData
-  } = useFamilyData()
+  } = useFamilyData(projectId)
+
+  // 案件名の表示
+  const [projectName, setProjectName] = useState<string>('')
+  useEffect(() => {
+    let cancelled = false
+    fetchProject(projectId)
+      .then(project => {
+        if (!cancelled && project) setProjectName(project.name)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [projectId])
+
+  // 競合発生時は一度だけ通知する
+  const conflictNotifiedRef = useRef(false)
+  useEffect(() => {
+    if (saveStatus === 'conflict' && !conflictNotifiedRef.current) {
+      conflictNotifiedRef.current = true
+      toast.error('他のユーザーが先に保存しました。「再読み込み」で最新の状態を取得してください。')
+    }
+    if (saveStatus !== 'conflict') {
+      conflictNotifiedRef.current = false
+    }
+  }, [saveStatus])
 
   // ズーム・ピンチ感度の設定
   const {
@@ -96,6 +138,7 @@ export default function FamilyTreeApp() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isTextInputTarget(e.target)) return
+      if (!canEdit) return
 
       // Command+Z (Mac) または Ctrl+Z (Windows/Linux) でアンドゥ
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
@@ -117,7 +160,7 @@ export default function FamilyTreeApp() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [canUndo, canRedo, undo, redo])
+  }, [canUndo, canRedo, undo, redo, canEdit])
 
   // 人物選択ハンドラー
   const handlePersonSelect = useCallback((person: ProcessedPerson) => {
@@ -133,8 +176,9 @@ export default function FamilyTreeApp() {
 
   // 人物位置更新ハンドラー（ドラッグ確定時に位置・世代をまとめて1つのUndo単位で反映）
   const handlePersonPositionUpdate = useCallback((id: string, x: number, y: number, generation: number) => {
+    if (!canEdit) return
     updatePerson(id, { x, y, generation, manualPosition: true })
-  }, [updatePerson])
+  }, [updatePerson, canEdit])
 
   // 戸籍データ抽出ハンドラー（解析結果を既存データへマージし、1回の更新で反映する）
   const handleKosekiDataExtracted = (data: FamilyTreeData) => {
@@ -144,9 +188,9 @@ export default function FamilyTreeApp() {
   }
 
   // 手動保存ハンドラー
-  const handleManualSave = () => {
-    saveSnapshot()
-    toast.success('保存しました（ブラウザ内に保存されています）')
+  const handleManualSave = async () => {
+    await saveNow()
+    toast.success('保存しました')
   }
 
   // JSON書き出しハンドラー
@@ -233,45 +277,80 @@ export default function FamilyTreeApp() {
       {/* ヘッダー */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">家系図ジェネレーター</h1>
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/projects">
+              <Button variant="ghost" size="sm" title="案件一覧に戻る">
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+            </Link>
+            <h1 className="text-xl font-bold text-gray-900 truncate">
+              {projectName || '家系図'}
+            </h1>
+            {canEdit ? (
+              <span
+                className={`text-sm whitespace-nowrap ${
+                  saveStatus === 'conflict' || saveStatus === 'error'
+                    ? 'text-red-600 font-medium'
+                    : 'text-gray-400'
+                }`}
+              >
+                {SAVE_STATUS_LABELS[saveStatus]}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-sm text-gray-400 whitespace-nowrap">
+                <Eye className="w-4 h-4" />
+                閲覧のみ
+              </span>
+            )}
+            {saveStatus === 'conflict' && (
+              <Button variant="outline" size="sm" onClick={refreshData}>
+                <RefreshCw className="w-4 h-4 mr-1" />
+                再読み込み
+              </Button>
+            )}
+          </div>
           <div className="flex items-center gap-3">
-            {/* アンドゥ・リドゥボタン */}
-            <div className="flex items-center gap-1 border-r border-gray-200 pr-3 mr-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={undo}
-                disabled={!canUndo}
-                title="元に戻す (Cmd+Z)"
-              >
-                <Undo className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={redo}
-                disabled={!canRedo}
-                title="やり直し (Cmd+Shift+Z)"
-              >
-                <Redo className="w-4 h-4" />
-              </Button>
-            </div>
+            {canEdit && (
+              <>
+                {/* アンドゥ・リドゥボタン */}
+                <div className="flex items-center gap-1 border-r border-gray-200 pr-3 mr-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={undo}
+                    disabled={!canUndo}
+                    title="元に戻す (Cmd+Z)"
+                  >
+                    <Undo className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={redo}
+                    disabled={!canRedo}
+                    title="やり直し (Cmd+Shift+Z)"
+                  >
+                    <Redo className="w-4 h-4" />
+                  </Button>
+                </div>
 
-            <Button variant="outline" size="sm" onClick={handleManualSave}>
-              <Save className="w-4 h-4 mr-2" />
-              保存
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => loadFileInputRef.current?.click()}>
-              <Download className="w-4 h-4 mr-2" />
-              読み込み
-            </Button>
-            <input
-              ref={loadFileInputRef}
-              type="file"
-              accept="application/json"
-              className="hidden"
-              onChange={handleLoadFileSelected}
-            />
+                <Button variant="outline" size="sm" onClick={handleManualSave}>
+                  <Save className="w-4 h-4 mr-2" />
+                  保存
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => loadFileInputRef.current?.click()}>
+                  <Download className="w-4 h-4 mr-2" />
+                  読み込み
+                </Button>
+                <input
+                  ref={loadFileInputRef}
+                  type="file"
+                  accept="application/json"
+                  className="hidden"
+                  onChange={handleLoadFileSelected}
+                />
+              </>
+            )}
             <Button variant="outline" size="sm" onClick={handleExport}>
               <Upload className="w-4 h-4 mr-2" />
               書き出し
@@ -291,20 +370,22 @@ export default function FamilyTreeApp() {
       <div className="flex-1 flex overflow-hidden">
         {/* 左サイドバー */}
         <aside style={{ width: UI_CONFIG.leftSidebarWidth }} className="bg-white border-r border-gray-200 flex flex-col">
-          <div className="p-6 border-b border-gray-200">
-            <div
-              className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
-              onClick={() => setIsKosekiUploadOpen(true)}
-            >
-              <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-              <p className="text-lg font-medium text-gray-900 mb-2">戸籍PDFをアップロード</p>
-              <p className="text-sm text-gray-500">
-                戸籍謄本PDFをAIで解析
-                <br />
-                クリックして開始
-              </p>
+          {canEdit && (
+            <div className="p-6 border-b border-gray-200">
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
+                onClick={() => setIsKosekiUploadOpen(true)}
+              >
+                <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                <p className="text-lg font-medium text-gray-900 mb-2">戸籍PDFをアップロード</p>
+                <p className="text-sm text-gray-500">
+                  戸籍謄本PDFをAIで解析
+                  <br />
+                  クリックして開始
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center gap-2 mb-3">
@@ -386,16 +467,18 @@ export default function FamilyTreeApp() {
           </div>
 
           {/* 人物追加ボタン */}
-          <div className="px-6 py-4 border-b border-gray-200">
-            <Button
-              onClick={() => setIsAddPersonOpen(true)}
-              className="w-full"
-              variant="outline"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              新しい人物を追加
-            </Button>
-          </div>
+          {canEdit && (
+            <div className="px-6 py-4 border-b border-gray-200">
+              <Button
+                onClick={() => setIsAddPersonOpen(true)}
+                className="w-full"
+                variant="outline"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                新しい人物を追加
+              </Button>
+            </div>
+          )}
 
           {/* 選択中ノードの情報表示 */}
           <div className="flex-1 p-6 overflow-hidden">
@@ -403,35 +486,37 @@ export default function FamilyTreeApp() {
               <div className="h-full flex flex-col">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-gray-900">人物情報</h3>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setIsPersonEditOpen(true)}
-                    >
-                      <Edit3 className="w-4 h-4 mr-1" />
-                      編集
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setIsRelationshipEditOpen(true)}
-                    >
-                      関係編集
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => {
-                        if (confirm(`${selectedPerson.displayName}を削除してもよろしいですか？`)) {
-                          deletePerson(selectedPerson.id)
-                          setSelectedPersonId(null)
-                        }
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsPersonEditOpen(true)}
+                      >
+                        <Edit3 className="w-4 h-4 mr-1" />
+                        編集
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsRelationshipEditOpen(true)}
+                      >
+                        関係編集
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          if (confirm(`${selectedPerson.displayName}を削除してもよろしいですか？`)) {
+                            deletePerson(selectedPerson.id)
+                            setSelectedPersonId(null)
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <ScrollArea className="flex-1">
@@ -553,6 +638,7 @@ export default function FamilyTreeApp() {
       />
 
       <KosekiUploadDialog
+        projectId={projectId}
         isOpen={isKosekiUploadOpen}
         onClose={() => setIsKosekiUploadOpen(false)}
         onDataExtracted={handleKosekiDataExtracted}

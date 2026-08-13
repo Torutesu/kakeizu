@@ -83,22 +83,6 @@ export function buildDisplayName(name: { surname?: string | null, given_name?: s
 }
 
 /**
- * JSONファイルから家系図データを読み込む
- */
-export async function loadFamilyData(): Promise<FamilyTreeData> {
-  try {
-    const response = await fetch(DATA_CONFIG.dataFile)
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    return await response.json()
-  } catch (error) {
-    console.error('Failed to load family data:', error)
-    throw error
-  }
-}
-
-/**
  * 生データを処理可能な形式に変換
  */
 export function processFamilyData(data: FamilyTreeData): {

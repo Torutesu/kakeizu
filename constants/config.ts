@@ -80,12 +80,8 @@ export const COLORS = {
 } as const
 
 export const DATA_CONFIG = {
-  // データファイルのパス
-  dataFile: '/family-info-sep.json',
-  
   // デフォルト値
   defaultGeneration: 1,
-  unknownDatePlaceholder: 'XX',
 } as const
 
 export const UI_CONFIG = {

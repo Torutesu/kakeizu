@@ -3,31 +3,43 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { useFamilyData } from './useFamilyData'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
 
-const emptyData: FamilyTreeData = { people: [], families: [] }
+// DBアクセス層をモックする（Supabaseへの実接続なしでフックのロジックを検証する）
+vi.mock('../lib/db/trees', () => ({
+  loadTreeRevision: vi.fn(),
+  saveTreeRevision: vi.fn(),
+}))
+vi.mock('../lib/db/projects', () => ({
+  fetchCanEditProject: vi.fn(),
+}))
 
-function mockFetchWith(data: FamilyTreeData) {
-  vi.stubGlobal('fetch', vi.fn(async () => ({
-    ok: true,
-    json: async () => data,
-  })))
-}
+import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
+import { fetchCanEditProject } from '../lib/db/projects'
+
+const mockedLoad = vi.mocked(loadTreeRevision)
+const mockedSave = vi.mocked(saveTreeRevision)
+const mockedCanEdit = vi.mocked(fetchCanEditProject)
+
+const emptyData: FamilyTreeData = { people: [], families: [] }
+const PROJECT_ID = 'project-1'
 
 async function setupHook() {
-  const { result } = renderHook(() => useFamilyData())
+  const { result } = renderHook(() => useFamilyData(PROJECT_ID))
   await waitFor(() => expect(result.current.isLoading).toBe(false))
   return result
 }
 
 beforeEach(() => {
-  localStorage.clear()
-  vi.useRealTimers()
-  mockFetchWith(emptyData)
+  vi.clearAllMocks()
+  mockedLoad.mockResolvedValue({ data: emptyData, version: 0 })
+  mockedSave.mockResolvedValue({ ok: true, version: 1 })
+  mockedCanEdit.mockResolvedValue(true)
 })
 
 describe('useFamilyData', () => {
   it('初期読み込み直後はアンドゥできない（空の状態まで戻れない）', async () => {
     const result = await setupHook()
     expect(result.current.canUndo).toBe(false)
+    expect(result.current.canEdit).toBe(true)
   })
 
   it('人物の追加・更新・削除がアンドゥ・リドゥできる', async () => {
@@ -91,6 +103,45 @@ describe('useFamilyData', () => {
     expect(result.current.families).toHaveLength(0)
   })
 
+  it('変更するとデバウンス後に自動保存される', async () => {
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    const [projectId, tree, expectedVersion] = mockedSave.mock.calls[0]
+    expect(projectId).toBe(PROJECT_ID)
+    expect((tree as FamilyTreeData).people).toHaveLength(1)
+    expect(expectedVersion).toBe(0)
+
+    await waitFor(() => expect(result.current.saveStatus).toBe('saved'))
+  })
+
+  it('保存が競合するとconflict状態になり、以降の自動保存が止まる', async () => {
+    mockedSave.mockResolvedValue({ ok: false, reason: 'conflict' })
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+
+    await waitFor(() => expect(result.current.saveStatus).toBe('conflict'), { timeout: 3000 })
+    const callsAfterConflict = mockedSave.mock.calls.length
+
+    // conflict後の変更では保存が呼ばれない
+    act(() => { result.current.addPerson({ id: 'p2' }) })
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    expect(mockedSave.mock.calls.length).toBe(callsAfterConflict)
+  })
+
+  it('編集権限がない場合は自動保存しない', async () => {
+    mockedCanEdit.mockResolvedValue(false)
+    const result = await setupHook()
+    expect(result.current.canEdit).toBe(false)
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    expect(mockedSave).not.toHaveBeenCalled()
+  })
+
   it('マージ読み込みで既存人物の手動位置が保持される', async () => {
     const result = await setupHook()
 
@@ -122,45 +173,7 @@ describe('useFamilyData', () => {
     expect(p1.manualPosition).toBe(true)
   })
 
-  it('置き換え読み込みで既存データが破棄され、アンドゥで戻せる', async () => {
-    const result = await setupHook()
-
-    act(() => { result.current.addPerson({ id: 'p1' }) })
-
-    const incoming: FamilyTreeData = {
-      people: [
-        {
-          id: 'p2',
-          generation: 1,
-          sex: null,
-          name: { surname: '鈴木', given_name: '花子' },
-          birth: { original_date: null, date: null, place: null },
-          death: { original_date: null, date: null, place: null },
-        },
-      ],
-      families: [],
-    }
-
-    act(() => { result.current.importFamilyTreeData(incoming, 'replace') })
-    expect(result.current.persons.map(p => p.id)).toEqual(['p2'])
-
-    act(() => { result.current.undo() })
-    expect(result.current.persons.map(p => p.id)).toEqual(['p1'])
-  })
-
-  it('エクスポートに手動位置が含まれる', async () => {
-    const result = await setupHook()
-
-    act(() => { result.current.addPerson({ id: 'p1' }) })
-    act(() => {
-      result.current.updatePerson('p1', { x: 42, y: 84, manualPosition: true })
-    })
-
-    const exported = result.current.exportFamilyTreeData()
-    expect(exported.people[0].position).toEqual({ x: 42, y: 84 })
-  })
-
-  it('ローカルストレージに保存済みデータがあれば、fetchより優先して復元する', async () => {
+  it('サーバーに保存済みのデータ（位置付き）を復元できる', async () => {
     const stored: FamilyTreeData = {
       people: [
         {
@@ -175,12 +188,16 @@ describe('useFamilyData', () => {
       ],
       families: [],
     }
-    localStorage.setItem('family-tree-app:data:v1', JSON.stringify(stored))
+    mockedLoad.mockResolvedValue({ data: stored, version: 5 })
 
     const result = await setupHook()
     expect(result.current.persons).toHaveLength(1)
-    expect(result.current.persons[0].id).toBe('stored_person')
     expect(result.current.persons[0].x).toBe(7)
     expect(result.current.persons[0].manualPosition).toBe(true)
+
+    // 楽観ロック: 保存はサーバーのバージョン(5)を前提に行われる
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalled(), { timeout: 3000 })
+    expect(mockedSave.mock.calls[0][2]).toBe(5)
   })
 })

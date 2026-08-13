@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  loadFamilyData,
   processFamilyData,
   toFamilyTreeData,
   generateId,
@@ -10,31 +9,13 @@ import {
   FamilyTreeData
 } from '../utils/familyDataProcessor'
 import { useUndoRedo } from './useUndoRedo'
+import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
+import { fetchCanEditProject } from '../lib/db/projects'
 
-const STORAGE_KEY = 'family-tree-app:data:v1'
+// 保存の状態。conflictは他ユーザーが先に保存した状態で、再読み込みするまで自動保存を止める
+export type SaveStatus = 'saved' | 'saving' | 'conflict' | 'error'
 
-function loadFromLocalStorage(): FamilyTreeData | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (!parsed?.people || !Array.isArray(parsed.people)) return null
-    return parsed as FamilyTreeData
-  } catch (err) {
-    console.warn('ローカルストレージのデータ読み込みに失敗しました:', err)
-    return null
-  }
-}
-
-function saveToLocalStorage(data: FamilyTreeData) {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-  } catch (err) {
-    console.warn('ローカルストレージへの保存に失敗しました:', err)
-  }
-}
+const AUTOSAVE_DEBOUNCE_MS = 800
 
 interface FamilyDataState {
   persons: ProcessedPerson[]
@@ -45,12 +26,13 @@ interface UseFamilyDataReturn {
   // データ
   persons: ProcessedPerson[]
   families: FamilyGroup[]
-  rawData: FamilyTreeData | null
-  
+
   // 状態
   isLoading: boolean
   error: string | null
-  
+  saveStatus: SaveStatus
+  canEdit: boolean
+
   // 操作
   addPerson: (personData: Partial<ProcessedPerson>) => void
   updatePerson: (id: string, updates: Partial<ProcessedPerson>) => void
@@ -68,7 +50,7 @@ interface UseFamilyDataReturn {
   // 一括インポート・エクスポート
   importFamilyTreeData: (data: FamilyTreeData, mode?: 'merge' | 'replace') => void
   exportFamilyTreeData: () => FamilyTreeData
-  saveSnapshot: () => void
+  saveNow: () => Promise<void>
 
   // アンドゥ・リドゥ
   canUndo: boolean
@@ -82,10 +64,21 @@ interface UseFamilyDataReturn {
   refreshData: () => Promise<void>
 }
 
-export function useFamilyData(): UseFamilyDataReturn {
-  const [rawData, setRawData] = useState<FamilyTreeData | null>(null)
+/**
+ * 案件（プロジェクト）の家系図データを管理するフック。
+ * データはSupabaseのtree_revisionsに保存され、変更はデバウンス付きで自動保存される。
+ * versionによる楽観ロックで他ユーザーとの同時編集による上書きを防ぐ。
+ */
+export function useFamilyData(projectId: string): UseFamilyDataReturn {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved')
+  const [canEdit, setCanEdit] = useState(false)
+
+  // サーバー上のバージョン（楽観ロック用）。保存成功のたびに進める
+  const versionRef = useRef(0)
+  const saveStatusRef = useRef<SaveStatus>('saved')
+  saveStatusRef.current = saveStatus
 
   // アンドゥ・リドゥ機能
   const {
@@ -100,21 +93,25 @@ export function useFamilyData(): UseFamilyDataReturn {
 
   const { persons, families } = currentState
 
-  // データ読み込み（ローカルストレージに保存済みの編集内容があれば優先して復元する）
+  // データ読み込み
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true)
       setError(null)
 
-      const localData = loadFromLocalStorage()
-      const data = localData ?? (await loadFamilyData())
-      const processed = processFamilyData(data)
+      const [revision, editable] = await Promise.all([
+        loadTreeRevision(projectId),
+        fetchCanEditProject(projectId),
+      ])
+      const processed = processFamilyData(revision.data)
 
-      setRawData(data)
+      versionRef.current = revision.version
+      setCanEdit(editable)
+      setSaveStatus('saved')
       // 読み込んだ状態をアンドゥ履歴の起点にする（空の状態までアンドゥで戻れないようにする）
       resetHistory(
         { persons: processed.persons, families: processed.families },
-        localData ? '保存済みデータを復元' : 'データ読み込み'
+        'データ読み込み'
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'データの読み込みに失敗しました')
@@ -122,15 +119,14 @@ export function useFamilyData(): UseFamilyDataReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [resetHistory])
+  }, [projectId, resetHistory])
 
   // 初回読み込み
   useEffect(() => {
     loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loadData])
 
-  // 編集内容の自動保存（ロード直後の初期状態では保存しない）
+  // 自動保存（デバウンス付き）。conflict状態では再読み込みまで保存を止める
   const isFirstRenderRef = useRef(true)
   useEffect(() => {
     if (isLoading) return
@@ -138,11 +134,52 @@ export function useFamilyData(): UseFamilyDataReturn {
       isFirstRenderRef.current = false
       return
     }
-    const timeoutId = setTimeout(() => {
-      saveToLocalStorage(toFamilyTreeData(persons, families))
-    }, 500)
+    if (!canEdit) return
+    if (saveStatusRef.current === 'conflict') return
+
+    const timeoutId = setTimeout(async () => {
+      setSaveStatus('saving')
+      try {
+        const result = await saveTreeRevision(
+          projectId,
+          toFamilyTreeData(persons, families),
+          versionRef.current
+        )
+        if (result.ok) {
+          versionRef.current = result.version
+          setSaveStatus('saved')
+        } else {
+          setSaveStatus('conflict')
+        }
+      } catch (err) {
+        console.error('自動保存に失敗:', err)
+        setSaveStatus('error')
+      }
+    }, AUTOSAVE_DEBOUNCE_MS)
     return () => clearTimeout(timeoutId)
-  }, [persons, families, isLoading])
+  }, [persons, families, isLoading, canEdit, projectId])
+
+  // 明示的な保存（保存ボタン用）
+  const saveNow = useCallback(async () => {
+    if (!canEdit || saveStatusRef.current === 'conflict') return
+    setSaveStatus('saving')
+    try {
+      const result = await saveTreeRevision(
+        projectId,
+        toFamilyTreeData(persons, families),
+        versionRef.current
+      )
+      if (result.ok) {
+        versionRef.current = result.version
+        setSaveStatus('saved')
+      } else {
+        setSaveStatus('conflict')
+      }
+    } catch (err) {
+      console.error('保存に失敗:', err)
+      setSaveStatus('error')
+    }
+  }, [canEdit, projectId, persons, families])
 
   // 人物追加
   const addPerson = useCallback((personData: Partial<ProcessedPerson>) => {
@@ -171,10 +208,10 @@ export function useFamilyData(): UseFamilyDataReturn {
       manualPosition: false,
       ...personData
     }
-    
+
     // 表示名を更新
     newPerson.displayName = buildDisplayName(newPerson.name)
-    
+
     const newPersons = [...persons, newPerson]
     pushState({ persons: newPersons, families }, `${newPerson.displayName}を追加`)
   }, [persons, families, pushState])
@@ -192,7 +229,7 @@ export function useFamilyData(): UseFamilyDataReturn {
       }
       return person
     })
-    
+
     const updatedPerson = newPersons.find(p => p.id === id)
     const actionName = updatedPerson ? `${updatedPerson.displayName}を更新` : '人物を更新'
     pushState({ persons: newPersons, families }, actionName)
@@ -202,13 +239,13 @@ export function useFamilyData(): UseFamilyDataReturn {
   const deletePerson = useCallback((id: string) => {
     const personToDelete = persons.find(p => p.id === id)
     const newPersons = persons.filter(person => person.id !== id)
-    
+
     // 関連する家族関係も削除
-    const newFamilies = families.filter(family => 
-      !family.parents.some(p => p.id === id) && 
+    const newFamilies = families.filter(family =>
+      !family.parents.some(p => p.id === id) &&
       !family.children.some(c => c.id === id)
     )
-    
+
     const actionName = personToDelete ? `${personToDelete.displayName}を削除` : '人物を削除'
     pushState({ persons: newPersons, families: newFamilies }, actionName)
   }, [persons, families, pushState])
@@ -224,7 +261,7 @@ export function useFamilyData(): UseFamilyDataReturn {
     const parents = familyData.parentIds
       .map(id => persons.find(p => p.id === id))
       .filter((p): p is ProcessedPerson => p !== undefined)
-    
+
     const children = (familyData.childrenIds || [])
       .map(id => persons.find(p => p.id === id))
       .filter((p): p is ProcessedPerson => p !== undefined)
@@ -248,7 +285,7 @@ export function useFamilyData(): UseFamilyDataReturn {
 
   // 家族関係更新
   const updateFamily = useCallback((id: string, updates: Partial<FamilyGroup>) => {
-    const newFamilies = families.map(family => 
+    const newFamilies = families.map(family =>
       family.id === id ? { ...family, ...updates } : family
     )
     pushState({ persons, families: newFamilies }, '家族関係を更新')
@@ -258,13 +295,13 @@ export function useFamilyData(): UseFamilyDataReturn {
   const deleteFamily = useCallback((id: string) => {
     const familyToDelete = families.find(f => f.id === id)
     const newFamilies = families.filter(family => family.id !== id)
-    
+
     let actionName = '家族関係を削除'
     if (familyToDelete && familyToDelete.parents.length > 0) {
       const parentNames = familyToDelete.parents.map(p => p.displayName).join('と')
       actionName = `${parentNames}の関係を削除`
     }
-    
+
     pushState({ persons, families: newFamilies }, actionName)
   }, [persons, families, pushState])
 
@@ -301,11 +338,6 @@ export function useFamilyData(): UseFamilyDataReturn {
     return toFamilyTreeData(persons, families)
   }, [persons, families])
 
-  // 現在のデータを明示的にローカルストレージへ保存
-  const saveSnapshot = useCallback(() => {
-    saveToLocalStorage(toFamilyTreeData(persons, families))
-  }, [persons, families])
-
   // 人物検索
   const getPersonById = useCallback((id: string) => {
     return persons.find(person => person.id === id)
@@ -316,7 +348,7 @@ export function useFamilyData(): UseFamilyDataReturn {
     return families.find(family => family.id === id)
   }, [families])
 
-  // データ再読み込み
+  // データ再読み込み（conflict時の復帰にも使用）
   const refreshData = useCallback(async () => {
     await loadData()
   }, [loadData])
@@ -333,9 +365,10 @@ export function useFamilyData(): UseFamilyDataReturn {
   return {
     persons,
     families,
-    rawData,
     isLoading,
     error,
+    saveStatus,
+    canEdit,
     addPerson,
     updatePerson,
     deletePerson,
@@ -344,7 +377,7 @@ export function useFamilyData(): UseFamilyDataReturn {
     deleteFamily,
     importFamilyTreeData,
     exportFamilyTreeData,
-    saveSnapshot,
+    saveNow,
     canUndo,
     canRedo,
     undo,
@@ -353,4 +386,4 @@ export function useFamilyData(): UseFamilyDataReturn {
     getFamilyById,
     refreshData
   }
-} 
+}

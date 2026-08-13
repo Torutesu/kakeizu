@@ -1,5 +1,5 @@
-import FamilyTreeApp from "@/components/FamilyTreeApp"
+import { redirect } from 'next/navigation'
 
 export default function Page() {
-  return <FamilyTreeApp />
+  redirect('/projects')
 }
