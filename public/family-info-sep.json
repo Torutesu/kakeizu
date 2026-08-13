@@ -1,0 +1,845 @@
+{
+    "people": [
+      {
+        "id": "abuki_risaburo_null",
+        "generation": 1,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "利三郎"
+        },
+        "birth": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        },
+        "death": {
+          "original_date": "明治槍五年六月日前",
+          "date": "1872-06-XX",
+          "place": null
+        }
+      },
+      {
+        "id": "kohieda_kenjiro_null",
+        "generation": null,
+        "sex": "male",
+        "name": {
+          "surname": "光枝",
+          "given_name": "兼次郎"
+        },
+        "birth": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "nishina_sokichi_null",
+        "generation": null,
+        "sex": "male",
+        "name": {
+          "surname": "仁科",
+          "given_name": "惣吉"
+        },
+        "birth": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_gunichi_1871",
+        "generation": 2,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "軍一"
+        },
+        "birth": {
+          "original_date": "明治拾四年六月",
+          "date": "1881-06-XX",
+          "place": null
+        },
+        "death": {
+          "original_date": "昭和四年九月拾七日午前六時福山市道三町弐拾壱番地於テ死亡",
+          "date": "1929-09-17",
+          "place": "福山市道三町弐拾壱番地"
+        }
+      },
+      {
+        "id": "mina_null",
+        "generation": 1,
+        "sex": "female",
+        "name": {
+          "surname": "美",
+          "given_name": "名"
+        },
+        "birth": {
+          "original_date": "安政元年月拾五日",
+          "date": "1854-01-15",
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "ayame_null",
+        "generation": 2,
+        "sex": "female",
+        "name": {
+          "surname": null,
+          "given_name": "アヤメ"
+        },
+        "birth": {
+          "original_date": "明治拾七年月壱日",
+          "date": "1884-XX-01",
+          "place": "岡山淺口郡大島村大字大島中五千九百六拾五番地"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "sato_kazufusa_null",
+        "generation": null,
+        "sex": "male",
+        "name": {
+          "surname": "佐藤",
+          "given_name": "數房"
+        },
+        "birth": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "endo_hanako_null",
+        "generation": null,
+        "sex": "female",
+        "name": {
+          "surname": "遠藤",
+          "given_name": "ハナコ"
+        },
+        "birth": {
+          "original_date": "明治拾八年六月",
+          "date": "1885-06-XX",
+          "place": null
+        },
+        "death": {
+          "original_date": "昭和四拾四年弐月拾六日午後零時四拾分福山市野上町二丁目拾七番四拾七号で死亡",
+          "date": "1969-02-16",
+          "place": "福山市野上町二丁目拾七番四拾七号"
+        }
+      },
+      {
+        "id": "abuki_kun_null",
+        "generation": null,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "軍"
+        },
+        "birth": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_yoshiko_null",
+        "generation": 3,
+        "sex": "female",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "ヨシコ"
+        },
+        "birth": {
+          "original_date": "大正八年四月拾参",
+          "date": "1919-04-13",
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_misao_null",
+        "generation": 3,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "美則"
+        },
+        "birth": {
+          "original_date": "大正参日",
+          "date": "1914-XX-XX",
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_kohichiro_null",
+        "generation": 3,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "幸三郎"
+        },
+        "birth": {
+          "original_date": "大正拾七月オ",
+          "date": "1928-07-XX",
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_shigeyoshi_null",
+        "generation": 3,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "繁好"
+        },
+        "birth": {
+          "original_date": "大正拾五年五月拾",
+          "date": "1926-05-10",
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_shozo_null",
+        "generation": 3,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "昭三"
+        },
+        "birth": {
+          "original_date": "昭和大年九月六日",
+          "date": "1929-09-06",
+          "place": "福山市中雨霞町品百参拾四番地"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_shuichiro_null",
+        "generation": 3,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "主一郎"
+        },
+        "birth": {
+          "original_date": "明治拾年参月拾四日",
+          "date": "1877-03-14",
+          "place": "岡山県浅口那大島村大学大島事五千九百六拾五番地"
+        },
+        "death": {
+          "original_date": "昭和五拾八年弐月拾七日午前四時五拾五分福山市で死亡",
+          "date": "1983-02-17",
+          "place": "福山市"
+        }
+      },
+      {
+        "id": "ogawa_otojiro_null",
+        "generation": null,
+        "sex": "male",
+        "name": {
+          "surname": "小川",
+          "given_name": "音次郎"
+        },
+        "birth": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "hanako_null",
+        "generation": 3,
+        "sex": "female",
+        "name": {
+          "surname": null,
+          "given_name": "ハナコ"
+        },
+        "birth": {
+          "original_date": "明治四拾五日",
+          "date": "1912-XX-XX",
+          "place": null
+        },
+        "death": {
+          "original_date": "昭和六拾参年六月拾日午前四時五拾分福山市で死",
+          "date": "1988-06-10",
+          "place": "福山市"
+        }
+      },
+      {
+        "id": "abuki_iwao_null",
+        "generation": 4,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "岩夫"
+        },
+        "birth": {
+          "original_date": "昭和五年四月参",
+          "date": "1930-04-XX",
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_teruo_1932",
+        "generation": 4,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "輝男"
+        },
+        "birth": {
+          "original_date": "昭和七年六月拾",
+          "date": "1932-06-10",
+          "place": "福山市"
+        },
+        "death": {
+          "original_date": "令和2年12月3日午前9時59分広島県福山市",
+          "date": "2020-12-03",
+          "place": "広島県福山市"
+        }
+      },
+      {
+        "id": "abuki_kine_null",
+        "generation": 4,
+        "sex": "female",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "絹枝"
+        },
+        "birth": {
+          "original_date": "昭和九年拾拾八日",
+          "date": "1934-10-18",
+          "place": null
+        },
+        "death": {
+          "original_date": "昭和拾壱年式月拾六日午前七時福山市光南町七百拾番地於テ死亡",
+          "date": "1936-XX-16",
+          "place": "福山市光南町七百拾番地"
+        }
+      },
+      {
+        "id": "abuki_koji_null",
+        "generation": 4,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "耕二"
+        },
+        "birth": {
+          "original_date": "昭和拾九月八日",
+          "date": "1944-09-08",
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_katsuji_null",
+        "generation": 4,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "勝治"
+        },
+        "birth": {
+          "original_date": "昭和拾",
+          "date": "19XX-XX-XX",
+          "place": "福山市道三町弐拾弐番地"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "sato_hachiro_null",
+        "generation": null,
+        "sex": "male",
+        "name": {
+          "surname": "佐藤",
+          "given_name": "八郎"
+        },
+        "birth": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_seigo_null",
+        "generation": 4,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "征吾"
+        },
+        "birth": {
+          "original_date": "昭和拾年拾日",
+          "date": "1935-XX-10",
+          "place": "福山市道三町弐番地"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_chieko_null",
+        "generation": 4,
+        "sex": "female",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "千枝子"
+        },
+        "birth": {
+          "original_date": "昭和壱月九日",
+          "date": "19XX-01-09",
+          "place": "福山市道三町弐拾壱番地"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_mikio_null",
+        "generation": 3,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "美智雄"
+        },
+        "birth": {
+          "original_date": "明治器七",
+          "date": "1894-XX-XX",
+          "place": null
+        },
+        "death": {
+          "original_date": "昭和弐拾参売月弐拾四日妻ヨシコとともに除籍",
+          "date": "1948-XX-24",
+          "place": null
+        }
+      },
+      {
+        "id": "terada_yoshiko_null",
+        "generation": 4,
+        "sex": "female",
+        "name": {
+          "surname": "寺田",
+          "given_name": "ヨシコ"
+        },
+        "birth": {
+          "original_date": "昭和参年志月",
+          "date": "1928-XX-XX",
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "mi_ei_ko_null",
+        "generation": 4,
+        "sex": "female",
+        "name": {
+          "surname": "三井",
+          "given_name": "榮子"
+        },
+        "birth": {
+          "original_date": "昭和七年拾月八日",
+          "date": "1932-10-08",
+          "place": "沼隈郡高須村参十五百参拾七番地"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "mi_shizuka_ichi_null",
+        "generation": null,
+        "sex": "male",
+        "name": {
+          "surname": "三井",
+          "given_name": "静一"
+        },
+        "birth": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_masahiro_1957",
+        "generation": 5,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "正宏"
+        },
+        "birth": {
+          "original_date": "昭和参拾弐年九月弐拾日",
+          "date": "1957-09-20",
+          "place": "福山市"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_shinji_null",
+        "generation": 5,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "伸二"
+        },
+        "birth": {
+          "original_date": "昭和大拾五年月拾六日",
+          "date": "1960-XX-16",
+          "place": "福山市野上町十百四拾五番地の参"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "ogasawara_kayoko_1959",
+        "generation": 5,
+        "sex": "female",
+        "name": {
+          "surname": "小笠原",
+          "given_name": "加代子"
+        },
+        "birth": {
+          "original_date": "昭和参拾四年九月六日",
+          "date": "1959-09-06",
+          "place": "三原市"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_naritoshi_1990",
+        "generation": 6,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "成駿"
+        },
+        "birth": {
+          "original_date": "平成弐年五月拾七日",
+          "date": "1990-05-17",
+          "place": "福山市"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "inoue_mayumi_1990",
+        "generation": 6,
+        "sex": "female",
+        "name": {
+          "surname": "井上",
+          "given_name": "麻裕美"
+        },
+        "birth": {
+          "original_date": "平成2年7月18日",
+          "date": "1990-07-18",
+          "place": "兵庫県小野市"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_kanako_1986",
+        "generation": 6,
+        "sex": "female",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "加奈子"
+        },
+        "birth": {
+          "original_date": "昭和六拾壱年九月弐拾日",
+          "date": "1986-09-20",
+          "place": "福山市"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_sota_2016",
+        "generation": 7,
+        "sex": "male",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "奏汰"
+        },
+        "birth": {
+          "original_date": "平成28年7月22日",
+          "date": "2016-07-22",
+          "place": "兵庫県小野市"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_minami_2018",
+        "generation": 7,
+        "sex": "female",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "美波"
+        },
+        "birth": {
+          "original_date": "平成30年8月1日",
+          "date": "2018-08-01",
+          "place": "兵庫県小野市"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_onami_2022",
+        "generation": 7,
+        "sex": "female",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "音波"
+        },
+        "birth": {
+          "original_date": "令和4年8月19日",
+          "date": "2022-08-19",
+          "place": "広島県福山市"
+        },
+        "death": {
+          "original_date": null,
+          "date": null,
+          "place": null
+        }
+      },
+      {
+        "id": "abuki_tsuruko_null",
+        "generation": 4,
+        "sex": "female",
+        "name": {
+          "surname": "阿吹",
+          "given_name": "千鶴子"
+        },
+        "birth": {
+          "original_date": "昭和弐拾七年八月九日",
+          "date": "1952-08-09",
+          "place": "福山市草戸町弐千弐百参番地の壱"
+        },
+        "death": {
+          "original_date": "平成拾五年五月拾壱日午後拾時四拾参分三原市で死亡",
+          "date": "2003-05-11",
+          "place": "三原市"
+        }
+      }
+    ],
+    "families": [
+      {
+        "id": "f001",
+        "parents": ["abuki_risaburo_null", "mina_null"],
+        "children": ["abuki_gunichi_1871", "ayame_null"],
+        "marriage_date": {
+          "original_date": "明治拾七年壱月参壱日",
+          "date": "1884-01-31"
+        },
+        "divorce_date": {
+          "original_date": null,
+          "date": null
+        },
+        "relation_type": "adoption"
+      },
+      {
+        "id": "f002",
+        "parents": ["abuki_gunichi_1871", "endo_hanako_null"],
+        "children": ["abuki_misao_null", "abuki_yoshiko_null", "abuki_kohichiro_null", "abuki_shigeyoshi_null", "abuki_shozo_null"],
+        "marriage_date": {
+          "original_date": "大正七年拾式月拾日",
+          "date": "1918-XX-10"
+        },
+        "divorce_date": {
+          "original_date": null,
+          "date": null
+        },
+        "relation_type": "blood"
+      },
+      {
+        "id": "f003",
+        "parents": ["abuki_gunichi_1871", "abuki_mikio_null"],
+        "children": [],
+        "marriage_date": {
+          "original_date": null,
+          "date": null
+        },
+        "divorce_date": {
+          "original_date": null,
+          "date": null
+        },
+        "relation_type": "adoption"
+      },
+      {
+        "id": "f004",
+        "parents": ["abuki_shuichiro_null", "hanako_null"],
+        "children": ["abuki_iwao_null", "abuki_teruo_1932", "abuki_kine_null", "abuki_koji_null", "abuki_katsuji_null", "abuki_seigo_null", "abuki_chieko_null", "abuki_tsuruko_null"],
+        "marriage_date": {
+          "original_date": "昭和五年壱月拾壱日",
+          "date": "1930-01-11"
+        },
+        "divorce_date": {
+          "original_date": null,
+          "date": null
+        },
+        "relation_type": "blood"
+      },
+      {
+        "id": "f005",
+        "parents": ["abuki_teruo_1932", "mi_ei_ko_null"],
+        "children": ["abuki_masahiro_1957", "abuki_shinji_null"],
+        "marriage_date": {
+          "original_date": "昭和参拾弐年弐月弐拾五日",
+          "date": "1957-02-25"
+        },
+        "divorce_date": {
+          "original_date": null,
+          "date": null
+        },
+        "relation_type": "blood"
+      },
+      {
+        "id": "f006",
+        "parents": ["abuki_masahiro_1957", "ogasawara_kayoko_1959"],
+        "children": ["abuki_kanako_1986", "abuki_naritoshi_1990"],
+        "marriage_date": {
+          "original_date": "昭和五拾九年壱月弐拾弐日",
+          "date": "1984-01-22"
+        },
+        "divorce_date": {
+          "original_date": null,
+          "date": null
+        },
+        "relation_type": "blood"
+      },
+      {
+        "id": "f007",
+        "parents": ["abuki_naritoshi_1990", "inoue_mayumi_1990"],
+        "children": ["abuki_sota_2016", "abuki_minami_2018", "abuki_onami_2022"],
+        "marriage_date": {
+          "original_date": "平成27年4月5日",
+          "date": "2015-04-05"
+        },
+        "divorce_date": {
+          "original_date": null,
+          "date": null
+        },
+        "relation_type": "blood"
+      }
+    ]
+  }
