@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { ZoomIn, ZoomOut, RotateCcw, Maximize } from "lucide-react"
 import { PersonNode } from './PersonNode'
 import { FamilyTreeLines } from './FamilyTreeLines'
-import { ProcessedPerson } from '../utils/familyDataProcessor'
+import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
 import { useLayoutCalculation } from '../hooks/useLayoutCalculation'
 import { LAYOUT_CONFIG, UI_CONFIG, DEFAULT_ZOOM_SETTINGS, ZoomSettings } from '../constants/config'
 
@@ -26,12 +26,21 @@ const clampPanOffset = (value: number) => {
   return Math.max(-limit, Math.min(limit, value))
 }
 
+// 検索結果クリックなどで特定の人物を画面中央に表示するためのリクエスト。
+// requestIdを毎回変えることで、同じ人物への連続フォーカスにも反応する。
+export interface FocusPersonRequest {
+  id: string
+  requestId: number
+}
+
 interface FamilyTreeProps {
   persons: ProcessedPerson[]
-  families: any[] // FamilyGroupの型をインポートする場合は適切に型付け
+  families: FamilyGroup[]
   selectedPerson?: ProcessedPerson | null
   onPersonSelect?: (person: ProcessedPerson) => void
-  onPersonPositionUpdate?: (id: string, x: number, y: number) => void
+  // ドラッグ確定時に1回だけ呼ばれる（generationはスナップ先の世代）
+  onPersonPositionUpdate?: (id: string, x: number, y: number, generation: number) => void
+  focusPerson?: FocusPersonRequest | null
   zoomSettings?: ZoomSettings
 }
 
@@ -41,6 +50,7 @@ export function FamilyTree({
   selectedPerson,
   onPersonSelect,
   onPersonPositionUpdate,
+  focusPerson,
   zoomSettings = DEFAULT_ZOOM_SETTINGS
 }: FamilyTreeProps) {
   // レイアウト計算フック
@@ -48,11 +58,7 @@ export function FamilyTree({
     layoutPersons,
     marriageLines,
     parentChildLines,
-    siblingLines,
-    updatePersonPosition,
-    updatePersonGeneration,
-    resetLayout,
-    autoLayout,
+    setDragOverride,
     getBounds,
     getGenerationFromY,
     snapToGeneration,
@@ -243,35 +249,45 @@ export function FamilyTree({
       startY: currentDragPosition?.startY ?? draggedPerson.y
     }
 
-    updatePersonPosition(draggedPerson.id, safeX, safeY)
-  }, [isDragging, draggedPerson, dragOffset, zoom, panX, panY, updatePersonPosition, snapToGeneration])
+    // ドラッグ中は一時位置として描画するだけで、確定（Undo履歴・保存対象への反映）はドラッグ終了時に行う
+    setDragOverride({ id: draggedPerson.id, x: safeX, y: safeY })
+  }, [isDragging, draggedPerson, dragOffset, zoom, panX, panY, setDragOverride, snapToGeneration])
 
   const handlePersonDragEnd = useCallback(() => {
     const finalPosition = dragPositionRef.current
 
     if (draggedPerson && finalPosition?.id === draggedPerson.id) {
-      const newGeneration = getGenerationFromY(finalPosition.y)
-      const originalGeneration = draggedPerson.generation
-
-      // 世代が変更された場合、世代を更新
-      if (newGeneration !== originalGeneration) {
-        updatePersonGeneration(draggedPerson.id, newGeneration)
-      }
-
       // 親データとUndo履歴への反映はmousemoveごとではなく、ドラッグ確定時に1回だけ行う
+      // （位置と世代変更をまとめて1つのUndo単位にする）
       if (
         finalPosition.x !== finalPosition.startX ||
         finalPosition.y !== finalPosition.startY
       ) {
-        onPersonPositionUpdate?.(draggedPerson.id, finalPosition.x, finalPosition.y)
+        const newGeneration = getGenerationFromY(finalPosition.y)
+        onPersonPositionUpdate?.(draggedPerson.id, finalPosition.x, finalPosition.y, newGeneration)
       }
     }
 
     dragPositionRef.current = null
+    setDragOverride(null)
     setIsDragging(false)
     setDraggedPerson(null)
     setDragOffset({ x: 0, y: 0 })
-  }, [draggedPerson, getGenerationFromY, updatePersonGeneration, onPersonPositionUpdate])
+  }, [draggedPerson, getGenerationFromY, setDragOverride, onPersonPositionUpdate])
+
+  // 指定された人物を画面中央へパンする（検索結果クリック時など）
+  useEffect(() => {
+    if (!focusPerson || !canvasRef.current || !Number.isFinite(zoom) || zoom <= 0) return
+
+    const target = layoutPersons.find(p => p.id === focusPerson.id)
+    if (!target) return
+
+    const rect = canvasRef.current.getBoundingClientRect()
+    setPanX(clampPanOffset(rect.width / 2 - target.x * zoom))
+    setPanY(clampPanOffset(rect.height / 2 - target.y * zoom))
+    // フォーカスリクエストが発行された時のみパンする（レイアウトやズームの変化では動かさない）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusPerson])
 
   // イベントリスナー
   useEffect(() => {
@@ -439,7 +455,6 @@ export function FamilyTree({
             <FamilyTreeLines
               marriageLines={marriageLines}
               parentChildLines={parentChildLines}
-              siblingLines={[]}
               bounds={contentBounds}
             />
 

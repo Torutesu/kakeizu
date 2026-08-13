@@ -17,7 +17,6 @@ interface LayoutBounds {
 interface FamilyTreeLinesProps {
   marriageLines: LayoutLine[]
   parentChildLines: LayoutLine[]
-  siblingLines: LayoutLine[]
   bounds: LayoutBounds
 }
 
@@ -38,7 +37,6 @@ const isFiniteLine = (line: LayoutLine) =>
 export function FamilyTreeLines({
   marriageLines,
   parentChildLines,
-  siblingLines,
   bounds
 }: FamilyTreeLinesProps) {
   const hasFiniteBounds =
@@ -198,18 +196,6 @@ export function FamilyTreeLines({
           opacity="0.7"
         />
       ))}
-
-      {/* 兄弟姉妹関係線 - 削除済み */}
-      {/* siblingLines.map((line, index) => (
-        <path
-          key={`sibling-${index}`}
-          d={`M ${line.x1} ${line.y1} L ${line.x2} ${line.y2}`}
-          stroke={COLORS.siblingLine}
-          strokeWidth="2"
-          fill="none"
-          opacity="0.8"
-        />
-      )) */}
     </svg>
   )
 }

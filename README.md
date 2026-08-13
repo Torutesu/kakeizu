@@ -51,6 +51,16 @@ pnpm start
 
 ビルド時にTypeScriptの型チェックとESLintが実行されます。
 
+### 5. テスト・静的チェック
+
+```bash
+pnpm test        # ユニットテスト (Vitest)
+pnpm typecheck   # 型チェック
+pnpm lint        # ESLint
+```
+
+GitHub Actions（`.github/workflows/ci.yml`）でも同じチェックがPR/pushごとに実行されます。
+
 ## データの取り扱いに関する注意
 
 - 戸籍PDFの解析結果は `public/` フォルダにJSONファイルとして保存されます。`public/` はNext.jsアプリの公開ディレクトリのため、デプロイ環境によっては**そのファイル名を知っている第三者が閲覧できる**状態になります。実在する家族の戸籍情報（氏名・生年月日・住所など）を扱う場合は、デプロイ前にアクセス制御（Basic認証、IP制限、非公開ホスティングなど）の追加を検討してください。

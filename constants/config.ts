@@ -69,7 +69,6 @@ export const COLORS = {
   // 線の色
   marriageLine: '#dc2626',        // 結婚関係線（赤）
   parentChildLine: '#6b7280',     // 親子関係線（グレー）
-  siblingLine: '#10b981',         // 兄弟姉妹関係線（緑）
 
   // 状態色
   uncertain: {
@@ -93,29 +92,7 @@ export const UI_CONFIG = {
   // サイドバー設定
   leftSidebarWidth: 320,
   rightSidebarWidth: 320,
-  minSidebarWidth: 200,
-  maxSidebarWidth: 500,
 
   // アニメーション設定
   transitionDuration: '0.1s',
-  hoverTransition: 'transition-shadow',
-
-  // 世代ラベル設定
-  generationLabelOffset: 15,
 } as const
-
-export const RELATIONSHIP_TYPES = {
-  SPOUSE: 'spouse',
-  CHILD: 'child', 
-  PARENT: 'parent',
-  SIBLING: 'sibling',
-  ADOPTION: 'adoption',
-  BLOOD: 'blood',
-} as const
-
-// 型定義
-export type LayoutConfig = typeof LAYOUT_CONFIG
-export type Colors = typeof COLORS
-export type DataConfig = typeof DATA_CONFIG
-export type UIConfig = typeof UI_CONFIG
-export type RelationshipTypes = typeof RELATIONSHIP_TYPES

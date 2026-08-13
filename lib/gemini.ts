@@ -32,7 +32,11 @@ export class GeminiService {
     }
   }
 
-  async saveToFile(data: FamilyTreeData, filename: string): Promise<boolean> {
+  async saveToFile(data: FamilyTreeData, filename: string): Promise<SaveResult> {
+    const localSaved = saveLocalBackup(data)
+    let serverSaved = false
+    let error: string | undefined
+
     try {
       const response = await fetch('/api/save-koseki', {
         method: 'POST',
@@ -46,30 +50,54 @@ export class GeminiService {
       })
 
       const result = await response.json()
-
       if (response.ok && result.success) {
-        // バックアップとしてローカルストレージにも保存
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-        localStorage.setItem(`koseki_data_${timestamp}`, JSON.stringify(data, null, 2))
-
-        return true
+        serverSaved = true
       } else {
-        console.error('ファイル保存エラー:', result.error)
-        return false
+        error = typeof result.error === 'string' ? result.error : 'サーバー保存に失敗しました'
+        console.error('ファイル保存エラー:', error)
       }
-    } catch (error) {
-      console.error('ファイル保存エラー:', error)
-
-      // フォールバック: ローカルストレージのみに保存
-      try {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-        localStorage.setItem(`koseki_data_${timestamp}`, JSON.stringify(data, null, 2))
-        return true
-      } catch (fallbackError) {
-        console.error('フォールバック保存も失敗:', fallbackError)
-        return false
-      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'サーバー保存に失敗しました'
+      console.error('ファイル保存エラー:', err)
     }
+
+    return { serverSaved, localSaved, error }
+  }
+}
+
+export interface SaveResult {
+  serverSaved: boolean
+  localSaved: boolean
+  error?: string
+}
+
+const BACKUP_KEY_PREFIX = 'koseki_data_'
+const MAX_LOCAL_BACKUPS = 5
+
+/**
+ * 解析結果をローカルストレージにバックアップし、古いバックアップを削除する。
+ * （タイムスタンプ付きキーが無制限に溜まると、いずれ容量超過で保存自体が失敗するため）
+ */
+function saveLocalBackup(data: FamilyTreeData): boolean {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    localStorage.setItem(`${BACKUP_KEY_PREFIX}${timestamp}`, JSON.stringify(data, null, 2))
+
+    const backupKeys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(BACKUP_KEY_PREFIX)) backupKeys.push(key)
+    }
+    // キーはISOタイムスタンプ由来なので、辞書順ソート＝時系列ソート
+    backupKeys
+      .sort()
+      .slice(0, Math.max(0, backupKeys.length - MAX_LOCAL_BACKUPS))
+      .forEach(key => localStorage.removeItem(key))
+
+    return true
+  } catch (err) {
+    console.error('ローカルバックアップの保存に失敗:', err)
+    return false
   }
 }
 

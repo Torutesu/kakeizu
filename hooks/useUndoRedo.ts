@@ -11,14 +11,10 @@ interface UseUndoRedoReturn<T> {
   canUndo: boolean
   canRedo: boolean
   pushState: (state: T, action: string) => void
+  // 履歴を破棄して新しい起点状態に置き換える（初期データ読み込み用。この状態より前へはアンドゥできない）
+  resetHistory: (state: T, action?: string) => void
   undo: () => T | null
   redo: () => T | null
-  clearHistory: () => void
-  getHistoryInfo: () => {
-    totalStates: number
-    currentIndex: number
-    lastAction: string | null
-  }
 }
 
 interface UndoRedoState<T> {
@@ -38,7 +34,6 @@ export function useUndoRedo<T>(
     history: [{ data: initialStateRef.current, action: 'initial', timestamp: Date.now() }],
     currentIndex: 0
   }))
-  const isUndoRedoOperation = useRef(false)
   const { history, currentIndex } = undoRedoState
 
   const currentState = history[currentIndex]?.data ?? initialStateRef.current
@@ -47,11 +42,6 @@ export function useUndoRedo<T>(
   const canRedo = currentIndex < history.length - 1
 
   const pushState = useCallback((state: T, action: string) => {
-    // アンドゥ・リドゥ操作中は履歴を追加しない
-    if (isUndoRedoOperation.current) {
-      return
-    }
-
     setUndoRedoState(prev => {
       const newState: HistoryState<T> = {
         data: state,
@@ -78,16 +68,10 @@ export function useUndoRedo<T>(
   const undo = useCallback((): T | null => {
     if (!canUndo) return null
 
-    isUndoRedoOperation.current = true
     setUndoRedoState(prev => ({
       ...prev,
       currentIndex: Math.max(0, prev.currentIndex - 1)
     }))
-    
-    // 次のフレームでフラグをリセット
-    setTimeout(() => {
-      isUndoRedoOperation.current = false
-    }, 0)
 
     return history[currentIndex - 1]?.data ?? null
   }, [canUndo, currentIndex, history])
@@ -95,44 +79,28 @@ export function useUndoRedo<T>(
   const redo = useCallback((): T | null => {
     if (!canRedo) return null
 
-    isUndoRedoOperation.current = true
     setUndoRedoState(prev => ({
       ...prev,
       currentIndex: Math.min(prev.history.length - 1, prev.currentIndex + 1)
     }))
-    
-    // 次のフレームでフラグをリセット
-    setTimeout(() => {
-      isUndoRedoOperation.current = false
-    }, 0)
 
     return history[currentIndex + 1]?.data ?? null
   }, [canRedo, currentIndex, history])
 
-  const clearHistory = useCallback(() => {
-    setUndoRedoState(prev => {
-      const currentData = prev.history[prev.currentIndex]?.data ?? initialStateRef.current
-      return {
-        history: [{ data: currentData, action: 'reset', timestamp: Date.now() }],
-        currentIndex: 0
-      }
+  const resetHistory = useCallback((state: T, action: string = 'reset') => {
+    setUndoRedoState({
+      history: [{ data: state, action, timestamp: Date.now() }],
+      currentIndex: 0
     })
   }, [])
-
-  const getHistoryInfo = useCallback(() => ({
-    totalStates: history.length,
-    currentIndex,
-    lastAction: history[currentIndex]?.action || null
-  }), [history.length, currentIndex, history])
 
   return {
     currentState,
     canUndo,
     canRedo,
     pushState,
+    resetHistory,
     undo,
-    redo,
-    clearHistory,
-    getHistoryInfo
+    redo
   }
 }

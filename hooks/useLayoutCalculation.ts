@@ -10,29 +10,25 @@ interface LayoutLine {
   y2: number
 }
 
-interface ChildLine {
-  fromX: number
-  fromY: number
-  toX: number
-  toY: number
-  child: ProcessedPerson
+// ドラッグ中の一時的な表示位置。確定した位置はpersons[].x,y（アンドゥ履歴の対象）が唯一の保存先で、
+// ここではmousemoveごとの描画のためだけに保持する（履歴を汚さない）。
+export interface DragOverride {
+  id: string
+  x: number
+  y: number
 }
 
 interface UseLayoutCalculationReturn {
   // 位置が計算された人物データ
   layoutPersons: ProcessedPerson[]
-  
+
   // 関係線データ
   marriageLines: LayoutLine[]
   parentChildLines: LayoutLine[]
-  siblingLines: LayoutLine[]
-  
-  // 操作
-  updatePersonPosition: (id: string, x: number, y: number) => void
-  updatePersonGeneration: (id: string, newGeneration: number) => void
-  resetLayout: () => void
-  autoLayout: () => void
-  
+
+  // ドラッグ中の一時位置の設定（nullで解除）
+  setDragOverride: (override: DragOverride | null) => void
+
   // ユーティリティ
   getBounds: () => { minX: number, maxX: number, minY: number, maxY: number }
   getGenerationFromY: (y: number) => number
@@ -50,11 +46,8 @@ export function useLayoutCalculation(
   persons: ProcessedPerson[],
   families: FamilyGroup[]
 ): UseLayoutCalculationReturn {
-  
-  // 手動調整された位置を保存
-  const [manualPositions, setManualPositions] = useState<Record<string, { x: number, y: number }>>({})
-  // 世代変更を保存
-  const [generationChanges, setGenerationChanges] = useState<Record<string, number>>({})
+
+  const [dragOverride, setDragOverride] = useState<DragOverride | null>(null)
 
   // 世代のY座標を計算
   const getGenerationY = useCallback((generation: number) => {
@@ -64,31 +57,28 @@ export function useLayoutCalculation(
   // Y座標から世代を判定（スナップ範囲を考慮）
   const getGenerationFromY = useCallback((y: number) => {
     const snapThreshold = LAYOUT_CONFIG.generationSpacing * 0.4 // 40%の範囲でスナップ
-    
+
     // 最も近い世代を見つける
     let closestGeneration = 1
     let minDistance = Infinity
-    
-    // 現在存在する世代の範囲を確認
-    const existingGenerations = Array.from(new Set(persons.map(p => 
-      generationChanges[p.id] ?? p.generation
-    ))).sort((a, b) => a - b)
-    
-    const minGen = Math.min(...existingGenerations) - 1
-    const maxGen = Math.max(...existingGenerations) + 1
-    
+
+    // 現在存在する世代の範囲を確認（上下に1世代分の余地を持たせる）
+    const existingGenerations = persons.map(p => p.generation)
+    const minGen = (existingGenerations.length > 0 ? Math.min(...existingGenerations) : 1) - 1
+    const maxGen = (existingGenerations.length > 0 ? Math.max(...existingGenerations) : 1) + 1
+
     for (let gen = minGen; gen <= maxGen; gen++) {
       const genY = getGenerationY(gen)
       const distance = Math.abs(y - genY)
-      
+
       if (distance < minDistance && distance <= snapThreshold) {
         minDistance = distance
         closestGeneration = gen
       }
     }
-    
+
     return closestGeneration
-  }, [persons, generationChanges, getGenerationY])
+  }, [persons, getGenerationY])
 
   // Y座標を最も近い世代の高さにスナップ
   const snapToGeneration = useCallback((y: number) => {
@@ -96,133 +86,107 @@ export function useLayoutCalculation(
     return getGenerationY(targetGeneration)
   }, [getGenerationFromY, getGenerationY])
 
-  // 自動レイアウト計算
-  const calculateAutoLayout = useCallback((inputPersons: ProcessedPerson[], inputFamilies: FamilyGroup[]) => {
-    if (inputPersons.length === 0) return []
+  // レイアウト計算:
+  // - manualPosition=true の人物は保存されたx,yをそのまま使う
+  // - それ以外は世代ごとに家族単位で自動配置する
+  // - ドラッグ中の人物はdragOverrideの一時位置で描画する
+  const layoutPersons = useMemo(() => {
+    if (persons.length === 0) return []
 
-    // 世代変更を適用した人物データを作成
-    const personsWithUpdatedGenerations = inputPersons.map(person => ({
-      ...person,
-      generation: generationChanges[person.id] ?? person.generation
-    }))
+    const result = persons.map(person => ({ ...person }))
+    const byId = new Map(result.map(person => [person.id, person]))
+    const generationGroups = groupByGeneration(result)
 
-    const layoutPersons = [...personsWithUpdatedGenerations]
-    const generationGroups = groupByGeneration(layoutPersons)
-    
-    let currentX = LAYOUT_CONFIG.initialX
-    
-    // 世代順にレイアウト
     Array.from(generationGroups.keys()).sort((a, b) => a - b).forEach(generation => {
       const generationY = getGenerationY(generation)
-      let generationX = currentX
+      const membersOfGeneration = generationGroups.get(generation)!
+      let generationX = LAYOUT_CONFIG.initialX
 
-      // この世代の家族単位を処理
-      const generationFamilies = inputFamilies.filter(family => 
-        family.parents.some(parent => {
-          const parentGeneration = generationChanges[parent.id] ?? parent.generation
-          return parentGeneration === generation
-        })
+      // 手動配置済みの人物は自動配置の対象外
+      const processedPersonIds = new Set<string>(
+        membersOfGeneration.filter(p => p.manualPosition).map(p => p.id)
       )
 
-      // 処理済みの人物をトラック
-      const processedPersonIds = new Set<string>()
+      // この世代に親がいる家族単位を処理
+      const generationFamilies = families.filter(family =>
+        family.parents.some(parent => byId.get(parent.id)?.generation === generation)
+      )
 
       generationFamilies.forEach(family => {
-        const generationParents = family.parents.filter(p => {
-          const parentGeneration = generationChanges[p.id] ?? p.generation
-          return parentGeneration === generation
-        })
-        
-        if (generationParents.length === 1) {
-          // 単親家族
-          const parent = generationParents[0]
-          const position = manualPositions[parent.id] || { x: generationX, y: generationY }
-          
-          const personIndex = layoutPersons.findIndex(p => p.id === parent.id)
-          if (personIndex !== -1) {
-            layoutPersons[personIndex] = { ...layoutPersons[personIndex], ...position }
-          }
-          
+        // 家族の親のうち、この世代にいてまだ自動配置されていない人物
+        // （family.parents内のオブジェクトは古い場合があるため、必ずbyIdで現在の人物を引く）
+        const parentsToPlace = family.parents
+          .map(parent => byId.get(parent.id))
+          .filter((p): p is ProcessedPerson =>
+            p !== undefined && p.generation === generation && !processedPersonIds.has(p.id)
+          )
+
+        if (parentsToPlace.length === 1) {
+          // 単親家族（または配偶者が手動配置済み）
+          const parent = parentsToPlace[0]
+          parent.x = generationX
+          parent.y = generationY
           processedPersonIds.add(parent.id)
           generationX += LAYOUT_CONFIG.minFamilySpacing
-          
-        } else if (generationParents.length === 2) {
+        } else if (parentsToPlace.length >= 2) {
           // 夫婦
-          const [parent1, parent2] = generationParents
-          
-          const position1 = manualPositions[parent1.id] || { x: generationX, y: generationY }
-          const position2 = manualPositions[parent2.id] || { x: generationX + LAYOUT_CONFIG.spouseSpacing, y: generationY }
-          
-          const person1Index = layoutPersons.findIndex(p => p.id === parent1.id)
-          const person2Index = layoutPersons.findIndex(p => p.id === parent2.id)
-          
-          if (person1Index !== -1) {
-            layoutPersons[person1Index] = { ...layoutPersons[person1Index], ...position1 }
-          }
-          if (person2Index !== -1) {
-            layoutPersons[person2Index] = { ...layoutPersons[person2Index], ...position2 }
-          }
-          
+          const [parent1, parent2] = parentsToPlace
+          parent1.x = generationX
+          parent1.y = generationY
+          parent2.x = generationX + LAYOUT_CONFIG.spouseSpacing
+          parent2.y = generationY
           processedPersonIds.add(parent1.id)
           processedPersonIds.add(parent2.id)
           generationX += LAYOUT_CONFIG.spouseSpacing + LAYOUT_CONFIG.minFamilySpacing
         }
       })
 
-      // 未処理の独身者を配置
-      const singlePersons = layoutPersons.filter(person => 
-        person.generation === generation && !processedPersonIds.has(person.id)
-      )
+      // 未処理の独身者を、配置済みの人物と重ならない位置に配置
+      membersOfGeneration.forEach(person => {
+        if (processedPersonIds.has(person.id)) return
 
-      singlePersons.forEach(person => {
-        // 重複チェック
+        const placedMembers = membersOfGeneration.filter(p => processedPersonIds.has(p.id))
         let proposedX = generationX
-        let collision = true
-        
-        while (collision) {
-          collision = layoutPersons.some(existing => 
-            existing.generation === generation && 
-            existing.id !== person.id &&
-            Math.abs(existing.x - proposedX) < LAYOUT_CONFIG.cardSpacing
-          )
-          if (collision) {
-            proposedX += LAYOUT_CONFIG.cardSpacing
-          }
+        while (placedMembers.some(existing =>
+          Math.abs(existing.x - proposedX) < LAYOUT_CONFIG.cardSpacing
+        )) {
+          proposedX += LAYOUT_CONFIG.cardSpacing
         }
 
-        const position = manualPositions[person.id] || { x: proposedX, y: generationY }
-        const personIndex = layoutPersons.findIndex(p => p.id === person.id)
-        if (personIndex !== -1) {
-          layoutPersons[personIndex] = { ...layoutPersons[personIndex], ...position }
-        }
-        
+        person.x = proposedX
+        person.y = generationY
+        processedPersonIds.add(person.id)
         generationX = proposedX + LAYOUT_CONFIG.cardSpacing
       })
     })
 
-    // DOM/SVGへ異常な座標を渡さないため、自動配置・手動配置の双方に最終防御を置く
-    return layoutPersons.map(person => ({
+    // ドラッグ中の一時位置を反映
+    if (dragOverride) {
+      const dragged = byId.get(dragOverride.id)
+      if (dragged) {
+        dragged.x = dragOverride.x
+        dragged.y = dragOverride.y
+      }
+    }
+
+    // DOM/SVGへ異常な座標を渡さないための最終防御
+    return result.map(person => ({
       ...person,
       x: clampLayoutCoordinate(person.x, LAYOUT_CONFIG.initialX),
       y: clampLayoutCoordinate(person.y, getGenerationY(person.generation))
     }))
-  }, [manualPositions, generationChanges, getGenerationY])
-
-  // レイアウトされた人物データ
-  const layoutPersons = useMemo(() => {
-    return calculateAutoLayout(persons, families)
-  }, [persons, families, calculateAutoLayout])
+  }, [persons, families, dragOverride, getGenerationY])
 
   // 結婚関係線の計算
   const marriageLines = useMemo(() => {
     const lines: LayoutLine[] = []
-    
+
     families.forEach(family => {
       if (family.parents.length === 2) {
         const [parent1, parent2] = family.parents
         const person1 = layoutPersons.find(p => p.id === parent1.id)
         const person2 = layoutPersons.find(p => p.id === parent2.id)
-        
+
         if (person1 && person2) {
           lines.push({
             x1: person1.x,
@@ -233,21 +197,21 @@ export function useLayoutCalculation(
         }
       }
     })
-    
+
     return lines
   }, [layoutPersons, families])
 
-  // 親子関係線の計算  
+  // 親子関係線の計算
   const parentChildLines = useMemo(() => {
     const lines: LayoutLine[] = []
-    
+
     families.forEach(family => {
       if (family.parents.length > 0 && family.children.length > 0) {
         // 親の中央点を計算
         const parents = family.parents
           .map(p => layoutPersons.find(lp => lp.id === p.id))
           .filter((p): p is ProcessedPerson => p !== undefined)
-        
+
         if (parents.length === 0) return
 
         const parentCenterX = parents.reduce((sum, p) => sum + p.x, 0) / parents.length
@@ -267,88 +231,9 @@ export function useLayoutCalculation(
         })
       }
     })
-    
+
     return lines
   }, [layoutPersons, families])
-
-  // 兄弟姉妹関係線の計算
-  const siblingLines = useMemo(() => {
-    const lines: LayoutLine[] = []
-    
-    families.forEach(family => {
-      if (family.children.length >= 2) {
-        const children = family.children
-          .map(c => layoutPersons.find(p => p.id === c.id))
-          .filter((p): p is ProcessedPerson => p !== undefined)
-          .sort((a, b) => a.x - b.x) // X座標でソート
-
-        if (children.length >= 2) {
-          const leftMostX = children[0].x
-          const rightMostX = children[children.length - 1].x
-          const siblingY = Math.min(...children.map(c => c.y)) - 50
-
-          // 水平線
-          lines.push({
-            x1: leftMostX,
-            y1: siblingY,
-            x2: rightMostX,
-            y2: siblingY
-          })
-
-          // 各子供への垂直線
-          children.forEach(child => {
-            lines.push({
-              x1: child.x,
-              y1: siblingY,
-              x2: child.x,
-              y2: child.y - 30
-            })
-          })
-        }
-      }
-    })
-    
-    return lines
-  }, [layoutPersons, families])
-
-  // 人物位置の手動更新
-  const updatePersonPosition = useCallback((id: string, x: number, y: number) => {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return
-
-    const safeX = clampLayoutCoordinate(x, LAYOUT_CONFIG.initialX)
-    const safeY = clampLayoutCoordinate(y, LAYOUT_CONFIG.initialY)
-
-    setManualPositions(prev => {
-      const currentPosition = prev[id]
-      if (currentPosition?.x === safeX && currentPosition.y === safeY) return prev
-
-      return {
-        ...prev,
-        [id]: { x: safeX, y: safeY }
-      }
-    })
-  }, [])
-
-  // 人物の世代変更
-  const updatePersonGeneration = useCallback((id: string, newGeneration: number) => {
-    setGenerationChanges(prev => ({
-      ...prev,
-      [id]: newGeneration
-    }))
-  }, [])
-
-  // レイアウトリセット
-  const resetLayout = useCallback(() => {
-    setManualPositions({})
-    setGenerationChanges({})
-  }, [])
-
-  // オートレイアウト実行
-  const autoLayout = useCallback(() => {
-    // 手動位置をクリアして自動レイアウトを適用
-    setManualPositions({})
-    setGenerationChanges({})
-  }, [])
 
   // 境界の計算
   const getBounds = useCallback(() => {
@@ -385,11 +270,7 @@ export function useLayoutCalculation(
     layoutPersons,
     marriageLines,
     parentChildLines,
-    siblingLines,
-    updatePersonPosition,
-    updatePersonGeneration,
-    resetLayout,
-    autoLayout,
+    setDragOverride,
     getBounds,
     getGenerationFromY,
     snapToGeneration,

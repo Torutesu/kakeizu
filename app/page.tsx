@@ -1,4 +1,4 @@
-import FamilyTreeApp from "../family-tree-app"
+import FamilyTreeApp from "@/components/FamilyTreeApp"
 
 export default function Page() {
   return <FamilyTreeApp />

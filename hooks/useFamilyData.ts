@@ -93,6 +93,7 @@ export function useFamilyData(): UseFamilyDataReturn {
     canUndo,
     canRedo,
     pushState,
+    resetHistory,
     undo: undoState,
     redo: redoState,
   } = useUndoRedo<FamilyDataState>({ persons: [], families: [] })
@@ -110,7 +111,8 @@ export function useFamilyData(): UseFamilyDataReturn {
       const processed = processFamilyData(data)
 
       setRawData(data)
-      pushState(
+      // 読み込んだ状態をアンドゥ履歴の起点にする（空の状態までアンドゥで戻れないようにする）
+      resetHistory(
         { persons: processed.persons, families: processed.families },
         localData ? '保存済みデータを復元' : 'データ読み込み'
       )
@@ -120,7 +122,7 @@ export function useFamilyData(): UseFamilyDataReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [pushState])
+  }, [resetHistory])
 
   // 初回読み込み
   useEffect(() => {
@@ -166,6 +168,7 @@ export function useFamilyData(): UseFamilyDataReturn {
       y: 0,
       displayName: '',
       isUncertain: false,
+      manualPosition: false,
       ...personData
     }
     

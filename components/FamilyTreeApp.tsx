@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,20 +20,28 @@ import {
   Settings,
 } from "lucide-react"
 
-// 新しいコンポーネントとフックをインポート
-import { FamilyTree } from "./components/FamilyTree"
-import { PersonEditDialog } from "./components/PersonEditDialog"
-import { RelationshipEditDialog } from "./components/RelationshipEditDialog"
-import { AddPersonDialog } from "./components/AddPersonDialog"
-import { KosekiUploadDialog } from "./components/KosekiUploadDialog"
-import { SettingsDialog } from "./components/SettingsDialog"
-import { useFamilyData } from "./hooks/useFamilyData"
-import { useZoomSettings } from "./hooks/useZoomSettings"
-import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "./utils/familyDataProcessor"
-import { UI_CONFIG } from "./constants/config"
+import { FamilyTree, FocusPersonRequest } from "./FamilyTree"
+import { PersonEditDialog } from "./PersonEditDialog"
+import { RelationshipEditDialog } from "./RelationshipEditDialog"
+import { AddPersonDialog } from "./AddPersonDialog"
+import { KosekiUploadDialog } from "./KosekiUploadDialog"
+import { SettingsDialog } from "./SettingsDialog"
+import { useFamilyData } from "../hooks/useFamilyData"
+import { useZoomSettings } from "../hooks/useZoomSettings"
+import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
+import { UI_CONFIG } from "../constants/config"
+
+// キーボードショートカットをテキスト入力中に発火させないためのガード
+// （Input内のCmd+Zは文字入力の取り消しであって、家系図のアンドゥではない）
+function isTextInputTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    target.closest('input, textarea, select, [contenteditable="true"]') !== null
+  )
+}
 
 export default function FamilyTreeApp() {
-  // 新しいフックを使用してデータ管理
+  // データ管理フック
   const {
     persons,
     families,
@@ -65,10 +73,16 @@ export default function FamilyTreeApp() {
   } = useZoomSettings()
 
   // UI状態管理
-  const [selectedPerson, setSelectedPerson] = useState<ProcessedPerson | null>(null)
+  // 選択はIDで保持し、表示用の人物データは常に最新のpersonsから引く。
+  // （人物オブジェクトを直接保持すると、編集・アンドゥ後にサイドバーの表示が古いままになる）
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
+  const selectedPerson = selectedPersonId
+    ? persons.find(p => p.id === selectedPersonId) ?? null
+    : null
+
   const [searchQuery, setSearchQuery] = useState("")
-  const [leftSidebarWidth, setLeftSidebarWidth] = useState(UI_CONFIG.leftSidebarWidth)
-  const [rightSidebarWidth, setRightSidebarWidth] = useState(UI_CONFIG.rightSidebarWidth)
+  const [focusPerson, setFocusPerson] = useState<FocusPersonRequest | null>(null)
+  const focusRequestCounter = useRef(0)
   const loadFileInputRef = useRef<HTMLInputElement>(null)
 
   // 編集ダイアログの状態
@@ -81,6 +95,8 @@ export default function FamilyTreeApp() {
   // キーボードショートカット
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTextInputTarget(e.target)) return
+
       // Command+Z (Mac) または Ctrl+Z (Windows/Linux) でアンドゥ
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault()
@@ -88,9 +104,9 @@ export default function FamilyTreeApp() {
           undo()
         }
       }
-      
+
       // Command+Shift+Z (Mac) または Ctrl+Y (Windows/Linux) でリドゥ
-      if (((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) || 
+      if (((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) ||
           ((e.ctrlKey) && e.key === 'y')) {
         e.preventDefault()
         if (canRedo) {
@@ -104,14 +120,21 @@ export default function FamilyTreeApp() {
   }, [canUndo, canRedo, undo, redo])
 
   // 人物選択ハンドラー
-  const handlePersonSelect = (person: ProcessedPerson) => {
-    setSelectedPerson(person)
-  }
+  const handlePersonSelect = useCallback((person: ProcessedPerson) => {
+    setSelectedPersonId(person.id)
+  }, [])
 
-  // 人物位置更新ハンドラー
-  const handlePersonPositionUpdate = (id: string, x: number, y: number) => {
-    updatePerson(id, { x, y })
-  }
+  // 検索結果クリック: 選択した上で、その人物へ画面をパンする
+  const handleSearchResultSelect = useCallback((person: ProcessedPerson) => {
+    setSelectedPersonId(person.id)
+    focusRequestCounter.current += 1
+    setFocusPerson({ id: person.id, requestId: focusRequestCounter.current })
+  }, [])
+
+  // 人物位置更新ハンドラー（ドラッグ確定時に位置・世代をまとめて1つのUndo単位で反映）
+  const handlePersonPositionUpdate = useCallback((id: string, x: number, y: number, generation: number) => {
+    updatePerson(id, { x, y, generation, manualPosition: true })
+  }, [updatePerson])
 
   // 戸籍データ抽出ハンドラー（解析結果を既存データへマージし、1回の更新で反映する）
   const handleKosekiDataExtracted = (data: FamilyTreeData) => {
@@ -214,18 +237,18 @@ export default function FamilyTreeApp() {
           <div className="flex items-center gap-3">
             {/* アンドゥ・リドゥボタン */}
             <div className="flex items-center gap-1 border-r border-gray-200 pr-3 mr-3">
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={undo}
                 disabled={!canUndo}
                 title="元に戻す (Cmd+Z)"
               >
                 <Undo className="w-4 h-4" />
               </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={redo}
                 disabled={!canRedo}
                 title="やり直し (Cmd+Shift+Z)"
@@ -233,7 +256,7 @@ export default function FamilyTreeApp() {
                 <Redo className="w-4 h-4" />
               </Button>
             </div>
-            
+
             <Button variant="outline" size="sm" onClick={handleManualSave}>
               <Save className="w-4 h-4 mr-2" />
               保存
@@ -267,9 +290,9 @@ export default function FamilyTreeApp() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* 左サイドバー */}
-        <aside style={{ width: leftSidebarWidth }} className="bg-white border-r border-gray-200 flex flex-col">
+        <aside style={{ width: UI_CONFIG.leftSidebarWidth }} className="bg-white border-r border-gray-200 flex flex-col">
           <div className="p-6 border-b border-gray-200">
-            <div 
+            <div
               className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
               onClick={() => setIsKosekiUploadOpen(true)}
             >
@@ -321,12 +344,13 @@ export default function FamilyTreeApp() {
             selectedPerson={selectedPerson}
             onPersonSelect={handlePersonSelect}
             onPersonPositionUpdate={handlePersonPositionUpdate}
+            focusPerson={focusPerson}
             zoomSettings={zoomSettings}
           />
         </main>
 
         {/* 右サイドバー - 情報表示・検索 */}
-        <aside style={{ width: rightSidebarWidth }} className="bg-white border-l border-gray-200 flex flex-col">
+        <aside style={{ width: UI_CONFIG.rightSidebarWidth }} className="bg-white border-l border-gray-200 flex flex-col">
           {/* 検索機能 */}
           <div className="p-6 border-b border-gray-200">
             <div className="relative">
@@ -338,7 +362,7 @@ export default function FamilyTreeApp() {
                 className="pl-10"
               />
             </div>
-            
+
             {/* 検索結果 */}
             {searchQuery.trim() && (
               <div className="mt-4">
@@ -350,7 +374,7 @@ export default function FamilyTreeApp() {
                     <div
                       key={person.id}
                       className="p-2 border border-gray-200 rounded cursor-pointer hover:bg-gray-50"
-                      onClick={() => setSelectedPerson(person)}
+                      onClick={() => handleSearchResultSelect(person)}
                     >
                       <div className="text-sm font-medium">{person.displayName}</div>
                       <div className="text-xs text-gray-500">第{person.generation}世代</div>
@@ -363,7 +387,7 @@ export default function FamilyTreeApp() {
 
           {/* 人物追加ボタン */}
           <div className="px-6 py-4 border-b border-gray-200">
-            <Button 
+            <Button
               onClick={() => setIsAddPersonOpen(true)}
               className="w-full"
               variant="outline"
@@ -380,28 +404,28 @@ export default function FamilyTreeApp() {
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-gray-900">人物情報</h3>
                   <div className="flex gap-2">
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant="outline"
                       onClick={() => setIsPersonEditOpen(true)}
                     >
                       <Edit3 className="w-4 h-4 mr-1" />
                       編集
                     </Button>
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant="outline"
                       onClick={() => setIsRelationshipEditOpen(true)}
                     >
                       関係編集
                     </Button>
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant="destructive"
                       onClick={() => {
                         if (confirm(`${selectedPerson.displayName}を削除してもよろしいですか？`)) {
                           deletePerson(selectedPerson.id)
-                          setSelectedPerson(null)
+                          setSelectedPersonId(null)
                         }
                       }}
                     >
@@ -456,6 +480,15 @@ export default function FamilyTreeApp() {
                       </div>
                     </div>
 
+                    {selectedPerson.relation_to_family_head && (
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">続柄（戸籍上の表記）</label>
+                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                          {selectedPerson.relation_to_family_head}
+                        </div>
+                      </div>
+                    )}
+
                     {selectedPerson.birth?.place && (
                       <div>
                         <label className="text-sm font-medium text-gray-700">出生地</label>
@@ -494,11 +527,8 @@ export default function FamilyTreeApp() {
         isOpen={isPersonEditOpen}
         onClose={() => setIsPersonEditOpen(false)}
         onSave={(personId, updates) => {
+          // selectedPersonはpersonsから導出しているため、更新すれば表示も自動で追従する
           updatePerson(personId, updates)
-          // 選択されている人物の情報も更新
-          if (selectedPerson && selectedPerson.id === personId) {
-            setSelectedPerson({ ...selectedPerson, ...updates })
-          }
         }}
         availablePersons={persons}
       />
@@ -539,4 +569,4 @@ export default function FamilyTreeApp() {
       />
     </div>
   )
-} 
+}

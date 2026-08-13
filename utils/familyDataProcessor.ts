@@ -21,6 +21,9 @@ export interface PersonData {
   }
   // 戸籍上の続柄表記（例: "夫", "妻", "長男", "二女", "養子"）。戸籍PDF解析結果にのみ含まれる。
   relation_to_family_head?: string | null
+  // 手動調整されたレイアウト位置。未調整（自動レイアウト対象）の場合はnullまたは省略。
+  // v1形式のデータには存在しないフィールドのため、読み込み時は省略を許容する。
+  position?: { x: number; y: number } | null
 }
 
 export interface FamilyData {
@@ -50,6 +53,8 @@ export interface ProcessedPerson extends PersonData {
   generation: number  // nullを許可しない（処理時に必ずnumberが設定される）
   displayName: string
   isUncertain: boolean  // 処理時に必ずbooleanが設定される
+  // trueの場合、x/yはユーザーが手動で決めた位置（自動レイアウトで上書きしない・保存対象）
+  manualPosition: boolean
 }
 
 // 家族グループの型
@@ -105,14 +110,22 @@ export function processFamilyData(data: FamilyTreeData): {
   }
 
   // 人物データを処理
-  const processedPersons = data.people.map(person => ({
-    ...person,
-    x: 0, // 初期位置、後でレイアウト計算で更新
-    y: 0,
-    generation: person.generation || DATA_CONFIG.defaultGeneration,
-    displayName: buildDisplayName(person.name),
-    isUncertain: false
-  }))
+  const processedPersons = data.people.map(person => {
+    const hasValidPosition =
+      person.position != null &&
+      Number.isFinite(person.position.x) &&
+      Number.isFinite(person.position.y)
+
+    return {
+      ...person,
+      x: hasValidPosition ? person.position!.x : 0, // 未調整の場合はレイアウト計算で更新
+      y: hasValidPosition ? person.position!.y : 0,
+      generation: person.generation ?? DATA_CONFIG.defaultGeneration,
+      displayName: buildDisplayName(person.name),
+      isUncertain: false,
+      manualPosition: hasValidPosition
+    }
+  })
 
   // 家族関係を処理
   const processedFamilies: FamilyGroup[] = []
@@ -163,78 +176,6 @@ export function groupByGeneration(persons: ProcessedPerson[]): Map<number, Proce
 }
 
 /**
- * 結婚関係を特定
- */
-export function findMarriageConnections(families: FamilyGroup[]): Array<{
-  person1: ProcessedPerson
-  person2: ProcessedPerson
-  marriageDate?: string
-  divorceDate?: string
-  relationType: 'blood' | 'adoption'
-}> {
-  return families
-    .filter(family => family.parents.length === 2)
-    .map(family => ({
-      person1: family.parents[0],
-      person2: family.parents[1],
-      marriageDate: family.marriageDate,
-      divorceDate: family.divorceDate,
-      relationType: family.relationType
-    }))
-}
-
-/**
- * 親子関係を特定
- */
-export function findParentChildConnections(families: FamilyGroup[]): Array<{
-  parent: ProcessedPerson
-  child: ProcessedPerson
-  relationType: 'blood' | 'adoption'
-}> {
-  const connections: Array<{
-    parent: ProcessedPerson
-    child: ProcessedPerson
-    relationType: 'blood' | 'adoption'
-  }> = []
-
-  families.forEach(family => {
-    family.parents.forEach(parent => {
-      family.children.forEach(child => {
-        connections.push({
-          parent,
-          child,
-          relationType: family.relationType
-        })
-      })
-    })
-  })
-
-  return connections
-}
-
-/**
- * 兄弟姉妹関係を特定  
- */
-export function findSiblingConnections(families: FamilyGroup[]): ProcessedPerson[][] {
-  const siblingGroups: ProcessedPerson[][] = []
-
-  families.forEach(family => {
-    if (family.children.length >= 2) {
-      // 生年月日でソート
-      const sortedChildren = family.children.sort((a, b) => {
-        if (a.birth.date && b.birth.date) {
-          return a.birth.date.localeCompare(b.birth.date)
-        }
-        return 0
-      })
-      siblingGroups.push(sortedChildren)
-    }
-  })
-
-  return siblingGroups
-}
-
-/**
  * 人物を検索
  */
 export function searchPersons(persons: ProcessedPerson[], query: string): ProcessedPerson[] {
@@ -245,21 +186,6 @@ export function searchPersons(persons: ProcessedPerson[], query: string): Proces
     (person.name.given_name ?? '').toLowerCase().includes(lowerQuery) ||
     person.id.toLowerCase().includes(lowerQuery)
   )
-}
-
-/**
- * 世代の範囲を取得
- */
-export function getGenerationRange(persons: ProcessedPerson[]): { min: number, max: number } {
-  if (persons.length === 0) {
-    return { min: 1, max: 1 }
-  }
-
-  const generations = persons.map(p => p.generation)
-  return {
-    min: Math.min(...generations),
-    max: Math.max(...generations)
-  }
 }
 
 /**
@@ -293,6 +219,11 @@ export function toFamilyTreeData(persons: ProcessedPerson[], families: FamilyGro
     name: person.name,
     birth: person.birth,
     death: person.death,
+    // 続柄・手動レイアウト位置も往復で失われないように保持する
+    ...(person.relation_to_family_head != null
+      ? { relation_to_family_head: person.relation_to_family_head }
+      : {}),
+    ...(person.manualPosition ? { position: { x: person.x, y: person.y } } : {}),
   }))
 
   const familiesData: FamilyData[] = families.map(family => ({

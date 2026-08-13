@@ -12,9 +12,9 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Alert, AlertDescription } from './ui/alert'
-import { Progress } from './ui/progress'
-import { FileUp, Upload, CheckCircle, AlertCircle, Download } from 'lucide-react'
-import { geminiService, KosekiAnalysisResult } from '../lib/gemini'
+import { FileUp, Upload, CheckCircle, AlertCircle, Download, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { geminiService, KosekiAnalysisResult, SaveResult } from '../lib/gemini'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
 
 interface KosekiUploadDialogProps {
@@ -31,20 +31,21 @@ export function KosekiUploadDialog({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [result, setResult] = useState<KosekiAnalysisResult | null>(null)
-  const [progress, setProgress] = useState(0)
+  const [saveResult, setSaveResult] = useState<SaveResult | null>(null)
   const [filename, setFilename] = useState('koseki_data')
 
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (file && file.type === 'application/pdf') {
+    if (!file) return
+    if (file.type === 'application/pdf') {
       setSelectedFile(file)
       setResult(null)
-      setProgress(0)
+      setSaveResult(null)
       // ファイル名から拡張子を除いてデフォルトファイル名を設定
       const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '')
       setFilename(nameWithoutExt)
     } else {
-      alert('PDFファイルを選択してください')
+      toast.error('PDFファイルを選択してください')
     }
   }, [])
 
@@ -52,28 +53,19 @@ export function KosekiUploadDialog({
     if (!selectedFile) return
 
     setIsProcessing(true)
-    setProgress(10)
+    setResult(null)
+    setSaveResult(null)
 
     try {
-      // プログレスバーのアニメーション
-      const progressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev < 90) return prev + 5
-          return prev
-        })
-      }, 500)
-
       // Gemini APIで解析
       const analysisResult = await geminiService.analyzePDF(selectedFile)
-      
-      clearInterval(progressInterval)
-      setProgress(100)
       setResult(analysisResult)
 
       if (analysisResult.success && analysisResult.data) {
-        // データをファイルに保存
-        await geminiService.saveToFile(analysisResult.data, filename)
-        
+        // データを保存し、結果（サーバー保存/ローカルバックアップの成否）を画面に反映する
+        const saved = await geminiService.saveToFile(analysisResult.data, filename)
+        setSaveResult(saved)
+
         // 親コンポーネントにデータを渡す
         onDataExtracted(analysisResult.data)
       }
@@ -84,7 +76,6 @@ export function KosekiUploadDialog({
         success: false,
         error: `処理中にエラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`
       })
-      setProgress(0)
     } finally {
       setIsProcessing(false)
     }
@@ -93,7 +84,7 @@ export function KosekiUploadDialog({
   const handleClose = useCallback(() => {
     setSelectedFile(null)
     setResult(null)
-    setProgress(0)
+    setSaveResult(null)
     setIsProcessing(false)
     onClose()
   }, [onClose])
@@ -122,7 +113,8 @@ export function KosekiUploadDialog({
             戸籍PDF解析
           </DialogTitle>
           <DialogDescription>
-            戸籍謄本のPDFファイルをアップロードして、家系図データを自動抽出します
+            戸籍謄本のPDFファイルをアップロードして、家系図データを自動抽出します。
+            PDFは解析のためGoogle Gemini APIに送信されます。機密情報の取り扱いにご注意ください。
           </DialogDescription>
         </DialogHeader>
 
@@ -159,14 +151,14 @@ export function KosekiUploadDialog({
             </p>
           </div>
 
-          {/* プログレスバー */}
+          {/* 処理中表示 */}
           {isProcessing && (
-            <div className="space-y-2">
-              <Label>処理進行状況</Label>
-              <Progress value={progress} className="w-full" />
-              <p className="text-sm text-muted-foreground">
-                Gemini AIで戸籍データを解析しています...
-              </p>
+            <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+              <div className="text-sm text-muted-foreground">
+                <p>Gemini AIで戸籍データを解析しています...</p>
+                <p>PDFのページ数によっては1〜2分かかることがあります。</p>
+              </div>
             </div>
           )}
 
@@ -182,7 +174,22 @@ export function KosekiUploadDialog({
                       <div className="text-sm">
                         <p>• 抽出された人物: {result.data?.people?.length || 0}人</p>
                         <p>• 抽出された家族関係: {result.data?.families?.length || 0}組</p>
-                        <p>• データはローカルストレージに保存されました</p>
+                        {saveResult && (
+                          <p>
+                            • 保存:{' '}
+                            {saveResult.serverSaved ? 'サーバーに保存済み' : 'サーバー保存に失敗'}
+                            {' / '}
+                            {saveResult.localSaved
+                              ? 'ブラウザ内バックアップ済み'
+                              : 'ブラウザ内バックアップに失敗'}
+                          </p>
+                        )}
+                        {saveResult && !saveResult.serverSaved && (
+                          <p className="text-yellow-700">
+                            ファイル保存に失敗しました（{saveResult.error ?? '原因不明'}）。
+                            「JSONダウンロード」から手動で保存してください。
+                          </p>
+                        )}
                       </div>
                     </div>
                   </AlertDescription>
