@@ -70,6 +70,7 @@ export function FamilyTree({
   const [panX, setPanX] = useState(0)
   const [panY, setPanY] = useState(0)
   const [isPanning, setIsPanning] = useState(false)
+  const [isPinching, setIsPinching] = useState(false)
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 })
 
   // ドラッグ状態
@@ -79,6 +80,19 @@ export function FamilyTree({
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragPositionRef = useRef<DragPosition | null>(null)
+
+  // ポインター（マウス・タッチ・ペン共通）の管理
+  // キャンバス上のアクティブなポインター位置（ピンチ判定に使用。人物ドラッグ中のポインターは含めない）
+  const activePointers = useRef(new Map<number, { x: number; y: number }>())
+  const panPointerIdRef = useRef<number | null>(null)
+  const dragPointerIdRef = useRef<number | null>(null)
+  // ピンチ開始時の状態（2本指の距離・ズーム・中点のモデル座標）
+  const pinchStateRef = useRef<{
+    distance: number
+    zoom: number
+    modelMidX: number
+    modelMidY: number
+  } | null>(null)
 
   // ズーム操作
   const handleZoomIn = useCallback(() => {
@@ -131,28 +145,102 @@ export function FamilyTree({
     setPanY(clampPanOffset(nextPanY))
   }, [layoutPersons, getBounds])
 
-  // パン操作
-  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+  // パン・ピンチ操作（Pointer Eventsでマウス・タッチ・ペンを統一的に扱う）
+  const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('[data-person-card]')) return
-    
-    setIsPanning(true)
-    setLastPanPoint({ x: e.clientX, y: e.clientY })
+    if (isDragging) return
+
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    if (activePointers.current.size === 1) {
+      // 1本目のポインター: パン開始
+      panPointerIdRef.current = e.pointerId
+      setIsPanning(true)
+      setLastPanPoint({ x: e.clientX, y: e.clientY })
+    } else if (
+      activePointers.current.size === 2 &&
+      canvasRef.current &&
+      Number.isFinite(zoom) &&
+      zoom > 0
+    ) {
+      // 2本目のポインター: パンをやめてピンチズームへ移行
+      const [p1, p2] = Array.from(activePointers.current.values())
+      const distance = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+      if (distance > 0) {
+        const rect = canvasRef.current.getBoundingClientRect()
+        const midX = (p1.x + p2.x) / 2 - rect.left
+        const midY = (p1.y + p2.y) / 2 - rect.top
+        pinchStateRef.current = {
+          distance,
+          zoom,
+          modelMidX: (midX - panX) / zoom,
+          modelMidY: (midY - panY) / zoom,
+        }
+        setIsPanning(false)
+        setIsPinching(true)
+      }
+    }
     e.preventDefault()
-  }, [])
+  }, [isDragging, zoom, panX, panY])
 
-  const handleCanvasMouseMove = useCallback((e: MouseEvent) => {
-    if (!isPanning) return
+  const handleCanvasPointerMove = useCallback((e: PointerEvent) => {
+    if (!activePointers.current.has(e.pointerId)) return
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
 
-    const deltaX = e.clientX - lastPanPoint.x
-    const deltaY = e.clientY - lastPanPoint.y
+    // ピンチズーム: 2本指の距離の比率でズームし、指の中点の位置を保つ
+    const pinchState = pinchStateRef.current
+    if (pinchState && activePointers.current.size >= 2) {
+      if (!canvasRef.current) return
+      const [p1, p2] = Array.from(activePointers.current.values())
+      const distance = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+      if (!Number.isFinite(distance) || distance <= 0) return
 
-    setPanX(prev => clampPanOffset(prev + deltaX))
-    setPanY(prev => clampPanOffset(prev + deltaY))
-    setLastPanPoint({ x: e.clientX, y: e.clientY })
+      const rect = canvasRef.current.getBoundingClientRect()
+      const midX = (p1.x + p2.x) / 2 - rect.left
+      const midY = (p1.y + p2.y) / 2 - rect.top
+      const newZoom = Math.max(
+        LAYOUT_CONFIG.minZoom,
+        Math.min(LAYOUT_CONFIG.maxZoom, pinchState.zoom * (distance / pinchState.distance))
+      )
+
+      setZoom(newZoom)
+      setPanX(clampPanOffset(midX - pinchState.modelMidX * newZoom))
+      setPanY(clampPanOffset(midY - pinchState.modelMidY * newZoom))
+      return
+    }
+
+    // パン
+    if (isPanning && e.pointerId === panPointerIdRef.current) {
+      const deltaX = e.clientX - lastPanPoint.x
+      const deltaY = e.clientY - lastPanPoint.y
+
+      setPanX(prev => clampPanOffset(prev + deltaX))
+      setPanY(prev => clampPanOffset(prev + deltaY))
+      setLastPanPoint({ x: e.clientX, y: e.clientY })
+    }
   }, [isPanning, lastPanPoint])
 
-  const handleCanvasMouseUp = useCallback(() => {
-    setIsPanning(false)
+  const handleCanvasPointerUp = useCallback((e: PointerEvent) => {
+    if (!activePointers.current.has(e.pointerId)) return
+    activePointers.current.delete(e.pointerId)
+
+    // ピンチ終了: 指が1本残っていればパンとして継続する
+    if (pinchStateRef.current && activePointers.current.size < 2) {
+      pinchStateRef.current = null
+      setIsPinching(false)
+
+      const [remaining] = Array.from(activePointers.current.entries())
+      if (remaining) {
+        panPointerIdRef.current = remaining[0]
+        setLastPanPoint({ x: remaining[1].x, y: remaining[1].y })
+        setIsPanning(true)
+      }
+    }
+
+    if (activePointers.current.size === 0) {
+      panPointerIdRef.current = null
+      setIsPanning(false)
+    }
   }, [])
 
   // マウスホイール／トラックパッドのピンチでズーム
@@ -187,8 +275,11 @@ export function FamilyTree({
   // ドラッグ操作
   // つかんだ位置とカード中心のズレ（モデル座標系）を記録し、ドラッグ中にカードが
   // カーソル位置へ瞬間移動（ジャンプ）しないようにする
-  const handlePersonDragStart = useCallback((person: ProcessedPerson, e: React.MouseEvent) => {
+  const handlePersonDragStart = useCallback((person: ProcessedPerson, e: React.PointerEvent) => {
     if (
+      isPanning ||
+      isPinching ||
+      isDragging ||
       !canvasRef.current ||
       !Number.isFinite(zoom) ||
       zoom <= 0 ||
@@ -202,6 +293,7 @@ export function FamilyTree({
 
     if (!Number.isFinite(mouseModelX) || !Number.isFinite(mouseModelY)) return
 
+    dragPointerIdRef.current = e.pointerId
     setIsDragging(true)
     setDraggedPerson(person)
     setDragOffset({ x: person.x - mouseModelX, y: person.y - mouseModelY })
@@ -212,12 +304,13 @@ export function FamilyTree({
       startX: person.x,
       startY: person.y
     }
-  }, [panX, panY, zoom])
+  }, [isPanning, isPinching, isDragging, panX, panY, zoom])
 
-  const handlePersonDrag = useCallback((e: MouseEvent) => {
+  const handlePersonDrag = useCallback((e: PointerEvent) => {
     if (
       !isDragging ||
       !draggedPerson ||
+      e.pointerId !== dragPointerIdRef.current ||
       !canvasRef.current ||
       !Number.isFinite(zoom) ||
       zoom <= 0
@@ -253,27 +346,35 @@ export function FamilyTree({
     setDragOverride({ id: draggedPerson.id, x: safeX, y: safeY })
   }, [isDragging, draggedPerson, dragOffset, zoom, panX, panY, setDragOverride, snapToGeneration])
 
-  const handlePersonDragEnd = useCallback(() => {
+  const handlePersonDragEnd = useCallback((e: PointerEvent) => {
+    if (e.pointerId !== dragPointerIdRef.current) return
+
     const finalPosition = dragPositionRef.current
 
     if (draggedPerson && finalPosition?.id === draggedPerson.id) {
-      // 親データとUndo履歴への反映はmousemoveごとではなく、ドラッグ確定時に1回だけ行う
-      // （位置と世代変更をまとめて1つのUndo単位にする）
-      if (
+      const moved =
         finalPosition.x !== finalPosition.startX ||
         finalPosition.y !== finalPosition.startY
-      ) {
+
+      if (moved) {
+        // 親データとUndo履歴への反映はpointermoveごとではなく、ドラッグ確定時に1回だけ行う
+        // （位置と世代変更をまとめて1つのUndo単位にする）
         const newGeneration = getGenerationFromY(finalPosition.y)
         onPersonPositionUpdate?.(draggedPerson.id, finalPosition.x, finalPosition.y, newGeneration)
+      } else {
+        // 動かさずに離した場合は選択操作として扱う
+        // （click イベントに頼らないことで、タッチでも確実に選択できるようにする）
+        onPersonSelect?.(draggedPerson)
       }
     }
 
+    dragPointerIdRef.current = null
     dragPositionRef.current = null
     setDragOverride(null)
     setIsDragging(false)
     setDraggedPerson(null)
     setDragOffset({ x: 0, y: 0 })
-  }, [draggedPerson, getGenerationFromY, setDragOverride, onPersonPositionUpdate])
+  }, [draggedPerson, getGenerationFromY, setDragOverride, onPersonPositionUpdate, onPersonSelect])
 
   // 指定された人物を画面中央へパンする（検索結果クリック時など）
   useEffect(() => {
@@ -302,28 +403,32 @@ export function FamilyTree({
   }, [handleWheel])
 
   useEffect(() => {
-    if (isPanning) {
-      document.addEventListener('mousemove', handleCanvasMouseMove)
-      document.addEventListener('mouseup', handleCanvasMouseUp)
+    if (isPanning || isPinching) {
+      document.addEventListener('pointermove', handleCanvasPointerMove)
+      document.addEventListener('pointerup', handleCanvasPointerUp)
+      document.addEventListener('pointercancel', handleCanvasPointerUp)
       document.body.style.cursor = 'grabbing'
-      
+
       return () => {
-        document.removeEventListener('mousemove', handleCanvasMouseMove)
-        document.removeEventListener('mouseup', handleCanvasMouseUp)
+        document.removeEventListener('pointermove', handleCanvasPointerMove)
+        document.removeEventListener('pointerup', handleCanvasPointerUp)
+        document.removeEventListener('pointercancel', handleCanvasPointerUp)
         document.body.style.cursor = 'default'
       }
     }
-  }, [isPanning, handleCanvasMouseMove, handleCanvasMouseUp])
+  }, [isPanning, isPinching, handleCanvasPointerMove, handleCanvasPointerUp])
 
   useEffect(() => {
     if (isDragging) {
-      document.addEventListener('mousemove', handlePersonDrag)
-      document.addEventListener('mouseup', handlePersonDragEnd)
+      document.addEventListener('pointermove', handlePersonDrag)
+      document.addEventListener('pointerup', handlePersonDragEnd)
+      document.addEventListener('pointercancel', handlePersonDragEnd)
       document.body.style.cursor = 'grabbing'
-      
+
       return () => {
-        document.removeEventListener('mousemove', handlePersonDrag)
-        document.removeEventListener('mouseup', handlePersonDragEnd)
+        document.removeEventListener('pointermove', handlePersonDrag)
+        document.removeEventListener('pointerup', handlePersonDragEnd)
+        document.removeEventListener('pointercancel', handlePersonDragEnd)
         document.body.style.cursor = 'default'
       }
     }
@@ -410,9 +515,12 @@ export function FamilyTree({
         <div
           ref={canvasRef}
           className="flex-1 h-full overflow-hidden cursor-grab active:cursor-grabbing"
-          onMouseDown={handleCanvasMouseDown}
+          onPointerDown={handleCanvasPointerDown}
           style={{
-            cursor: isPanning ? 'grabbing' : 'grab'
+            cursor: isPanning ? 'grabbing' : 'grab',
+            // ブラウザ標準のタッチ操作（スクロール・ダブルタップズーム等）を無効化して
+            // パン・ピンチ・ドラッグを自前で処理する
+            touchAction: 'none'
           }}
         >
           <div
@@ -420,7 +528,7 @@ export function FamilyTree({
             style={{
               transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
               transformOrigin: '0 0',
-              transition: isPanning ? 'none' : `transform ${UI_CONFIG.transitionDuration} ease-out`
+              transition: (isPanning || isPinching) ? 'none' : `transform ${UI_CONFIG.transitionDuration} ease-out`
             }}
           >
             {/* 世代ガイドライン（ドラッグ中、または設定で常時表示ONの場合に表示） */}
@@ -465,7 +573,6 @@ export function FamilyTree({
                 person={person}
                 isSelected={selectedPerson?.id === person.id}
                 isDragging={isDragging && draggedPerson?.id === person.id}
-                onSelect={onPersonSelect}
                 onDragStart={handlePersonDragStart}
               />
             ))}

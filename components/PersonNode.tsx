@@ -9,20 +9,15 @@ interface PersonNodeProps {
   person: ProcessedPerson
   isSelected?: boolean
   isDragging?: boolean
-  onSelect?: (person: ProcessedPerson) => void
-  onDragStart?: (person: ProcessedPerson, e: React.MouseEvent) => void
-  onDrag?: (person: ProcessedPerson, position: { x: number, y: number }) => void
-  onDragEnd?: (person: ProcessedPerson) => void
+  // ポインター押下でドラッグ開始。動かさずに離した場合の「選択」判定は親（FamilyTree）が行う
+  onDragStart?: (person: ProcessedPerson, e: React.PointerEvent) => void
 }
 
 export function PersonNode({
   person,
   isSelected = false,
   isDragging = false,
-  onSelect,
-  onDragStart,
-  onDrag,
-  onDragEnd
+  onDragStart
 }: PersonNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null)
 
@@ -38,15 +33,9 @@ export function PersonNode({
     }
   }, [person.sex])
 
-  // クリック処理
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    onSelect?.(person)
-  }, [person, onSelect])
-
-  // ドラッグ開始処理
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return // 左クリックのみ
+  // ドラッグ開始処理（マウス・タッチ・ペン共通）
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return // マウスは左ボタンのみ
 
     e.preventDefault()
     e.stopPropagation()
@@ -62,13 +51,13 @@ export function PersonNode({
       className={`absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 ${
         isSelected ? COLORS.selected : ""
       } ${isDragging ? "z-50" : "z-10"}`}
-      style={{ 
-        left: person.x, 
+      style={{
+        left: person.x,
         top: person.y,
-        cursor: isDragging ? 'grabbing' : 'grab'
+        cursor: isDragging ? 'grabbing' : 'grab',
+        touchAction: 'none'
       }}
-      onClick={handleClick}
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
       data-person-card
       data-person-id={person.id}
     >

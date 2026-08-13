@@ -5,7 +5,6 @@ import {
   toFamilyTreeData,
   searchPersons,
   isValidFamilyTreeData,
-  groupByGeneration,
   FamilyTreeData,
   PersonData,
 } from './familyDataProcessor'
@@ -161,22 +160,5 @@ describe('isValidFamilyTreeData', () => {
     expect(isValidFamilyTreeData({ people: [] })).toBe(false)
     expect(isValidFamilyTreeData(null)).toBe(false)
     expect(isValidFamilyTreeData('json')).toBe(false)
-  })
-})
-
-describe('groupByGeneration', () => {
-  it('世代ごとにグループ化する', () => {
-    const persons = processFamilyData({
-      people: [
-        makePerson({ id: 'a', generation: 1 }),
-        makePerson({ id: 'b', generation: 2 }),
-        makePerson({ id: 'c', generation: 1 }),
-      ],
-      families: [],
-    }).persons
-
-    const groups = groupByGeneration(persons)
-    expect(groups.get(1)).toHaveLength(2)
-    expect(groups.get(2)).toHaveLength(1)
   })
 })

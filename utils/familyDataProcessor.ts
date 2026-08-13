@@ -159,23 +159,6 @@ export function processFamilyData(data: FamilyTreeData): {
 }
 
 /**
- * 世代ごとに人物をグループ化
- */
-export function groupByGeneration(persons: ProcessedPerson[]): Map<number, ProcessedPerson[]> {
-  const generationGroups = new Map<number, ProcessedPerson[]>()
-  
-  persons.forEach(person => {
-    const generation = person.generation
-    if (!generationGroups.has(generation)) {
-      generationGroups.set(generation, [])
-    }
-    generationGroups.get(generation)!.push(person)
-  })
-
-  return generationGroups
-}
-
-/**
  * 人物を検索
  */
 export function searchPersons(persons: ProcessedPerson[], query: string): ProcessedPerson[] {

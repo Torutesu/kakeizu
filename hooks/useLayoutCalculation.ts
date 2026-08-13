@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useState } from 'react'
 import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
-import { groupByGeneration } from '../utils/familyDataProcessor'
+import { calculateTreeLayout } from '../utils/treeLayout'
 import { LAYOUT_CONFIG } from '../constants/config'
 
 interface LayoutLine {
@@ -88,93 +88,26 @@ export function useLayoutCalculation(
 
   // レイアウト計算:
   // - manualPosition=true の人物は保存されたx,yをそのまま使う
-  // - それ以外は世代ごとに家族単位で自動配置する
+  // - それ以外は再帰的なサブツリー方式で自動配置する（utils/treeLayout.ts）
   // - ドラッグ中の人物はdragOverrideの一時位置で描画する
   const layoutPersons = useMemo(() => {
     if (persons.length === 0) return []
 
-    const result = persons.map(person => ({ ...person }))
-    const byId = new Map(result.map(person => [person.id, person]))
-    const generationGroups = groupByGeneration(result)
+    const layoutPositions = calculateTreeLayout(persons, families, getGenerationY)
 
-    Array.from(generationGroups.keys()).sort((a, b) => a - b).forEach(generation => {
-      const generationY = getGenerationY(generation)
-      const membersOfGeneration = generationGroups.get(generation)!
-      let generationX = LAYOUT_CONFIG.initialX
+    return persons.map(person => {
+      const isDragged = dragOverride?.id === person.id
+      const position = layoutPositions.get(person.id)
+      const x = isDragged ? dragOverride.x : position?.x ?? LAYOUT_CONFIG.initialX
+      const y = isDragged ? dragOverride.y : position?.y ?? getGenerationY(person.generation)
 
-      // 手動配置済みの人物は自動配置の対象外
-      const processedPersonIds = new Set<string>(
-        membersOfGeneration.filter(p => p.manualPosition).map(p => p.id)
-      )
-
-      // この世代に親がいる家族単位を処理
-      const generationFamilies = families.filter(family =>
-        family.parents.some(parent => byId.get(parent.id)?.generation === generation)
-      )
-
-      generationFamilies.forEach(family => {
-        // 家族の親のうち、この世代にいてまだ自動配置されていない人物
-        // （family.parents内のオブジェクトは古い場合があるため、必ずbyIdで現在の人物を引く）
-        const parentsToPlace = family.parents
-          .map(parent => byId.get(parent.id))
-          .filter((p): p is ProcessedPerson =>
-            p !== undefined && p.generation === generation && !processedPersonIds.has(p.id)
-          )
-
-        if (parentsToPlace.length === 1) {
-          // 単親家族（または配偶者が手動配置済み）
-          const parent = parentsToPlace[0]
-          parent.x = generationX
-          parent.y = generationY
-          processedPersonIds.add(parent.id)
-          generationX += LAYOUT_CONFIG.minFamilySpacing
-        } else if (parentsToPlace.length >= 2) {
-          // 夫婦
-          const [parent1, parent2] = parentsToPlace
-          parent1.x = generationX
-          parent1.y = generationY
-          parent2.x = generationX + LAYOUT_CONFIG.spouseSpacing
-          parent2.y = generationY
-          processedPersonIds.add(parent1.id)
-          processedPersonIds.add(parent2.id)
-          generationX += LAYOUT_CONFIG.spouseSpacing + LAYOUT_CONFIG.minFamilySpacing
-        }
-      })
-
-      // 未処理の独身者を、配置済みの人物と重ならない位置に配置
-      membersOfGeneration.forEach(person => {
-        if (processedPersonIds.has(person.id)) return
-
-        const placedMembers = membersOfGeneration.filter(p => processedPersonIds.has(p.id))
-        let proposedX = generationX
-        while (placedMembers.some(existing =>
-          Math.abs(existing.x - proposedX) < LAYOUT_CONFIG.cardSpacing
-        )) {
-          proposedX += LAYOUT_CONFIG.cardSpacing
-        }
-
-        person.x = proposedX
-        person.y = generationY
-        processedPersonIds.add(person.id)
-        generationX = proposedX + LAYOUT_CONFIG.cardSpacing
-      })
-    })
-
-    // ドラッグ中の一時位置を反映
-    if (dragOverride) {
-      const dragged = byId.get(dragOverride.id)
-      if (dragged) {
-        dragged.x = dragOverride.x
-        dragged.y = dragOverride.y
+      // DOM/SVGへ異常な座標を渡さないための最終防御
+      return {
+        ...person,
+        x: clampLayoutCoordinate(x, LAYOUT_CONFIG.initialX),
+        y: clampLayoutCoordinate(y, getGenerationY(person.generation))
       }
-    }
-
-    // DOM/SVGへ異常な座標を渡さないための最終防御
-    return result.map(person => ({
-      ...person,
-      x: clampLayoutCoordinate(person.x, LAYOUT_CONFIG.initialX),
-      y: clampLayoutCoordinate(person.y, getGenerationY(person.generation))
-    }))
+    })
   }, [persons, families, dragOverride, getGenerationY])
 
   // 結婚関係線の計算
