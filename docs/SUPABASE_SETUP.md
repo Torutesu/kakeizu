@@ -12,15 +12,22 @@
 
 ## 2. データベーススキーマの適用
 
-ダッシュボードの **SQL Editor** を開き、`supabase/migrations/0001_init.sql` の内容を貼り付けて実行します。
+ダッシュボードの **SQL Editor** を開き、`supabase/migrations/` 配下のSQLを **番号順に** 貼り付けて実行します。
 
-（Supabase CLIを使う場合は `supabase db push` でも適用できます）
+1. `0001_init.sql` — テーブル・RLSポリシー・RPC・トリガー
+2. `0002_koseki_files.sql` — 戸籍ファイル用テーブルとストレージバケット
+
+（Supabase CLIを使う場合は `supabase db push` でまとめて適用できます）
 
 これにより以下が作成されます:
 
-- テーブル: organizations / profiles / memberships / invitations / projects / project_members / tree_revisions / audit_logs
+- テーブル: organizations / profiles / memberships / invitations / projects / project_members / tree_revisions / koseki_files / audit_logs
+- ストレージバケット `koseki`（非公開・PDFのみ・20MB上限）
 - RLS（行レベルセキュリティ）ポリシー一式 — テナント分離とロール制御をDB層で強制
 - RPC: `create_organization` / `create_project` / `accept_pending_invitations` など
+
+> `0002` のストレージポリシー作成でパーミッションエラーが出る場合は、
+> ダッシュボードの Storage → Policies から同じ条件のポリシーを手動で作成してください。
 
 ## 3. 認証の設定
 
@@ -75,4 +82,5 @@ APIやフロントエンドのバグによって他組織・権限外のデー�
 - 戸籍PDFはGemini APIに送信されます。Google AI Studioの無料枠はデータが品質改善に
   使用される可能性があるため、**実運用では有料枠（データが学習に使用されない）の利用を推奨**します
 - `service_role` キーはこのアプリでは使用しません。誤ってクライアントに配布しないでください
-- 監査ログは `audit_logs` テーブルに記録されます（閲覧UIは今後追加予定）
+- アップロードされた戸籍PDFは非公開バケットに保存され、閲覧は有効期限60秒の署名付きURL経由でのみ行われます
+- 監査ログは `audit_logs` テーブルに記録され、管理者は「監査ログ」画面から閲覧できます

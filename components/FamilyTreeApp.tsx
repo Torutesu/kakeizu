@@ -29,10 +29,12 @@ import { PersonEditDialog } from "./PersonEditDialog"
 import { RelationshipEditDialog } from "./RelationshipEditDialog"
 import { AddPersonDialog } from "./AddPersonDialog"
 import { KosekiUploadDialog } from "./KosekiUploadDialog"
+import { KosekiFilesPanel } from "./KosekiFilesPanel"
 import { SettingsDialog } from "./SettingsDialog"
 import { useFamilyData, SaveStatus } from "../hooks/useFamilyData"
 import { useZoomSettings } from "../hooks/useZoomSettings"
-import { fetchProject } from "../lib/db/projects"
+import { useKosekiFiles } from "../hooks/useKosekiFiles"
+import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { UI_CONFIG } from "../constants/config"
 
@@ -81,17 +83,25 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     refreshData
   } = useFamilyData(projectId)
 
-  // 案件名の表示
-  const [projectName, setProjectName] = useState<string>('')
+  // 案件情報（表示名と、監査ログに必要な組織ID）
+  const [project, setProject] = useState<ProjectSummary | null>(null)
   useEffect(() => {
     let cancelled = false
     fetchProject(projectId)
-      .then(project => {
-        if (!cancelled && project) setProjectName(project.name)
+      .then(fetched => {
+        if (!cancelled && fetched) setProject(fetched)
       })
       .catch(() => {})
     return () => { cancelled = true }
   }, [projectId])
+
+  // 案件に保存された戸籍ファイル
+  const {
+    files: kosekiFiles,
+    isLoading: isLoadingKosekiFiles,
+    refresh: refreshKosekiFiles,
+    remove: removeKosekiFile,
+  } = useKosekiFiles(projectId, project?.orgId ?? '')
 
   // 競合発生時は一度だけ通知する
   const conflictNotifiedRef = useRef(false)
@@ -284,7 +294,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
               </Button>
             </Link>
             <h1 className="text-xl font-bold text-gray-900 truncate">
-              {projectName || '家系図'}
+              {project?.name || '家系図'}
             </h1>
             {canEdit ? (
               <span
@@ -369,7 +379,10 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
       <div className="flex-1 flex overflow-hidden">
         {/* 左サイドバー */}
-        <aside style={{ width: UI_CONFIG.leftSidebarWidth }} className="bg-white border-r border-gray-200 flex flex-col">
+        <aside
+          style={{ width: UI_CONFIG.leftSidebarWidth }}
+          className="bg-white border-r border-gray-200 flex flex-col overflow-y-auto"
+        >
           {canEdit && (
             <div className="p-6 border-b border-gray-200">
               <div
@@ -404,16 +417,24 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             </div>
           </div>
 
-          <div className="flex-1 p-6 overflow-hidden flex flex-col">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">使い方</h3>
-            <ScrollArea className="flex-1">
-              <div className="space-y-3 text-sm text-gray-600 pr-4">
-                <p>・上の「戸籍PDFをアップロード」から戸籍謄本PDFを解析して家系図に取り込めます。</p>
-                <p>・編集内容はブラウザ内に自動保存されます（「保存」ボタンで手動保存も可能）。</p>
-                <p>・「書き出し」で家系図をJSONファイルとしてダウンロードし、「読み込み」で再度読み込めます。</p>
-                <p>・図の上でドラッグして配置を調整、右側のパネルで人物情報や関係を編集できます。</p>
-              </div>
-            </ScrollArea>
+          <KosekiFilesPanel
+            projectId={projectId}
+            files={kosekiFiles}
+            isLoading={isLoadingKosekiFiles}
+            canEdit={canEdit}
+            onRemove={removeKosekiFile}
+            onRefresh={refreshKosekiFiles}
+            onDataExtracted={handleKosekiDataExtracted}
+          />
+
+          <div className="p-6">
+            <h3 className="text-sm font-medium text-gray-900 mb-3">使い方</h3>
+            <div className="space-y-3 text-sm text-gray-600">
+              <p>・上の「戸籍PDFをアップロード」から戸籍謄本PDFを解析して家系図に取り込めます。</p>
+              <p>・編集内容は自動的にサーバーへ保存されます（「保存」ボタンで即時保存も可能）。</p>
+              <p>・「書き出し」で家系図をJSONファイルとしてダウンロードし、「読み込み」で再度読み込めます。</p>
+              <p>・図の上でドラッグして配置を調整、右側のパネルで人物情報や関係を編集できます。</p>
+            </div>
           </div>
         </aside>
 
@@ -638,10 +659,12 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
       />
 
       <KosekiUploadDialog
+        orgId={project?.orgId ?? ''}
         projectId={projectId}
         isOpen={isKosekiUploadOpen}
         onClose={() => setIsKosekiUploadOpen(false)}
         onDataExtracted={handleKosekiDataExtracted}
+        onFilesChanged={refreshKosekiFiles}
       />
 
       <SettingsDialog

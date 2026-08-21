@@ -12,91 +12,96 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Alert, AlertDescription } from './ui/alert'
-import { FileUp, Upload, CheckCircle, AlertCircle, Download, Loader2 } from 'lucide-react'
+import { FileUp, Upload, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { geminiService, KosekiAnalysisResult } from '../lib/gemini'
+import { analyzeStoredKoseki, KosekiAnalysisResult } from '../lib/gemini'
+import { uploadKosekiFile } from '../lib/db/kosekiFiles'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
 
+// 20MB。ストレージのバケット設定・APIルート側と揃えること
+const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
+
+type Phase = 'idle' | 'uploading' | 'analyzing'
+
 interface KosekiUploadDialogProps {
+  orgId: string
   projectId: string
   isOpen: boolean
   onClose: () => void
   onDataExtracted: (data: FamilyTreeData) => void
+  onFilesChanged: () => void
 }
 
 export function KosekiUploadDialog({
+  orgId,
   projectId,
   isOpen,
   onClose,
-  onDataExtracted
+  onDataExtracted,
+  onFilesChanged
 }: KosekiUploadDialogProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [isProcessing, setIsProcessing] = useState(false)
+  const [phase, setPhase] = useState<Phase>('idle')
   const [result, setResult] = useState<KosekiAnalysisResult | null>(null)
+
+  const isProcessing = phase !== 'idle'
 
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    if (file.type === 'application/pdf') {
-      setSelectedFile(file)
-      setResult(null)
-    } else {
+    if (file.type !== 'application/pdf') {
       toast.error('PDFファイルを選択してください')
+      return
     }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      toast.error('ファイルサイズが上限（20MB）を超えています')
+      return
+    }
+    setSelectedFile(file)
+    setResult(null)
   }, [])
 
   const handleUpload = useCallback(async () => {
     if (!selectedFile) return
 
-    setIsProcessing(true)
     setResult(null)
 
     try {
-      // Gemini APIで解析（サーバー側で案件の編集権限を確認する）
-      const analysisResult = await geminiService.analyzePDF(selectedFile, projectId)
+      // 1. PDFをストレージへ保存（案件に紐づけて残す）
+      setPhase('uploading')
+      const uploaded = await uploadKosekiFile(orgId, projectId, selectedFile)
+      onFilesChanged()
+
+      // 2. 保存済みファイルをサーバー側で解析する
+      setPhase('analyzing')
+      const analysisResult = await analyzeStoredKoseki(projectId, uploaded.id)
       setResult(analysisResult)
+      onFilesChanged()
 
       if (analysisResult.success && analysisResult.data) {
-        // 親コンポーネントにデータを渡す（家系図へマージ後、自動でDBに保存される）
+        // 家系図へマージ（マージ後は自動保存される）
         onDataExtracted(analysisResult.data)
       }
-
     } catch (error) {
       console.error('Upload error:', error)
       setResult({
         success: false,
-        error: `処理中にエラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`
+        error: error instanceof Error ? error.message : '処理中にエラーが発生しました'
       })
     } finally {
-      setIsProcessing(false)
+      setPhase('idle')
     }
-  }, [selectedFile, projectId, onDataExtracted])
+  }, [selectedFile, orgId, projectId, onDataExtracted, onFilesChanged])
 
   const handleClose = useCallback(() => {
+    if (isProcessing) return
     setSelectedFile(null)
     setResult(null)
-    setIsProcessing(false)
     onClose()
-  }, [onClose])
-
-  const downloadJsonData = useCallback(() => {
-    if (result?.success && result.data) {
-      const jsonString = JSON.stringify(result.data, null, 2)
-      const blob = new Blob([jsonString], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      const baseName = selectedFile ? selectedFile.name.replace(/\.[^/.]+$/, '') : 'koseki_data'
-      a.download = `${baseName}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    }
-  }, [result, selectedFile])
+  }, [isProcessing, onClose])
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={open => !open && handleClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -104,13 +109,12 @@ export function KosekiUploadDialog({
             戸籍PDF解析
           </DialogTitle>
           <DialogDescription>
-            戸籍謄本のPDFファイルをアップロードして、家系図データを自動抽出します。
-            PDFは解析のためGoogle Gemini APIに送信されます。機密情報の取り扱いにご注意ください。
+            戸籍謄本のPDFをアップロードして家系図データを自動抽出します。
+            ファイルは案件に紐づけて保存され、解析のためGoogle Gemini APIに送信されます。
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* ファイルアップロード */}
           <div className="space-y-2">
             <Label htmlFor="pdf-file">PDFファイルを選択</Label>
             <Input
@@ -127,18 +131,22 @@ export function KosekiUploadDialog({
             )}
           </div>
 
-          {/* 処理中表示 */}
           {isProcessing && (
             <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
               <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
               <div className="text-sm text-muted-foreground">
-                <p>Gemini AIで戸籍データを解析しています...</p>
-                <p>PDFのページ数によっては1〜2分かかることがあります。</p>
+                {phase === 'uploading' ? (
+                  <p>ファイルをアップロードしています...</p>
+                ) : (
+                  <>
+                    <p>Gemini AIで戸籍データを解析しています...</p>
+                    <p>PDFのページ数によっては1〜2分かかることがあります。</p>
+                  </>
+                )}
               </div>
             </div>
           )}
 
-          {/* 結果表示 */}
           {result && (
             <div className="space-y-4">
               {result.success ? (
@@ -162,6 +170,9 @@ export function KosekiUploadDialog({
                     <div className="space-y-2">
                       <p className="font-medium">処理エラー</p>
                       <p className="text-sm">{result.error}</p>
+                      <p className="text-sm">
+                        アップロードされたファイルは保存されています。ファイル一覧から再解析できます。
+                      </p>
                     </div>
                   </AlertDescription>
                 </Alert>
@@ -169,28 +180,15 @@ export function KosekiUploadDialog({
             </div>
           )}
 
-          {/* アクションボタン */}
           <div className="flex justify-between">
             <Button variant="outline" onClick={handleClose} disabled={isProcessing}>
-              キャンセル
+              {result ? '閉じる' : 'キャンセル'}
             </Button>
 
-            <div className="flex gap-2">
-              {result?.success && (
-                <Button variant="outline" onClick={downloadJsonData}>
-                  <Download className="h-4 w-4 mr-2" />
-                  JSONダウンロード
-                </Button>
-              )}
-
-              <Button
-                onClick={handleUpload}
-                disabled={!selectedFile || isProcessing}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {isProcessing ? '解析中...' : '解析開始'}
-              </Button>
-            </div>
+            <Button onClick={handleUpload} disabled={!selectedFile || isProcessing}>
+              <Upload className="h-4 w-4 mr-2" />
+              {isProcessing ? '処理中...' : 'アップロードして解析'}
+            </Button>
           </div>
         </div>
       </DialogContent>

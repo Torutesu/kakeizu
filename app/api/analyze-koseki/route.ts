@@ -5,11 +5,14 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 export const runtime = 'nodejs'
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
-const ALLOWED_MIME_TYPES = ['application/pdf']
 
+/**
+ * ストレージに保存済みの戸籍PDFを解析する。
+ * クライアントから直接ファイルを受け取らず、案件に紐づく保存済みファイルのみを
+ * 対象にすることで、権限のない解析実行（APIキーの無断利用）を防ぐ。
+ */
 export async function POST(request: NextRequest) {
   try {
-    // 認証と対象案件の編集権限を確認する（戸籍は機微情報のため、権限のない解析実行を拒否）
     const supabase = await createSupabaseServerClient()
     const {
       data: { user },
@@ -21,24 +24,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    let formData: FormData
+    let body: { projectId?: unknown; fileId?: unknown }
     try {
-      formData = await request.formData()
+      body = await request.json()
     } catch {
       return NextResponse.json(
-        { success: false, error: 'multipart/form-data形式でPDFファイルを送信してください' },
+        { success: false, error: 'リクエスト形式が不正です' },
         { status: 400 }
       )
     }
 
-    const projectId = formData.get('projectId')
-    if (typeof projectId !== 'string' || projectId.trim() === '') {
+    const { projectId, fileId } = body
+    if (typeof projectId !== 'string' || typeof fileId !== 'string') {
       return NextResponse.json(
-        { success: false, error: '案件IDが指定されていません' },
+        { success: false, error: '案件IDとファイルIDが必要です' },
         { status: 400 }
       )
     }
 
+    // 戸籍は機微情報のため、対象案件の編集権限を必ず確認する
     const { data: canEdit, error: permissionError } = await supabase.rpc('can_edit_project', {
       p_project: projectId,
     })
@@ -49,33 +53,53 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const file = formData.get('file')
+    // RLSにより、アクセスできない案件のファイルはそもそも取得できない
+    const { data: fileRow, error: fileError } = await supabase
+      .from('koseki_files')
+      .select('id, storage_path, file_size')
+      .eq('id', fileId)
+      .eq('project_id', projectId)
+      .maybeSingle()
 
-    if (!(file instanceof File)) {
+    if (fileError || !fileRow) {
       return NextResponse.json(
-        { success: false, error: 'PDFファイルが指定されていません' },
-        { status: 400 }
+        { success: false, error: '対象のファイルが見つかりません' },
+        { status: 404 }
       )
     }
 
-    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        { success: false, error: 'PDFファイルのみアップロード可能です' },
-        { status: 400 }
-      )
-    }
-
-    if (file.size > MAX_FILE_SIZE_BYTES) {
+    if (fileRow.file_size > MAX_FILE_SIZE_BYTES) {
       return NextResponse.json(
         { success: false, error: 'ファイルサイズが上限（20MB）を超えています' },
         { status: 400 }
       )
     }
 
-    const arrayBuffer = await file.arrayBuffer()
-    const base64Data = Buffer.from(arrayBuffer).toString('base64')
+    const { data: blob, error: downloadError } = await supabase.storage
+      .from('koseki')
+      .download(fileRow.storage_path as string)
 
-    const result = await analyzeKosekiPdf(base64Data, file.type)
+    if (downloadError || !blob) {
+      return NextResponse.json(
+        { success: false, error: 'ファイルの読み込みに失敗しました' },
+        { status: 500 }
+      )
+    }
+
+    const base64Data = Buffer.from(await blob.arrayBuffer()).toString('base64')
+    const result = await analyzeKosekiPdf(base64Data, 'application/pdf')
+
+    // 解析結果をファイルの状態として保存する（一覧で成否と抽出件数を確認できるようにする）
+    await supabase
+      .from('koseki_files')
+      .update({
+        analysis_status: result.success ? 'success' : 'failed',
+        analysis_error: result.success ? null : (result.error ?? '解析に失敗しました'),
+        analyzed_at: new Date().toISOString(),
+        person_count: result.success ? (result.data?.people.length ?? 0) : null,
+        family_count: result.success ? (result.data?.families.length ?? 0) : null,
+      })
+      .eq('id', fileId)
 
     return NextResponse.json(result, { status: result.success ? 200 : 422 })
   } catch (error) {
