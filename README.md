@@ -63,6 +63,17 @@ pnpm lint        # ESLint
 
 GitHub Actions（`.github/workflows/ci.yml`）でも同じチェックがPR/pushごとに実行されます。
 
+### 6. 解析モデルのベンチマーク（実データでの精度比較）
+
+```bash
+pnpm benchmark                    # testdata/ を設定済み全プロバイダで実測
+```
+
+手元の戸籍書類でGemini / Claude / GPTの精度を実測し、既定モデルを決めるためのハーネスです。
+テストデータの準備から判定基準・本番反映までの手順は
+**[docs/BENCHMARK_GUIDE.md](./docs/BENCHMARK_GUIDE.md)（実施指示書）** を参照してください。
+アプリ内でもファイルごとに「再解析 → モデル選択」で個別比較ができます。
+
 ## アーキテクチャ
 
 ```

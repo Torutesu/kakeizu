@@ -26,3 +26,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# ベンチマーク用テストデータと結果（戸籍=機微情報のためコミット禁止）
+/testdata/
+/benchmark-results/

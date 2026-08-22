@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    let body: { projectId?: unknown; fileId?: unknown }
+    let body: { projectId?: unknown; fileId?: unknown; provider?: unknown; model?: unknown }
     try {
       body = await request.json()
     } catch {
@@ -55,6 +55,32 @@ export async function POST(request: NextRequest) {
         { success: false, error: '案件IDとファイルIDが必要です' },
         { status: 400 }
       )
+    }
+
+    // 任意: プロバイダ・モデルの明示指定（モデル比較・再解析用）
+    let override: { provider: string; model?: string } | undefined
+    if (body.provider !== undefined) {
+      if (
+        typeof body.provider !== 'string' ||
+        !['gemini', 'anthropic', 'openai'].includes(body.provider)
+      ) {
+        return NextResponse.json(
+          { success: false, error: 'providerは gemini / anthropic / openai のいずれかです' },
+          { status: 400 }
+        )
+      }
+      if (body.model !== undefined) {
+        if (typeof body.model !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(body.model)) {
+          return NextResponse.json(
+            { success: false, error: 'modelの形式が不正です' },
+            { status: 400 }
+          )
+        }
+      }
+      override = {
+        provider: body.provider,
+        model: typeof body.model === 'string' ? body.model : undefined,
+      }
     }
 
     // 戸籍は機微情報のため、対象案件の編集権限を必ず確認する
@@ -119,7 +145,7 @@ export async function POST(request: NextRequest) {
     }
 
     const base64Data = fileBuffer.toString('base64')
-    const result = await runKosekiAnalysis({ base64Data, mimeType })
+    const result = await runKosekiAnalysis({ base64Data, mimeType }, override)
 
     // 解析結果をファイルの状態として保存する（一覧で成否・抽出件数・使用モデルを確認できるようにする）
     await supabase

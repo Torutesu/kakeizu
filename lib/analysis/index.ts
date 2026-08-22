@@ -1,6 +1,6 @@
-import 'server-only'
-import { AnalysisInput, AnalysisOutcome, AnalysisProvider, AnalysisProviderName } from './types'
-import { resolveProviderChain } from './chain'
+import '../server-guard'
+import { AnalysisInput, AnalysisOutcome, AnalysisProvider, AnalysisProviderName, ProviderCandidate } from './types'
+import { resolveProviderChain, resolveOverrideCandidate } from './chain'
 import { kosekiResultSchema } from './schema'
 import { sanitizeFamilyTreeData } from './sanitize'
 import { geminiProvider } from './providers/gemini'
@@ -14,13 +14,35 @@ const PROVIDERS: Record<AnalysisProviderName, AnalysisProvider> = {
   openai: openaiProvider,
 }
 
+export interface AnalysisOverride {
+  provider: string
+  model?: string
+}
+
 /**
  * 戸籍書類の解析を実行する。
  * 環境変数から組み立てたプロバイダチェーンを順に試行し、最初に成功した結果を返す。
+ * overrideでプロバイダ・モデルを明示指定した場合は、その1候補のみを試す
+ * （フォールバックしない。モデル比較の結果に別モデルが混ざるのを防ぐ）。
  * どのプロバイダの出力も同一のZodスキーマで検証し、id整合性をサニタイズしてから返す。
  */
-export async function runKosekiAnalysis(input: AnalysisInput): Promise<AnalysisOutcome> {
-  const chain = resolveProviderChain(process.env)
+export async function runKosekiAnalysis(
+  input: AnalysisInput,
+  override?: AnalysisOverride
+): Promise<AnalysisOutcome> {
+  let chain: ProviderCandidate[]
+  if (override) {
+    const candidate = resolveOverrideCandidate(process.env, override.provider, override.model)
+    if (!candidate) {
+      return {
+        success: false,
+        error: `指定されたプロバイダ「${override.provider}」は無効か、APIキーが設定されていません`,
+      }
+    }
+    chain = [candidate]
+  } else {
+    chain = resolveProviderChain(process.env)
+  }
   if (chain.length === 0) {
     return {
       success: false,

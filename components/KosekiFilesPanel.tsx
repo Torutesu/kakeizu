@@ -5,9 +5,26 @@ import { toast } from 'sonner'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
 import { FileText, Download, Trash2, RefreshCw, Loader2 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu'
 import { KosekiFile, createKosekiFileUrl } from '../lib/db/kosekiFiles'
-import { analyzeStoredKoseki } from '../lib/gemini'
+import { analyzeStoredKoseki, AnalyzeOptions } from '../lib/gemini'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
+
+// 再解析で選べるモデル（既定チェーン＋各プロバイダの推奨モデル）。
+// モデル選定の根拠と比較手順は docs/MODEL_RESEARCH.md / docs/BENCHMARK_GUIDE.md を参照。
+const REANALYZE_CHOICES: Array<{ label: string; options?: AnalyzeOptions }> = [
+  { label: '既定（自動選択）' },
+  { label: 'Gemini 3.1 Pro', options: { provider: 'gemini' } },
+  { label: 'Claude Opus 5', options: { provider: 'anthropic' } },
+  { label: 'GPT-5.2', options: { provider: 'openai' } },
+]
 
 interface KosekiFilesPanelProps {
   projectId: string
@@ -51,10 +68,10 @@ export function KosekiFilesPanel({
     }
   }
 
-  const handleReanalyze = async (file: KosekiFile) => {
+  const handleReanalyze = async (file: KosekiFile, options?: AnalyzeOptions) => {
     setBusyFileId(file.id)
     try {
-      const result = await analyzeStoredKoseki(projectId, file.id)
+      const result = await analyzeStoredKoseki(projectId, file.id, options)
       await onRefresh()
       if (result.success && result.data) {
         onDataExtracted(result.data)
@@ -145,20 +162,35 @@ export function KosekiFilesPanel({
                 </Button>
                 {canEdit && (
                   <>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2"
-                      title="再解析して家系図に取り込む"
-                      disabled={busyFileId === file.id}
-                      onClick={() => handleReanalyze(file)}
-                    >
-                      {busyFileId === file.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      )}
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2"
+                          title="再解析して家系図に取り込む（モデルを選択）"
+                          disabled={busyFileId === file.id}
+                        >
+                          {busyFileId === file.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel className="text-xs">再解析に使うモデル</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {REANALYZE_CHOICES.map(choice => (
+                          <DropdownMenuItem
+                            key={choice.label}
+                            onClick={() => handleReanalyze(file, choice.options)}
+                          >
+                            {choice.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                       size="sm"
                       variant="ghost"

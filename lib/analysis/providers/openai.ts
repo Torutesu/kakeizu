@@ -1,4 +1,4 @@
-import 'server-only'
+import '../../server-guard'
 import OpenAI from 'openai'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT } from '../../koseki-prompt'

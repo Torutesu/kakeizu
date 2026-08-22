@@ -1,4 +1,4 @@
-import 'server-only'
+import '../../server-guard'
 import { GoogleGenAI } from '@google/genai'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT, KOSEKI_RESPONSE_SCHEMA } from '../../koseki-prompt'
 import { AnalysisInput, AnalysisProvider } from '../types'

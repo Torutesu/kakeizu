@@ -40,6 +40,22 @@ export interface ChainEnv {
 }
 
 /**
+ * プロバイダ・モデルを明示指定した場合の候補を解決する（ベンチマーク・再解析用）。
+ * 明示指定時はフォールバックを行わない（別モデルの結果が混ざると比較にならないため）。
+ * 対象プロバイダのAPIキーが未設定ならnull。
+ */
+export function resolveOverrideCandidate(
+  env: ChainEnv,
+  provider: string,
+  model?: string
+): ProviderCandidate | null {
+  const normalized = provider.trim().toLowerCase()
+  if (!isProviderName(normalized)) return null
+  if (!env[API_KEY_ENV[normalized]]) return null
+  return { provider: normalized, model: model?.trim() || DEFAULT_MODELS[normalized] }
+}
+
+/**
  * 環境変数から解析の試行チェーンを組み立てる。
  * 1. ANALYSIS_PROVIDER（省略時はAPIキーが設定された最優先プロバイダ）の
  *    ANALYSIS_MODEL（省略時は既定モデル）を先頭に置く
