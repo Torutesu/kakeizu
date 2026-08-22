@@ -5,6 +5,9 @@ import { validateFileContent, isAllowedKosekiMimeType } from '@/lib/security/fil
 import { kosekiAnalysisRateLimiter } from '@/lib/security/rateLimit'
 
 export const runtime = 'nodejs'
+// 大きな戸籍の解析は1〜2分かかるため、Vercelの関数タイムアウトを延長する
+// （Fluid compute有効時はHobbyプランでも300秒まで許可される）
+export const maxDuration = 300
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
 
