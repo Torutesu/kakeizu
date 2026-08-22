@@ -26,8 +26,7 @@ Vercel + Supabase で本番URLに公開する手順。**所要25分程度**（�
 
 1. https://vercel.com/new → 「Import Git Repository」で `Torutesu/kakeizu` を選択
    - GitHub連携が未設定なら画面の指示に従ってVercel GitHub Appをインストール
-2. **Production Branch を `claude/family-tree-repo-setup-ermfoq` に設定**
-   （Settings → Git → Production Branch。mainへの切り替えは後述）
+2. Production Branch は既定の **`main`** のまま（mainへのマージ＝本番デプロイになる）
 3. Framework は自動で Next.js と認識される（ビルド設定の変更は不要）
 4. **Environment Variables** に以下を設定して Deploy:
 
@@ -74,11 +73,10 @@ Vercel + Supabase で本番URLに公開する手順。**所要25分程度**（�
 
 ## ブランチ運用について
 
-現在の作業ブランチは `claude/family-tree-repo-setup-ermfoq`。
-`main` を正式な本番ブランチにする場合は、GitHubで `main` を作成してこのブランチを
-マージし、Vercelの Production Branch を `main` に変更する。以後は
-「mainへのマージ = 本番デプロイ」「PRごとのプレビューURL自動発行」という
-Vercelの標準フローに乗る。
+`main` が本番ブランチ。開発はフィーチャーブランチで行い、mainへのマージで
+本番デプロイされる（PRを作るとVercelがプレビューURLを自動発行する）。
+GitHubのリポジトリ設定でデフォルトブランチが `main` になっていることを確認すること
+（Settings → General → Default branch）。
 
 ## トラブルシューティング
 
