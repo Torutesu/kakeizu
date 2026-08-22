@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { analyzeKosekiPdf } from '@/lib/gemini-server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { validateFileContent, isAllowedKosekiMimeType } from '@/lib/security/fileValidation'
+import { kosekiAnalysisRateLimiter } from '@/lib/security/rateLimit'
 
 export const runtime = 'nodejs'
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
 
 /**
- * ストレージに保存済みの戸籍PDFを解析する。
+ * ストレージに保存済みの戸籍書類（PDF・画像）を解析する。
  * クライアントから直接ファイルを受け取らず、案件に紐づく保存済みファイルのみを
  * 対象にすることで、権限のない解析実行（APIキーの無断利用）を防ぐ。
+ * さらにユーザー単位のレート制限と、ファイル実体のマジックバイト検証を行う。
  */
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +24,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'ログインが必要です' },
         { status: 401 }
+      )
+    }
+
+    // 高コストなGemini API呼び出しの乱用を防ぐ（ユーザー単位）
+    const rateLimit = kosekiAnalysisRateLimiter.check(user.id)
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `解析リクエストが多すぎます。${rateLimit.retryAfterSeconds}秒後に再試行してください`,
+        },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
       )
     }
 
@@ -56,7 +71,7 @@ export async function POST(request: NextRequest) {
     // RLSにより、アクセスできない案件のファイルはそもそも取得できない
     const { data: fileRow, error: fileError } = await supabase
       .from('koseki_files')
-      .select('id, storage_path, file_size')
+      .select('id, storage_path, file_size, mime_type')
       .eq('id', fileId)
       .eq('project_id', projectId)
       .maybeSingle()
@@ -75,6 +90,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const mimeType = fileRow.mime_type as string
+    if (!isAllowedKosekiMimeType(mimeType)) {
+      return NextResponse.json(
+        { success: false, error: '対応していないファイル形式です' },
+        { status: 400 }
+      )
+    }
+
     const { data: blob, error: downloadError } = await supabase.storage
       .from('koseki')
       .download(fileRow.storage_path as string)
@@ -86,8 +109,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const base64Data = Buffer.from(await blob.arrayBuffer()).toString('base64')
-    const result = await analyzeKosekiPdf(base64Data, 'application/pdf')
+    // 拡張子・Content-Type偽装への防御: 実体のマジックバイトが申告形式と一致するか検証する
+    const fileBuffer = Buffer.from(await blob.arrayBuffer())
+    if (!validateFileContent(new Uint8Array(fileBuffer.subarray(0, 16)), mimeType)) {
+      return NextResponse.json(
+        { success: false, error: 'ファイルの内容が形式と一致しません' },
+        { status: 400 }
+      )
+    }
+
+    const base64Data = fileBuffer.toString('base64')
+    const result = await analyzeKosekiPdf(base64Data, mimeType)
 
     // 解析結果をファイルの状態として保存する（一覧で成否と抽出件数を確認できるようにする）
     await supabase

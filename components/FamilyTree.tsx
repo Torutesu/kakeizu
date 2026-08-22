@@ -38,10 +38,15 @@ interface FamilyTreeProps {
   families: FamilyGroup[]
   selectedPerson?: ProcessedPerson | null
   onPersonSelect?: (person: ProcessedPerson) => void
+  // ダブルクリックで人物編集を開く（閲覧のみの場合は渡さない）
+  onPersonEdit?: (person: ProcessedPerson) => void
   // ドラッグ確定時に1回だけ呼ばれる（generationはスナップ先の世代）
   onPersonPositionUpdate?: (id: string, x: number, y: number, generation: number) => void
   focusPerson?: FocusPersonRequest | null
   zoomSettings?: ZoomSettings
+  // 人物が1人もいない場合の空状態から呼び出すアクション（編集権限がない場合は渡さない）
+  onAddPerson?: () => void
+  onUploadKoseki?: () => void
 }
 
 export function FamilyTree({
@@ -49,9 +54,12 @@ export function FamilyTree({
   families,
   selectedPerson,
   onPersonSelect,
+  onPersonEdit,
   onPersonPositionUpdate,
   focusPerson,
-  zoomSettings = DEFAULT_ZOOM_SETTINGS
+  zoomSettings = DEFAULT_ZOOM_SETTINGS,
+  onAddPerson,
+  onUploadKoseki
 }: FamilyTreeProps) {
   // レイアウト計算フック
   const {
@@ -376,6 +384,16 @@ export function FamilyTree({
     setDragOffset({ x: 0, y: 0 })
   }, [draggedPerson, getGenerationFromY, setDragOverride, onPersonPositionUpdate, onPersonSelect])
 
+  // 初回表示時に家系図全体が収まるよう自動フィットする
+  const hasAutoFittedRef = useRef(false)
+  useEffect(() => {
+    if (hasAutoFittedRef.current || layoutPersons.length === 0) return
+    hasAutoFittedRef.current = true
+    // キャンバスのサイズが確定してからフィットさせる
+    requestAnimationFrame(() => handleFitToView())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutPersons.length])
+
   // 指定された人物を画面中央へパンする（検索結果クリック時など）
   useEffect(() => {
     if (!focusPerson || !canvasRef.current || !Number.isFinite(zoom) || zoom <= 0) return
@@ -487,6 +505,28 @@ export function FamilyTree({
         </div>
       </div>
 
+      {/* 空状態: 最初の1人を追加するまでの案内 */}
+      {persons.length === 0 && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center pointer-events-auto max-w-sm">
+            <p className="text-lg font-semibold text-gray-900 mb-2">家系図はまだ空です</p>
+            <p className="text-sm text-gray-500 mb-5">
+              戸籍書類を解析して自動作成するか、手動で人物を追加して始めましょう。
+            </p>
+            {(onUploadKoseki || onAddPerson) && (
+              <div className="flex flex-col gap-2">
+                {onUploadKoseki && (
+                  <Button onClick={onUploadKoseki}>戸籍書類をアップロード</Button>
+                )}
+                {onAddPerson && (
+                  <Button variant="outline" onClick={onAddPerson}>人物を手動で追加</Button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 世代ガイドが必要な間だけ、専用のガター（帯）を左に確保する。
           ラベルを人物カードと同じパン対象領域に置くと、パン位置によっては
           必ずどこかのタイミングで一番左のカードと重なってしまうため、
@@ -520,7 +560,11 @@ export function FamilyTree({
             cursor: isPanning ? 'grabbing' : 'grab',
             // ブラウザ標準のタッチ操作（スクロール・ダブルタップズーム等）を無効化して
             // パン・ピンチ・ドラッグを自前で処理する
-            touchAction: 'none'
+            touchAction: 'none',
+            // パン・ズームに追従するドットグリッド（キャンバスの空間把握を助ける）
+            backgroundImage: 'radial-gradient(circle, #d1d5db 1px, transparent 1px)',
+            backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
+            backgroundPosition: `${panX}px ${panY}px`
           }}
         >
           <div
@@ -574,6 +618,7 @@ export function FamilyTree({
                 isSelected={selectedPerson?.id === person.id}
                 isDragging={isDragging && draggedPerson?.id === person.id}
                 onDragStart={handlePersonDragStart}
+                onEdit={onPersonEdit}
               />
             ))}
           </div>

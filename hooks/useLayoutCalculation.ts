@@ -10,6 +10,16 @@ interface LayoutLine {
   y2: number
 }
 
+// 結婚線（離婚済みは破線で描画するためのフラグ付き）
+export interface MarriageLine extends LayoutLine {
+  divorced: boolean
+}
+
+// 親子線（養子縁組は破線で描画するためのフラグ付き）
+export interface ParentChildLine extends LayoutLine {
+  adoption: boolean
+}
+
 // ドラッグ中の一時的な表示位置。確定した位置はpersons[].x,y（アンドゥ履歴の対象）が唯一の保存先で、
 // ここではmousemoveごとの描画のためだけに保持する（履歴を汚さない）。
 export interface DragOverride {
@@ -23,8 +33,8 @@ interface UseLayoutCalculationReturn {
   layoutPersons: ProcessedPerson[]
 
   // 関係線データ
-  marriageLines: LayoutLine[]
-  parentChildLines: LayoutLine[]
+  marriageLines: MarriageLine[]
+  parentChildLines: ParentChildLine[]
 
   // ドラッグ中の一時位置の設定（nullで解除）
   setDragOverride: (override: DragOverride | null) => void
@@ -110,9 +120,9 @@ export function useLayoutCalculation(
     })
   }, [persons, families, dragOverride, getGenerationY])
 
-  // 結婚関係線の計算
+  // 結婚関係線の計算（離婚済みの夫婦は破線で表示する）
   const marriageLines = useMemo(() => {
-    const lines: LayoutLine[] = []
+    const lines: MarriageLine[] = []
 
     families.forEach(family => {
       if (family.parents.length === 2) {
@@ -125,7 +135,8 @@ export function useLayoutCalculation(
             x1: person1.x,
             y1: person1.y,
             x2: person2.x,
-            y2: person2.y
+            y2: person2.y,
+            divorced: Boolean(family.divorceDate)
           })
         }
       }
@@ -134,9 +145,9 @@ export function useLayoutCalculation(
     return lines
   }, [layoutPersons, families])
 
-  // 親子関係線の計算
+  // 親子関係線の計算（養子縁組は破線で表示する）
   const parentChildLines = useMemo(() => {
-    const lines: LayoutLine[] = []
+    const lines: ParentChildLine[] = []
 
     families.forEach(family => {
       if (family.parents.length > 0 && family.children.length > 0) {
@@ -158,7 +169,8 @@ export function useLayoutCalculation(
               x1: parentCenterX,
               y1: parentCenterY, // 夫婦の二重線（結婚線）の中心から伸ばす
               x2: childPerson.x,
-              y2: childPerson.y - LAYOUT_CONFIG.cardHeight / 2 // 子カードの上端へ
+              y2: childPerson.y - LAYOUT_CONFIG.cardHeight / 2, // 子カードの上端へ
+              adoption: family.relationType === 'adoption'
             })
           }
         })

@@ -1,5 +1,10 @@
 import { getSupabaseBrowserClient } from '../supabase/client'
 import { logAudit } from './audit'
+import {
+  isAllowedKosekiMimeType,
+  MIME_EXTENSIONS,
+  AllowedKosekiMimeType,
+} from '../security/fileValidation'
 
 const BUCKET = 'koseki'
 const SIGNED_URL_TTL_SECONDS = 60
@@ -12,6 +17,7 @@ export interface KosekiFile {
   storagePath: string
   fileName: string
   fileSize: number
+  mimeType: string
   analysisStatus: AnalysisStatus
   analysisError: string | null
   analyzedAt: string | null
@@ -26,6 +32,7 @@ interface KosekiFileRow {
   storage_path: string
   file_name: string
   file_size: number
+  mime_type: string
   analysis_status: AnalysisStatus
   analysis_error: string | null
   analyzed_at: string | null
@@ -41,6 +48,7 @@ function toKosekiFile(row: KosekiFileRow): KosekiFile {
     storagePath: row.storage_path,
     fileName: row.file_name,
     fileSize: row.file_size,
+    mimeType: row.mime_type,
     analysisStatus: row.analysis_status,
     analysisError: row.analysis_error,
     analyzedAt: row.analyzed_at,
@@ -51,7 +59,7 @@ function toKosekiFile(row: KosekiFileRow): KosekiFile {
 }
 
 const SELECT_COLUMNS =
-  'id, project_id, storage_path, file_name, file_size, analysis_status, analysis_error, analyzed_at, person_count, family_count, created_at'
+  'id, project_id, storage_path, file_name, file_size, mime_type, analysis_status, analysis_error, analyzed_at, person_count, family_count, created_at'
 
 export async function fetchKosekiFiles(projectId: string): Promise<KosekiFile[]> {
   const supabase = getSupabaseBrowserClient()
@@ -65,7 +73,7 @@ export async function fetchKosekiFiles(projectId: string): Promise<KosekiFile[]>
 }
 
 /**
- * 戸籍PDFをストレージへアップロードし、メタデータを登録する。
+ * 戸籍書類（PDF・画像）をストレージへアップロードし、メタデータを登録する。
  * ストレージ・テーブルの双方にRLSが効いているため、編集権限がなければ失敗する。
  * テーブル登録に失敗した場合は、孤立ファイルが残らないようアップロード済みの実体を消す。
  */
@@ -74,17 +82,22 @@ export async function uploadKosekiFile(
   projectId: string,
   file: File
 ): Promise<KosekiFile> {
+  if (!isAllowedKosekiMimeType(file.type)) {
+    throw new Error('PDFまたは画像（JPEG/PNG/WebP）のみアップロードできます')
+  }
+  const mimeType: AllowedKosekiMimeType = file.type
+
   const supabase = getSupabaseBrowserClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   // パスの先頭セグメントがproject_idであることをストレージのRLSポリシーが前提にしている
-  const storagePath = `${projectId}/${crypto.randomUUID()}.pdf`
+  const storagePath = `${projectId}/${crypto.randomUUID()}.${MIME_EXTENSIONS[mimeType]}`
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
-    .upload(storagePath, file, { contentType: 'application/pdf' })
+    .upload(storagePath, file, { contentType: mimeType })
   if (uploadError) {
     throw new Error(`ファイルのアップロードに失敗しました: ${uploadError.message}`)
   }
@@ -96,6 +109,7 @@ export async function uploadKosekiFile(
       storage_path: storagePath,
       file_name: file.name,
       file_size: file.size,
+      mime_type: mimeType,
       uploaded_by: user?.id ?? null,
     })
     .select(SELECT_COLUMNS)

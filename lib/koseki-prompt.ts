@@ -1,4 +1,4 @@
-import { SchemaType, type Schema } from '@google/generative-ai'
+import { Type, type Schema } from '@google/genai'
 
 // ============================================================================
 // システム指示（役割・進め方・ルール）
@@ -69,16 +69,16 @@ export const KOSEKI_TASK_PROMPT = `添付した戸籍謄本・除籍謄本のPDF
 // ============================================================================
 // 家族単位の日付（婚姻日・離婚日）用。FamilyData.marriage_date / divorce_date と一致（place を持たない）。
 const familyDateFieldSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   description: '日付情報。西暦変換できない場合は date を null にし、original_date に原文を残す。',
   properties: {
     original_date: {
-      type: SchemaType.STRING,
+      type: Type.STRING,
       description: '戸籍上の原文表記（例: "明治四十三年一月十日"）。判読不能な場合は「判読不能」。',
       nullable: true,
     },
     date: {
-      type: SchemaType.STRING,
+      type: Type.STRING,
       description: 'YYYY-MM-DD形式の西暦日付。日にちが不明なら日をXXにしてよい（例: 1910-01-XX）。変換不能なら null。',
       nullable: true,
     },
@@ -88,21 +88,21 @@ const familyDateFieldSchema: Schema = {
 
 // 個人の日付（生年月日・没年月日）用。PersonData.birth / death と一致（place を含む）。
 const personDateFieldSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   description: '日付・場所の情報。西暦変換できない場合は date を null にし、original_date に原文を残す。',
   properties: {
     original_date: {
-      type: SchemaType.STRING,
+      type: Type.STRING,
       description: '戸籍上の原文表記（例: "明治四十三年一月十日"）。判読不能な場合は「判読不能」。',
       nullable: true,
     },
     date: {
-      type: SchemaType.STRING,
+      type: Type.STRING,
       description: 'YYYY-MM-DD形式の西暦日付。日にちが不明なら日をXXにしてよい（例: 1910-01-XX）。変換不能なら null。',
       nullable: true,
     },
     place: {
-      type: SchemaType.STRING,
+      type: Type.STRING,
       description: '出生地・死亡地の原文表記。記載がなければ null。',
       nullable: true,
     },
@@ -111,42 +111,42 @@ const personDateFieldSchema: Schema = {
 }
 
 export const KOSEKI_RESPONSE_SCHEMA: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
     people: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       description: '戸籍に言及のある全人物のフラットなリスト（関係性は含まない）。',
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
           id: {
-            type: SchemaType.STRING,
+            type: Type.STRING,
             description: '姓ローマ字_名ローマ字_生年(西暦4桁 or unknown) 形式の一意ID。例: abuki_gunichi_1871',
           },
           generation: {
-            type: SchemaType.INTEGER,
+            type: Type.INTEGER,
             description: '戸籍内の起点人物を1とした世代番号。配偶者は相手と同じ世代。不明なら null。',
             nullable: true,
           },
           sex: {
-            type: SchemaType.STRING,
+            type: Type.STRING,
             format: 'enum',
             enum: ['male', 'female'],
             description: '続柄表記や氏名から論理的に判断できる場合のみ設定。不明なら null（憶測禁止）。',
             nullable: true,
           },
           name: {
-            type: SchemaType.OBJECT,
+            type: Type.OBJECT,
             properties: {
-              surname: { type: SchemaType.STRING, description: '姓' },
-              given_name: { type: SchemaType.STRING, description: '名' },
+              surname: { type: Type.STRING, description: '姓' },
+              given_name: { type: Type.STRING, description: '名' },
             },
             required: ['surname', 'given_name'],
           },
           birth: personDateFieldSchema,
           death: personDateFieldSchema,
           relation_to_family_head: {
-            type: SchemaType.STRING,
+            type: Type.STRING,
             description: '戸籍上の続柄表記（例: "夫", "妻", "長男", "二女", "養子"）。不明なら null。',
             nullable: true,
           },
@@ -155,26 +155,26 @@ export const KOSEKI_RESPONSE_SCHEMA: Schema = {
       },
     },
     families: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       description: '親子・夫婦の家族ユニットのリスト。1組の親（1〜2名）とその子で構成される。',
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          id: { type: SchemaType.STRING, description: '家族ユニットの一意ID。例: f001' },
+          id: { type: Type.STRING, description: '家族ユニットの一意ID。例: f001' },
           parents: {
-            type: SchemaType.ARRAY,
+            type: Type.ARRAY,
             description: '親のid（1名または2名）。people[].id を参照する。',
-            items: { type: SchemaType.STRING },
+            items: { type: Type.STRING },
           },
           children: {
-            type: SchemaType.ARRAY,
+            type: Type.ARRAY,
             description: '子のid。people[].id を参照する。',
-            items: { type: SchemaType.STRING },
+            items: { type: Type.STRING },
           },
           marriage_date: familyDateFieldSchema,
           divorce_date: familyDateFieldSchema,
           relation_type: {
-            type: SchemaType.STRING,
+            type: Type.STRING,
             format: 'enum',
             enum: ['blood', 'adoption'],
             description: '戸籍上に養子縁組の明記がある場合のみ adoption。それ以外は必ず blood（null不可・省略不可）。',

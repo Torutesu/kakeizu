@@ -1,4 +1,5 @@
 import { COLORS, LAYOUT_CONFIG } from '../constants/config'
+import { MarriageLine, ParentChildLine } from '../hooks/useLayoutCalculation'
 
 interface LayoutLine {
   x1: number
@@ -15,8 +16,8 @@ interface LayoutBounds {
 }
 
 interface FamilyTreeLinesProps {
-  marriageLines: LayoutLine[]
-  parentChildLines: LayoutLine[]
+  marriageLines: MarriageLine[]
+  parentChildLines: ParentChildLine[]
   bounds: LayoutBounds
 }
 
@@ -163,6 +164,9 @@ export function FamilyTreeLines({
       {marriageLines.filter(isFiniteLine).map((line, index) => {
         const { path1, path2 } = createDoubleLinePaths(line)
         
+        // 離婚済みの夫婦は破線で区別する
+        const dashArray = line.divorced ? '6 4' : undefined
+
         return (
           <g key={`marriage-line-${index}`}>
             {/* 1本目の線 */}
@@ -172,6 +176,7 @@ export function FamilyTreeLines({
               strokeWidth="2"
               fill="none"
               opacity="0.8"
+              strokeDasharray={dashArray}
             />
             {/* 2本目の線 */}
             <path
@@ -180,12 +185,13 @@ export function FamilyTreeLines({
               strokeWidth="2"
               fill="none"
               opacity="0.8"
+              strokeDasharray={dashArray}
             />
           </g>
         )
       })}
 
-      {/* 親子関係線 */}
+      {/* 親子関係線（養子縁組は破線で区別する） */}
       {parentChildLines.filter(isFiniteLine).map((line, index) => (
         <path
           key={`parent-child-${index}`}
@@ -194,6 +200,7 @@ export function FamilyTreeLines({
           strokeWidth="2"
           fill="none"
           opacity="0.7"
+          strokeDasharray={line.adoption ? '5 4' : undefined}
         />
       ))}
     </svg>

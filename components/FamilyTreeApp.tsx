@@ -36,6 +36,13 @@ import { useZoomSettings } from "../hooks/useZoomSettings"
 import { useKosekiFiles } from "../hooks/useKosekiFiles"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
+import { formatKazoeAge } from "../utils/age"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { UI_CONFIG } from "../constants/config"
 
 const SAVE_STATUS_LABELS: Record<SaveStatus, string> = {
@@ -148,6 +155,13 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isTextInputTarget(e.target)) return
+
+      // Escで選択解除（閲覧のみでも有効）
+      if (e.key === 'Escape') {
+        setSelectedPersonId(null)
+        return
+      }
+
       if (!canEdit) return
 
       // Command+Z (Mac) または Ctrl+Z (Windows/Linux) でアンドゥ
@@ -177,6 +191,12 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     setSelectedPersonId(person.id)
   }, [])
 
+  // ダブルクリックで選択＋編集ダイアログを開く
+  const handlePersonEdit = useCallback((person: ProcessedPerson) => {
+    setSelectedPersonId(person.id)
+    setIsPersonEditOpen(true)
+  }, [])
+
   // 検索結果クリック: 選択した上で、その人物へ画面をパンする
   const handleSearchResultSelect = useCallback((person: ProcessedPerson) => {
     setSelectedPersonId(person.id)
@@ -190,11 +210,14 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     updatePerson(id, { x, y, generation, manualPosition: true })
   }, [updatePerson, canEdit])
 
-  // 戸籍データ抽出ハンドラー（解析結果を既存データへマージし、1回の更新で反映する）
+  // 戸籍データ抽出ハンドラー（名寄せ付きマージ: 複数書類間の同一人物は単一ノードに統合される）
   const handleKosekiDataExtracted = (data: FamilyTreeData) => {
-    importFamilyTreeData(data, 'merge')
-    setIsKosekiUploadOpen(false)
-    toast.success(`戸籍データを取り込みました（${data.people.length}人）`)
+    const { mergedPersonCount, addedPersonCount } = importFamilyTreeData(data, 'merge')
+    toast.success(
+      mergedPersonCount > 0
+        ? `戸籍データを取り込みました（追加${addedPersonCount}人・既存と統合${mergedPersonCount}人）`
+        : `戸籍データを取り込みました（${addedPersonCount}人）`
+    )
   }
 
   // 手動保存ハンドラー
@@ -203,20 +226,47 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     toast.success('保存しました')
   }
 
-  // JSON書き出しハンドラー
-  const handleExport = () => {
+  // 書き出しファイル名のベース（案件名_日付）
+  const exportBaseName = () =>
+    `${project?.name || 'family-tree'}_${new Date().toISOString().slice(0, 10)}`
+
+  // JSON書き出し（再インポート用の完全なデータ）
+  const handleExportJson = () => {
     const data = exportFamilyTreeData()
     const jsonString = JSON.stringify(data, null, 2)
     const blob = new Blob([jsonString], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `family-tree_${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `${exportBaseName()}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
     toast.success('JSONファイルを書き出しました')
+  }
+
+  // Excel書き出し（人物一覧・家族関係の2シート）
+  // 生成ライブラリはサイズが大きいため、実行時に動的読み込みする
+  const handleExportExcel = async () => {
+    try {
+      const { exportExcelFile } = await import("../utils/exportExcel")
+      exportExcelFile(persons, families, exportBaseName())
+      toast.success('Excelファイルを書き出しました')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Excel書き出しに失敗しました')
+    }
+  }
+
+  // PDF書き出し（家系図をA4に描画）
+  const handleExportPdf = async () => {
+    try {
+      const { exportTreePdf } = await import("../utils/exportPdf")
+      await exportTreePdf(persons, families, project?.name || '家系図', exportBaseName())
+      toast.success('PDFファイルを書き出しました')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'PDF書き出しに失敗しました')
+    }
   }
 
   // JSON読み込みハンドラー
@@ -238,8 +288,15 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         '現在の家系図を、読み込むファイルの内容で置き換えますか？\n' +
         '「キャンセル」を選ぶと、既存のデータに追加でマージされます。'
       )
-      importFamilyTreeData(data, shouldReplace ? 'replace' : 'merge')
-      toast.success(`ファイルを読み込みました（${data.people.length}人）`)
+      const { mergedPersonCount, addedPersonCount } = importFamilyTreeData(
+        data,
+        shouldReplace ? 'replace' : 'merge'
+      )
+      toast.success(
+        mergedPersonCount > 0
+          ? `ファイルを読み込みました（追加${addedPersonCount}人・既存と統合${mergedPersonCount}人）`
+          : `ファイルを読み込みました（${addedPersonCount}人）`
+      )
     } catch (err) {
       toast.error(`読み込みエラー: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
@@ -361,10 +418,25 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                 />
               </>
             )}
-            <Button variant="outline" size="sm" onClick={handleExport}>
-              <Upload className="w-4 h-4 mr-2" />
-              書き出し
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Upload className="w-4 h-4 mr-2" />
+                  書き出し
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportPdf}>
+                  PDF（家系図を印刷用に）
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportExcel}>
+                  Excel（人物・家族の一覧表）
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportJson}>
+                  JSON（再インポート用データ）
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="sm"
@@ -445,9 +517,12 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             families={families}
             selectedPerson={selectedPerson}
             onPersonSelect={handlePersonSelect}
+            onPersonEdit={canEdit ? handlePersonEdit : undefined}
             onPersonPositionUpdate={handlePersonPositionUpdate}
             focusPerson={focusPerson}
             zoomSettings={zoomSettings}
+            onAddPerson={canEdit ? () => setIsAddPersonOpen(true) : undefined}
+            onUploadKoseki={canEdit ? () => setIsKosekiUploadOpen(true) : undefined}
           />
         </main>
 
@@ -585,6 +660,15 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                         {selectedPerson.sex === 'male' ? '男性' : selectedPerson.sex === 'female' ? '女性' : '不明'}
                       </div>
                     </div>
+
+                    {formatKazoeAge(selectedPerson.birth?.date, selectedPerson.death?.date) && (
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">年齢（数え）</label>
+                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                          {formatKazoeAge(selectedPerson.birth?.date, selectedPerson.death?.date)}
+                        </div>
+                      </div>
+                    )}
 
                     {selectedPerson.relation_to_family_head && (
                       <div>

@@ -1,5 +1,5 @@
 import 'server-only'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT, KOSEKI_RESPONSE_SCHEMA } from './koseki-prompt'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
 
@@ -8,6 +8,11 @@ export interface KosekiAnalysisResult {
   data?: FamilyTreeData
   error?: string
 }
+
+// 既定は最新のGemini 3 Pro。環境変数 GEMINI_MODEL で切り替え可能。
+// 指定モデルが利用できない環境（APIキーのプラン等）では安定版に自動フォールバックする。
+const DEFAULT_MODEL = 'gemini-3-pro-preview'
+const FALLBACK_MODEL = 'gemini-2.5-pro'
 
 /**
  * responseSchema は各フィールドの型・enum は保証するが、id参照の整合性までは
@@ -56,18 +61,40 @@ function sanitizeFamilyTreeData(data: FamilyTreeData): FamilyTreeData {
   return { people, families }
 }
 
-function getModel() {
+function getClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     throw new Error(
       'GEMINI_API_KEY が設定されていません。.env.local に GEMINI_API_KEY を設定してください。'
     )
   }
-  const genAI = new GoogleGenerativeAI(apiKey)
-  return genAI.getGenerativeModel({
-    model: 'gemini-2.5-pro',
-    systemInstruction: KOSEKI_SYSTEM_INSTRUCTION,
-    generationConfig: {
+  return new GoogleGenAI({ apiKey })
+}
+
+function isModelUnavailableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /not found|not_found|does not exist|is not supported|permission/i.test(message)
+}
+
+async function generateWithModel(
+  ai: GoogleGenAI,
+  model: string,
+  base64Data: string,
+  mimeType: string
+): Promise<string> {
+  const response = await ai.models.generateContent({
+    model,
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: KOSEKI_TASK_PROMPT },
+          { inlineData: { mimeType, data: base64Data } },
+        ],
+      },
+    ],
+    config: {
+      systemInstruction: KOSEKI_SYSTEM_INSTRUCTION,
       // 事実抽出タスクのため決定的な出力を優先する
       temperature: 0,
       // レスポンススキーマで出力形式を強制し、前後の説明文や整形崩れを防ぐ
@@ -75,10 +102,11 @@ function getModel() {
       responseSchema: KOSEKI_RESPONSE_SCHEMA,
     },
   })
+  return response.text ?? ''
 }
 
 /**
- * サーバー上でのみ実行される戸籍PDF解析処理。
+ * サーバー上でのみ実行される戸籍書類（PDF・画像）の解析処理。
  * Gemini APIキーはこのファイル（サーバー専用）からのみ参照される。
  */
 export async function analyzeKosekiPdf(
@@ -86,21 +114,21 @@ export async function analyzeKosekiPdf(
   mimeType: string
 ): Promise<KosekiAnalysisResult> {
   try {
-    const model = getModel()
+    const ai = getClient()
+    const primaryModel = process.env.GEMINI_MODEL || DEFAULT_MODEL
 
-    const parts = [
-      { text: KOSEKI_TASK_PROMPT },
-      {
-        inlineData: {
-          mimeType,
-          data: base64Data,
-        },
-      },
-    ]
-
-    const result = await model.generateContent(parts)
-    const response = await result.response
-    const text = response.text()
+    let text: string
+    try {
+      text = await generateWithModel(ai, primaryModel, base64Data, mimeType)
+    } catch (error) {
+      // 最新モデルが未提供のAPIキーでも動くよう、安定版へフォールバックする
+      if (primaryModel !== FALLBACK_MODEL && isModelUnavailableError(error)) {
+        console.warn(`モデル ${primaryModel} が利用できないため ${FALLBACK_MODEL} で再試行します`)
+        text = await generateWithModel(ai, FALLBACK_MODEL, base64Data, mimeType)
+      } else {
+        throw error
+      }
+    }
 
     let jsonData: FamilyTreeData
     try {

@@ -9,6 +9,7 @@ import {
   FamilyTreeData
 } from '../utils/familyDataProcessor'
 import { useUndoRedo } from './useUndoRedo'
+import { mergeFamilyTreeData } from '../utils/mergeFamilyData'
 import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
 import { fetchCanEditProject } from '../lib/db/projects'
 
@@ -47,8 +48,11 @@ interface UseFamilyDataReturn {
   updateFamily: (id: string, updates: Partial<FamilyGroup>) => void
   deleteFamily: (id: string) => void
 
-  // 一括インポート・エクスポート
-  importFamilyTreeData: (data: FamilyTreeData, mode?: 'merge' | 'replace') => void
+  // 一括インポート・エクスポート（戻り値は名寄せの結果サマリー）
+  importFamilyTreeData: (
+    data: FamilyTreeData,
+    mode?: 'merge' | 'replace'
+  ) => { mergedPersonCount: number; addedPersonCount: number }
   exportFamilyTreeData: () => FamilyTreeData
   saveNow: () => Promise<void>
 
@@ -92,6 +96,11 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   } = useUndoRedo<FamilyDataState>({ persons: [], families: [] })
 
   const { persons, families } = currentState
+
+  // 非同期処理（複数ファイルの連続マージなど）から呼ばれても常に最新のstateを
+  // 参照できるよう、refに現在値を持たせる（クロージャの古いstateによるデータ欠落防止）
+  const currentStateRef = useRef(currentState)
+  currentStateRef.current = currentState
 
   // データ読み込み
   const loadData = useCallback(async () => {
@@ -306,32 +315,27 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   }, [persons, families, pushState])
 
   // データの一括インポート（戸籍PDF解析結果やJSONファイルの読み込みに使用）
-  // merge: 既存データに人物IDでマージ（同じIDは上書き）/ replace: 既存データを完全に置き換え
+  // merge: 氏名・生没年による名寄せ付きで既存データへ統合（重複人物は単一ノードになる）
+  // replace: 既存データを完全に置き換え
   const importFamilyTreeData = useCallback((data: FamilyTreeData, mode: 'merge' | 'replace' = 'merge') => {
     if (mode === 'replace') {
       const processed = processFamilyData(data)
       pushState({ persons: processed.persons, families: processed.families }, 'データを読み込み（置き換え）')
-      return
+      return { mergedPersonCount: 0, addedPersonCount: data.people.length }
     }
 
-    const existingRaw = toFamilyTreeData(persons, families)
-    const personMap = new Map(existingRaw.people.map(p => [p.id, p]))
-    data.people.forEach(p => personMap.set(p.id, p))
-
-    const familyMap = new Map(existingRaw.families.map(f => [f.id, f]))
-    data.families.forEach(f => familyMap.set(f.id, f))
-
-    const mergedData: FamilyTreeData = {
-      people: Array.from(personMap.values()),
-      families: Array.from(familyMap.values()),
-    }
+    const { persons: currentPersons, families: currentFamilies } = currentStateRef.current
+    const existingRaw = toFamilyTreeData(currentPersons, currentFamilies)
+    const { data: mergedData, mergedPersonCount, addedPersonCount } =
+      mergeFamilyTreeData(existingRaw, data)
 
     const processed = processFamilyData(mergedData)
     pushState(
       { persons: processed.persons, families: processed.families },
-      `戸籍データを読み込み（${data.people.length}人を追加・更新）`
+      `戸籍データを読み込み（追加${addedPersonCount}人・統合${mergedPersonCount}人）`
     )
-  }, [persons, families, pushState])
+    return { mergedPersonCount, addedPersonCount }
+  }, [pushState])
 
   // 現在のデータを可搬性のあるFamilyTreeData形式で取得（書き出し用）
   const exportFamilyTreeData = useCallback((): FamilyTreeData => {

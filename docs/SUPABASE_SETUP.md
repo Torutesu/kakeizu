@@ -16,6 +16,7 @@
 
 1. `0001_init.sql` — テーブル・RLSポリシー・RPC・トリガー
 2. `0002_koseki_files.sql` — 戸籍ファイル用テーブルとストレージバケット
+3. `0003_koseki_images.sql` — 戸籍書類の画像（JPEG/PNG/WebP）対応
 
 （Supabase CLIを使う場合は `supabase db push` でまとめて適用できます）
 
@@ -53,6 +54,8 @@ Authentication → Providers → Email はデフォルトで有効です。
 NEXT_PUBLIC_SUPABASE_URL=https://<プロジェクトID>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon publicキー>
 GEMINI_API_KEY=<Gemini APIキー>
+# 任意: 解析に使うモデル（省略時は gemini-3-pro-preview → 利用不可なら gemini-2.5-pro に自動フォールバック）
+# GEMINI_MODEL=gemini-3-pro-preview
 ```
 
 ## 5. 初回利用（組織のブートストラップ）
@@ -82,5 +85,8 @@ APIやフロントエンドのバグによって他組織・権限外のデー�
 - 戸籍PDFはGemini APIに送信されます。Google AI Studioの無料枠はデータが品質改善に
   使用される可能性があるため、**実運用では有料枠（データが学習に使用されない）の利用を推奨**します
 - `service_role` キーはこのアプリでは使用しません。誤ってクライアントに配布しないでください
-- アップロードされた戸籍PDFは非公開バケットに保存され、閲覧は有効期限60秒の署名付きURL経由でのみ行われます
+- アップロードされた戸籍書類は非公開バケットに保存され、閲覧は有効期限60秒の署名付きURL経由でのみ行われます
+- 解析APIには「ユーザーごとのレート制限（10分に20回）」と「ファイル実体のマジックバイト検証」があり、
+  APIキーの乱用や偽装ファイルの送信を防ぎます
+- すべてのレスポンスに防御的なセキュリティヘッダー（X-Frame-Options / HSTS 等）が付与されます
 - 監査ログは `audit_logs` テーブルに記録され、管理者は「監査ログ」画面から閲覧できます
