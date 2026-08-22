@@ -111,7 +111,11 @@ export function KosekiFilesPanel({
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs text-gray-400">{formatSize(file.fileSize)}</span>
                     {file.analysisStatus === 'success' && (
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs"
+                        title={file.analysisModel ? `解析モデル: ${file.analysisModel}` : undefined}
+                      >
                         {file.personCount ?? 0}人を抽出
                       </Badge>
                     )}

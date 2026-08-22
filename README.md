@@ -7,7 +7,7 @@
 ## 主な機能
 
 - **案件（プロジェクト）管理** — 案件ごとに1つの家系図を管理し、担当者をアサイン
-- **戸籍書類の解析** — PDF・画像（JPEG/PNG/WebP）を複数まとめてアップロード → 最新のGemini AIで自動解析 → 家系図へ取り込み。ファイルは案件に紐づけて非公開ストレージに保存され、再解析・ダウンロード・削除ができます
+- **戸籍書類の解析** — PDF・画像（JPEG/PNG/WebP）を複数まとめてアップロード → 最新のAIで自動解析 → 家系図へ取り込み。**Gemini 3.1 Pro / Claude Opus 5 / GPT-5.2 のマルチプロバイダ構成**で、障害・モデル未提供時は自動フォールバック（選定根拠は [docs/MODEL_RESEARCH.md](./docs/MODEL_RESEARCH.md)）。ファイルは案件に紐づけて非公開ストレージに保存され、再解析・ダウンロード・削除ができます
 - **重複人物の自動名寄せ** — 複数の書類に登場する同一人物（改製・転籍による重複）は、氏名・生没年による保守的な同定で単一ノードに統合され、家系図がMECEに保たれます
 - **家系図エディタ** — 自動レイアウト（親を子の中央上に配置）、初回自動フィット、ドラッグ調整、ズーム・パン、タッチ操作（ピンチズーム対応）、ダブルクリック編集、アンドゥ・リドゥ。数え年（存命は現在、故人は享年）を自動表示し、離婚は破線・養子縁組は点線で区別されます
 - **自動保存と同時編集の保護** — 変更はDBへ自動保存され、楽観ロックで他ユーザーの上書きを防止
@@ -40,7 +40,8 @@ cp .env.example .env.local
 ```
 NEXT_PUBLIC_SUPABASE_URL=      # SupabaseのProject URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY= # Supabaseのanon publicキー
-GEMINI_API_KEY=                # Gemini APIキー（サーバー側でのみ使用）
+GEMINI_API_KEY=                # 解析AI: いずれか1つ以上（サーバー側でのみ使用）
+# ANTHROPIC_API_KEY= / OPENAI_API_KEY= / ANALYSIS_PROVIDER= も利用可（docs/MODEL_RESEARCH.md 参照）
 ```
 
 ### 4. 開発サーバーの起動
@@ -79,13 +80,14 @@ GitHub Actions（`.github/workflows/ci.yml`）でも同じチェックがPR/push
 - `utils/treeLayout.ts` — 家系図の自動レイアウトエンジン（純関数）
 - `lib/supabase/` — Supabaseクライアント（ブラウザ/サーバー）
 - `lib/auth/permissions.ts` — ロール・権限判定（UI制御用。強制はRLSが担う）
+- `lib/analysis/` — 戸籍解析エンジン（Gemini/Claude/GPTのプロバイダ抽象化・フォールバックチェーン・共通スキーマ検証）
 - `lib/db/` — データアクセス層（案件・メンバー・家系図・戸籍ファイル・監査ログ）
 - `supabase/migrations/` — DBスキーマとRLSポリシー
 - `middleware.ts` — 未ログインユーザーのリダイレクト
 
 ## データの取り扱いに関する注意
 
-- 戸籍PDFは解析のためGoogle Gemini APIに送信されます。実運用では**データが学習に使用されない有料枠の利用を推奨**します
+- 戸籍書類は解析のため設定されたAIプロバイダ（Google Gemini / Anthropic Claude / OpenAI GPT）に送信されます。実運用では**データが学習に使用されないAPIプラン（各社の有料API）の利用を推奨**します
 - アクセス制御はRLSでDB層で強制されますが、戸籍は機微情報です。メンバーのロール付与は最小権限で運用してください
 - アップロードされた戸籍PDFは非公開バケットに保存され、閲覧は有効期限60秒の署名付きURLでのみ行われます
 - `public/` 配下のサンプルJSONは開発用データで、Webから直接アクセス可能です。実データを置かないでください

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { analyzeKosekiPdf } from '@/lib/gemini-server'
+import { runKosekiAnalysis } from '@/lib/analysis'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { validateFileContent, isAllowedKosekiMimeType } from '@/lib/security/fileValidation'
 import { kosekiAnalysisRateLimiter } from '@/lib/security/rateLimit'
@@ -119,21 +119,25 @@ export async function POST(request: NextRequest) {
     }
 
     const base64Data = fileBuffer.toString('base64')
-    const result = await analyzeKosekiPdf(base64Data, mimeType)
+    const result = await runKosekiAnalysis({ base64Data, mimeType })
 
-    // 解析結果をファイルの状態として保存する（一覧で成否と抽出件数を確認できるようにする）
+    // 解析結果をファイルの状態として保存する（一覧で成否・抽出件数・使用モデルを確認できるようにする）
     await supabase
       .from('koseki_files')
       .update({
         analysis_status: result.success ? 'success' : 'failed',
-        analysis_error: result.success ? null : (result.error ?? '解析に失敗しました'),
+        analysis_error: result.success ? null : result.error,
         analyzed_at: new Date().toISOString(),
-        person_count: result.success ? (result.data?.people.length ?? 0) : null,
-        family_count: result.success ? (result.data?.families.length ?? 0) : null,
+        person_count: result.success ? result.data.people.length : null,
+        family_count: result.success ? result.data.families.length : null,
+        analysis_model: result.success ? `${result.provider}/${result.model}` : null,
       })
       .eq('id', fileId)
 
-    return NextResponse.json(result, { status: result.success ? 200 : 422 })
+    if (result.success) {
+      return NextResponse.json({ success: true, data: result.data }, { status: 200 })
+    }
+    return NextResponse.json({ success: false, error: result.error }, { status: 422 })
   } catch (error) {
     console.error('戸籍解析エラー:', error)
     return NextResponse.json(

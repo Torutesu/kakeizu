@@ -20,6 +20,7 @@ export interface KosekiFile {
   mimeType: string
   analysisStatus: AnalysisStatus
   analysisError: string | null
+  analysisModel: string | null
   analyzedAt: string | null
   personCount: number | null
   familyCount: number | null
@@ -35,6 +36,7 @@ interface KosekiFileRow {
   mime_type: string
   analysis_status: AnalysisStatus
   analysis_error: string | null
+  analysis_model: string | null
   analyzed_at: string | null
   person_count: number | null
   family_count: number | null
@@ -51,6 +53,7 @@ function toKosekiFile(row: KosekiFileRow): KosekiFile {
     mimeType: row.mime_type,
     analysisStatus: row.analysis_status,
     analysisError: row.analysis_error,
+    analysisModel: row.analysis_model,
     analyzedAt: row.analyzed_at,
     personCount: row.person_count,
     familyCount: row.family_count,
@@ -59,7 +62,7 @@ function toKosekiFile(row: KosekiFileRow): KosekiFile {
 }
 
 const SELECT_COLUMNS =
-  'id, project_id, storage_path, file_name, file_size, mime_type, analysis_status, analysis_error, analyzed_at, person_count, family_count, created_at'
+  'id, project_id, storage_path, file_name, file_size, mime_type, analysis_status, analysis_error, analysis_model, analyzed_at, person_count, family_count, created_at'
 
 export async function fetchKosekiFiles(projectId: string): Promise<KosekiFile[]> {
   const supabase = getSupabaseBrowserClient()

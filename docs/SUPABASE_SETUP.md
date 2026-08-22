@@ -17,6 +17,7 @@
 1. `0001_init.sql` — テーブル・RLSポリシー・RPC・トリガー
 2. `0002_koseki_files.sql` — 戸籍ファイル用テーブルとストレージバケット
 3. `0003_koseki_images.sql` — 戸籍書類の画像（JPEG/PNG/WebP）対応
+4. `0004_analysis_model.sql` — 解析に使用したAIモデルの記録
 
 （Supabase CLIを使う場合は `supabase db push` でまとめて適用できます）
 
@@ -53,10 +54,13 @@ Authentication → Providers → Email はデフォルトで有効です。
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://<プロジェクトID>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon publicキー>
-GEMINI_API_KEY=<Gemini APIキー>
-# 任意: 解析に使うモデル（省略時は gemini-3-pro-preview → 利用不可なら gemini-2.5-pro に自動フォールバック）
-# GEMINI_MODEL=gemini-3-pro-preview
+GEMINI_API_KEY=<Gemini APIキー>      # 既定プロバイダ（gemini-3.1-pro）
+# ANTHROPIC_API_KEY=<Claude APIキー> # 任意: 精度最優先の場合の選択肢＋フォールバック
+# OPENAI_API_KEY=<OpenAI APIキー>    # 任意: フォールバック
+# ANALYSIS_PROVIDER=gemini           # 任意: 第一候補の切り替え
 ```
+
+解析モデルの選定根拠と切り替え方法は [MODEL_RESEARCH.md](./MODEL_RESEARCH.md) を参照してください。
 
 ## 5. 初回利用（組織のブートストラップ）
 
