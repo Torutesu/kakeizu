@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "benchmark": "tsx scripts/benchmark/run.ts",
-    "db:bundle": "bash scripts/bundle-sql.sh"
+    "db:bundle": "bash scripts/bundle-sql.sh",
+    "provision": "node scripts/provision.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

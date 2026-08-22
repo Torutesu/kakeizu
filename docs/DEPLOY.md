@@ -3,6 +3,25 @@
 Vercel + Supabase で本番URLに公開する手順。**所要25分程度**（アカウントがあれば）。
 社内利用が前提のため、公開後もアプリ自体がログイン必須で守られる。
 
+## 方法A: 全自動プロビジョニング（推奨・約10分）
+
+トークン2つを用意すれば、Supabaseプロジェクト作成 → スキーマ適用 → Vercelデプロイ →
+認証URL設定 → 疎通確認までを1コマンドで行える:
+
+```bash
+# トークンの発行:
+#   SUPABASE_ACCESS_TOKEN: https://supabase.com/dashboard/account/tokens
+#   VERCEL_TOKEN:          https://vercel.com/account/settings/tokens （有効期限は短く設定）
+SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... pnpm provision
+```
+
+- 冪等: 途中で失敗しても再実行すれば続きから進む（既存の同名プロジェクトは再利用）
+- 完了後は**両トークンを必ず失効させる**こと
+- Googleログインだけは手動設定が必要（下記「3. 認証」のGoogle項。メール+パスワードは即使える）
+- mainマージでの自動デプロイにしたい場合は、VercelダッシュボードでGitHub連携を後から有効化する
+
+以下は手動で行う場合（方法B）の手順。
+
 ## 構成
 
 ```
