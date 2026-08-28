@@ -18,6 +18,8 @@
 //   PROJECT_NAME           プロジェクト名（既定: kakeizu）
 //   SUPABASE_REGION        リージョン（既定: ap-northeast-1 = 東京）
 //   SUPABASE_ORG_ID        複数組織がある場合に指定（省略時は最初の組織）
+//   VERCEL_TEAM_ID         Vercelのチーム配下に作る場合に指定
+//   VERCEL_CLI_VERSION     使用するVercel CLIのバージョン（既定: 48）
 // ============================================================================
 
 import fs from 'node:fs'
@@ -29,6 +31,9 @@ const VERCEL_API = 'https://api.vercel.com'
 
 const PROJECT_NAME = process.env.PROJECT_NAME || 'kakeizu'
 const SUPABASE_REGION = process.env.SUPABASE_REGION || 'ap-northeast-1'
+const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID || ''
+// 出力・フラグの互換性を固定するためVercel CLIのバージョンをピン留めする
+const VERCEL_CLI_VERSION = process.env.VERCEL_CLI_VERSION || '48'
 
 const supabaseToken = process.env.SUPABASE_ACCESS_TOKEN
 const vercelToken = process.env.VERCEL_TOKEN
@@ -40,6 +45,12 @@ function fail(message) {
 
 function step(message) {
   console.log(`\n▶ ${message}`)
+}
+
+// Vercel APIはチームスコープを ?teamId= で受ける
+function vercelPath(path) {
+  if (!VERCEL_TEAM_ID) return path
+  return path + (path.includes('?') ? '&' : '?') + `teamId=${VERCEL_TEAM_ID}`
 }
 
 async function api(base, token, path, options = {}) {
@@ -58,13 +69,14 @@ async function api(base, token, path, options = {}) {
     const detail = json?.message ?? json?.error?.message ?? text.slice(0, 500)
     const error = new Error(`${options.method ?? 'GET'} ${path} -> ${response.status}: ${detail}`)
     error.status = response.status
+    error.body = json
     throw error
   }
   return json
 }
 
 const supa = (path, options) => api(SUPABASE_API, supabaseToken, path, options)
-const vercel = (path, options) => api(VERCEL_API, vercelToken, path, options)
+const vercel = (path, options) => api(VERCEL_API, vercelToken, vercelPath(path), options)
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -78,11 +90,16 @@ async function provisionSupabase() {
   const orgs = await supa('/v1/organizations')
   if (!orgs?.length) fail('Supabaseの組織が見つかりません。ダッシュボードで一度ログインして組織を作成してください。')
   const orgId = process.env.SUPABASE_ORG_ID || orgs[0].id
+  if (!orgs.some(o => o.id === orgId)) {
+    fail(`SUPABASE_ORG_ID=${orgId} はこのトークンでアクセスできる組織にありません。`)
+  }
   console.log(`  組織: ${orgs.find(o => o.id === orgId)?.name ?? orgId}`)
 
-  step(`Supabase: プロジェクト「${PROJECT_NAME}」を作成（既存なら再利用）`)
+  step(`Supabase: プロジェクト「${PROJECT_NAME}」を作成（同一組織内に既存なら再利用）`)
   const projects = await supa('/v1/projects')
-  let project = projects.find(p => p.name === PROJECT_NAME)
+  // 別組織の同名プロジェクトを誤って再利用しないよう、必ず組織IDで絞り込む
+  let project = projects.find(p => p.name === PROJECT_NAME && p.organization_id === orgId)
+  let created = false
   if (project) {
     console.log(`  既存プロジェクトを再利用: ${project.id}`)
   } else {
@@ -96,41 +113,61 @@ async function provisionSupabase() {
         db_pass: dbPassword,
       }),
     })
+    created = true
     console.log(`  作成しました: ${project.id}`)
     console.log(`  ⚠ DBパスワード（直接DB接続時のみ必要。安全な場所に保管してください）: ${dbPassword}`)
   }
   const ref = project.id
 
-  step('Supabase: プロジェクトの起動を待機（数分かかることがあります）')
+  step('Supabase: プロジェクトの状態を確認')
+  let status = (await supa(`/v1/projects/${ref}`)).status
+  // 一時停止（無料枠の自動ポーズ等）は待っても復帰しないので、復元を試みる
+  if (status === 'INACTIVE' || status === 'PAUSED') {
+    console.log(`  一時停止中（${status}）のため復元を試みます`)
+    try {
+      await supa(`/v1/projects/${ref}/restore`, { method: 'POST', body: JSON.stringify({}) })
+    } catch (error) {
+      fail(`プロジェクトが一時停止しており自動復元に失敗しました（${error.message}）。` +
+        `\n  ダッシュボード（https://supabase.com/dashboard/project/${ref}）で「Restore」してから再実行してください。`)
+    }
+  }
+  process.stdout.write('  起動待機')
   for (let i = 0; i < 60; i++) {
-    const status = (await supa(`/v1/projects/${ref}`)).status
+    status = (await supa(`/v1/projects/${ref}`)).status
     if (status === 'ACTIVE_HEALTHY') break
+    if (status === 'INACTIVE' || status === 'PAUSED') {
+      fail(`プロジェクトが一時停止状態のままです（${status}）。ダッシュボードでRestoreしてください。`)
+    }
     if (i === 59) fail(`プロジェクトが起動しません（status=${status}）。時間をおいて再実行してください。`)
     process.stdout.write('.')
     await sleep(10_000)
   }
   console.log(' 起動済み')
 
-  step('Supabase: スキーマ（supabase/setup_all.sql）を適用')
-  const sql = fs.readFileSync('supabase/setup_all.sql', 'utf8')
-  try {
+  // スキーマ適用は「新規作成時のみ」。再利用時は既存スキーマを壊さないためスキップし、
+  // 新しいマイグレーションがある場合は手動適用を案内する（成功偽装を避ける）。
+  if (created) {
+    step('Supabase: スキーマ（supabase/setup_all.sql）を適用')
+    const sql = fs.readFileSync('supabase/setup_all.sql', 'utf8')
     await supa(`/v1/projects/${ref}/database/query`, {
       method: 'POST',
       body: JSON.stringify({ query: sql }),
     })
     console.log('  適用しました')
-  } catch (error) {
-    if (/already exists/i.test(String(error.message))) {
-      console.log('  一部のオブジェクトが既に存在します（再実行のためスキップ扱い）')
-    } else {
-      throw error
-    }
+  } else {
+    step('Supabase: スキーマ適用をスキップ（既存プロジェクト）')
+    console.log('  ⚠ 新しいマイグレーションを追加している場合は、ダッシュボードのSQL Editorで')
+    console.log(`     supabase/migrations/ の未適用分を手動実行してください（project: ${ref}）`)
   }
 
-  step('Supabase: anonキーを取得')
-  const keys = await supa(`/v1/projects/${ref}/api-keys`)
-  const anonKey = keys.find(k => k.name === 'anon')?.api_key ?? keys.find(k => /publishable|anon/i.test(k.name))?.api_key
-  if (!anonKey) fail('anonキーが取得できませんでした。ダッシュボードのSettings → APIから手動で取得してください。')
+  step('Supabase: anonキー（publishableキー）を取得')
+  const keys = await supa(`/v1/projects/${ref}/api-keys?reveal=true`)
+  // 旧APIキー（name=anon）と新APIキー（type=publishable）の両方に対応する
+  const anonKey =
+    keys.find(k => k.name === 'anon')?.api_key ??
+    keys.find(k => k.type === 'publishable')?.api_key ??
+    keys.find(k => /publishable|anon/i.test(k.name ?? ''))?.api_key
+  if (!anonKey) fail('anon/publishableキーが取得できませんでした。ダッシュボードのSettings → APIから手動で取得してください。')
 
   return { ref, url: `https://${ref}.supabase.co`, anonKey }
 }
@@ -138,16 +175,32 @@ async function provisionSupabase() {
 // ---------------------------------------------------------------------------
 // 2. Vercel
 // ---------------------------------------------------------------------------
-function vercelCli(args, { allowFail = false } = {}) {
+function vercelCli(args) {
+  const fullArgs = [`vercel@${VERCEL_CLI_VERSION}`, ...args, '--token', vercelToken]
+  if (VERCEL_TEAM_ID) fullArgs.push('--scope', VERCEL_TEAM_ID)
   try {
-    return execFileSync('npx', ['vercel', ...args, '--token', vercelToken], {
+    return execFileSync('npx', ['-y', ...fullArgs], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
   } catch (error) {
-    if (allowFail) return null
-    throw new Error(`vercel ${args.join(' ')} が失敗: ${error.stderr ?? error.message}`)
+    throw new Error(`vercel ${args.join(' ')} が失敗:\n${error.stderr ?? error.message}`)
   }
+}
+
+async function getProductionUrl() {
+  // プロジェクトの本番エイリアス（固定URL）を取得する。取得できなければnull。
+  try {
+    const info = await vercel(`/v9/projects/${PROJECT_NAME}`)
+    const productionAlias = (info?.alias ?? []).find(
+      a => a.target === 'PRODUCTION' || a.environment === 'production'
+    )
+    if (productionAlias?.domain) return `https://${productionAlias.domain}`
+    // フォールバック: 最新の本番デプロイのURL
+    const latest = (info?.latestDeployments ?? [])[0]
+    if (latest?.url) return `https://${latest.url}`
+  } catch { /* 取得失敗時はnull */ }
+  return null
 }
 
 async function provisionVercel(supabase) {
@@ -173,8 +226,11 @@ async function provisionVercel(supabase) {
     ['ANALYSIS_PROVIDER', process.env.ANALYSIS_PROVIDER],
   ].filter(([, value]) => Boolean(value))
 
-  if (!envVars.some(([key]) => key === 'GEMINI_API_KEY' || key === 'ANTHROPIC_API_KEY' || key === 'OPENAI_API_KEY')) {
-    console.log('  ⚠ 解析AIのAPIキーが未指定です（後からVercelダッシュボードで追加できます）')
+  const hasAiKey = envVars.some(([key]) =>
+    ['GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'].includes(key)
+  )
+  if (!hasAiKey) {
+    console.log('  ⚠ 解析AIのAPIキーが未指定です（解析機能は動きません。後から追加可能）')
   }
 
   await vercel(`/v10/projects/${PROJECT_NAME}/env?upsert=true`, {
@@ -190,21 +246,26 @@ async function provisionVercel(supabase) {
   })
   console.log(`  設定: ${envVars.map(([k]) => k).join(', ')}`)
 
+  step('Vercel: プロジェクトへリンク')
+  // linkが失敗すると deploy が別プロジェクトを勝手に作ってしまうため、ここで失敗させる
+  vercelCli(['link', '--yes', '--project', PROJECT_NAME])
+  console.log('  リンク完了')
+
   step('Vercel: 本番デプロイ（ソースをアップロードしてリモートビルド。数分かかります）')
-  vercelCli(['link', '--yes', '--project', PROJECT_NAME], { allowFail: true })
   const deployOutput = vercelCli(['deploy', '--prod', '--yes'])
   const deployUrl = (deployOutput.match(/https:\/\/[^\s]+\.vercel\.app/g) ?? []).at(-1)
   if (!deployUrl) fail(`デプロイURLを取得できませんでした。出力:\n${deployOutput}`)
   console.log(`  デプロイ完了: ${deployUrl}`)
 
-  // 本番エイリアス（プロジェクトの固定URL）を取得。取れなければデプロイURLを使う
-  let productionUrl = deployUrl
-  try {
-    const projectInfo = await vercel(`/v9/projects/${PROJECT_NAME}`)
-    const alias = projectInfo?.alias?.find(a => !a.deployment || a.deployment)?.domain ??
-      projectInfo?.targets?.production?.alias?.[0]
-    if (alias) productionUrl = `https://${alias}`
-  } catch { /* エイリアス取得は必須ではない */ }
+  // 認証Site URLには「固定の本番エイリアス」を使う。デプロイ毎URLを固定URLに使うと
+  // 次のデプロイで陳腐化し、OAuth/確認メールのリダイレクトが壊れるため。
+  const productionUrl = (await getProductionUrl()) ?? deployUrl
+  if (productionUrl === deployUrl) {
+    console.log('  ⚠ 固定の本番エイリアスを取得できず、デプロイURLを使います。' +
+      '独自ドメイン設定後は手順3のURL設定を更新してください。')
+  } else {
+    console.log(`  本番URL（固定エイリアス）: ${productionUrl}`)
+  }
 
   return { productionUrl }
 }
@@ -214,19 +275,32 @@ async function provisionVercel(supabase) {
 // ---------------------------------------------------------------------------
 async function configureAuth(supabase, productionUrl) {
   step('Supabase: 認証のSite URLとリダイレクトURLを設定')
+  const callback = `${productionUrl}/auth/callback`
+  const localCallback = 'http://localhost:3000/auth/callback'
+
+  // 既存の許可リストを保持したまま、必要なURLを追加する（再実行で独自ドメイン等を消さない）
+  let existing = []
+  try {
+    const current = await supa(`/v1/projects/${supabase.ref}/config/auth`)
+    existing = (current?.uri_allow_list ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  } catch { /* 取得失敗時は新規設定として続行 */ }
+
+  const merged = Array.from(new Set([...existing, callback, localCallback]))
+
   await supa(`/v1/projects/${supabase.ref}/config/auth`, {
     method: 'PATCH',
     body: JSON.stringify({
       site_url: productionUrl,
-      uri_allow_list: `${productionUrl}/auth/callback,http://localhost:3000/auth/callback`,
+      uri_allow_list: merged.join(','),
     }),
   })
   console.log(`  Site URL: ${productionUrl}`)
+  console.log(`  許可リスト: ${merged.join(', ')}`)
 }
 
 async function smokeTest(productionUrl) {
   step('疎通確認: /api/health')
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 18; i++) {
     try {
       const response = await fetch(`${productionUrl}/api/health`)
       if (response.ok) {
@@ -235,12 +309,18 @@ async function smokeTest(productionUrl) {
         if (!health.supabaseConfigured) {
           console.log('  ⚠ supabaseConfigured=false: 環境変数設定後の再デプロイが必要な可能性があります')
         }
-        return
+        return true
+      }
+      // Vercelの保護（Standard Protection）が有効だと401になる
+      if (response.status === 401) {
+        console.log('  ⚠ 401: VercelのDeployment Protectionが有効な可能性があります' +
+          '（Project Settings → Deployment Protection で本番を公開に）')
       }
     } catch { /* リトライ */ }
     await sleep(10_000)
   }
   console.log('  ⚠ ヘルスチェックに到達できませんでした。デプロイ状態をVercelダッシュボードで確認してください。')
+  return false
 }
 
 // ---------------------------------------------------------------------------
@@ -252,10 +332,10 @@ async function main() {
   const supabase = await provisionSupabase()
   const { productionUrl } = await provisionVercel(supabase)
   await configureAuth(supabase, productionUrl)
-  await smokeTest(productionUrl)
+  const healthy = await smokeTest(productionUrl)
 
   console.log('\n============================================================')
-  console.log(`✅ 完了: ${productionUrl}`)
+  console.log(`${healthy ? '✅ 完了' : '⚠ デプロイは実行しましたが疎通確認が未完了'}: ${productionUrl}`)
   console.log('============================================================')
   console.log('次にやること:')
   console.log('  1. 上記URLを開いてアカウント作成 → 組織作成（最初の人がadminになります）')
