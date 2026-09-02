@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Trash2, Plus } from "lucide-react"
+import { useConfirm } from '../hooks/useConfirm'
 import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
 
 interface RelationshipEditDialogProps {
@@ -40,6 +41,7 @@ export function RelationshipEditDialog({
   const [newChild, setNewChild] = useState('')
   const [newParent, setNewParent] = useState('')
   const [parentType, setParentType] = useState<'blood' | 'adoption'>('blood')
+  const { confirm, confirmDialog } = useConfirm()
 
   // 現在の人物に関連する家族関係を取得
   const personFamilies = families.filter(family => 
@@ -123,8 +125,14 @@ export function RelationshipEditDialog({
     setNewParent('')
   }
 
-  const handleRemoveFamily = (familyId: string) => {
-    if (confirm('この家族関係を削除してもよろしいですか？')) {
+  const handleRemoveFamily = async (familyId: string) => {
+    const confirmed = await confirm({
+      title: 'この家族関係を削除しますか？',
+      description: '人物そのものは残り、つながりだけが削除されます。元に戻す（Cmd+Z）で取り消せます。',
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (confirmed) {
       onDeleteFamily(familyId)
     }
   }
@@ -134,6 +142,7 @@ export function RelationshipEditDialog({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        {confirmDialog}
         <DialogHeader>
           <DialogTitle>家族関係の編集 - {person.displayName}</DialogTitle>
         </DialogHeader>

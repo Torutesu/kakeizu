@@ -1,7 +1,7 @@
-import { useCallback, useRef, useEffect, useState } from 'react'
+import { useCallback, useRef, useEffect, useState, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { ZoomIn, ZoomOut, RotateCcw, Maximize } from "lucide-react"
-import { PersonNode } from './PersonNode'
+import { PersonNode, RelationEmphasis } from './PersonNode'
 import { FamilyTreeLines } from './FamilyTreeLines'
 import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
 import { useLayoutCalculation } from '../hooks/useLayoutCalculation'
@@ -65,13 +65,42 @@ export function FamilyTree({
   const {
     layoutPersons,
     marriageLines,
-    parentChildLines,
+    descentConnections,
     setDragOverride,
     getBounds,
     getGenerationFromY,
     snapToGeneration,
     getGenerationY
   } = useLayoutCalculation(persons, families)
+
+  // 選択中の人物と直接つながる人物（配偶者・親・子）のID。
+  // 大きな家系図でも「誰とつながっているか」が一目で分かるようにする。
+  const relatedIds = useMemo(() => {
+    if (!selectedPerson) return null
+    const ids = new Set<string>()
+    families.forEach(family => {
+      const parentIds = family.parents.map(p => p.id)
+      const childIds = family.children.map(c => c.id)
+      if (parentIds.includes(selectedPerson.id)) {
+        // 配偶者と子
+        parentIds.forEach(id => ids.add(id))
+        childIds.forEach(id => ids.add(id))
+      }
+      if (childIds.includes(selectedPerson.id)) {
+        // 親ときょうだい
+        parentIds.forEach(id => ids.add(id))
+        childIds.forEach(id => ids.add(id))
+      }
+    })
+    ids.delete(selectedPerson.id)
+    return ids
+  }, [selectedPerson, families])
+
+  const emphasisFor = useCallback((personId: string): RelationEmphasis => {
+    if (!selectedPerson || !relatedIds) return 'none'
+    if (personId === selectedPerson.id) return 'selected'
+    return relatedIds.has(personId) ? 'related' : 'unrelated'
+  }, [selectedPerson, relatedIds])
 
   // ズーム・パン状態
   const [zoom, setZoom] = useState<number>(LAYOUT_CONFIG.defaultZoom)
@@ -384,6 +413,13 @@ export function FamilyTree({
     setDragOffset({ x: 0, y: 0 })
   }, [draggedPerson, getGenerationFromY, setDragOverride, onPersonPositionUpdate, onPersonSelect])
 
+  // 「F」キーからの全体表示要求を受け取る（アプリ側でキー入力を一元管理しているため）
+  useEffect(() => {
+    const handleFitRequest = () => handleFitToView()
+    window.addEventListener('family-tree:fit-to-view', handleFitRequest)
+    return () => window.removeEventListener('family-tree:fit-to-view', handleFitRequest)
+  }, [handleFitToView])
+
   // 初回表示時に家系図全体が収まるよう自動フィットする
   const hasAutoFittedRef = useRef(false)
   useEffect(() => {
@@ -606,7 +642,7 @@ export function FamilyTree({
             {/* 関係線 */}
             <FamilyTreeLines
               marriageLines={marriageLines}
-              parentChildLines={parentChildLines}
+              descentConnections={descentConnections}
               bounds={contentBounds}
             />
 
@@ -617,6 +653,7 @@ export function FamilyTree({
                 person={person}
                 isSelected={selectedPerson?.id === person.id}
                 isDragging={isDragging && draggedPerson?.id === person.id}
+                emphasis={emphasisFor(person.id)}
                 onDragStart={handlePersonDragStart}
                 onEdit={onPersonEdit}
               />

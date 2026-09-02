@@ -22,6 +22,10 @@ import {
   ArrowLeft,
   Eye,
   RefreshCw,
+  PanelLeft,
+  PanelRight,
+  X,
+  Keyboard,
 } from "lucide-react"
 
 import { FamilyTree, FocusPersonRequest } from "./FamilyTree"
@@ -34,6 +38,8 @@ import { SettingsDialog } from "./SettingsDialog"
 import { useFamilyData, SaveStatus } from "../hooks/useFamilyData"
 import { useZoomSettings } from "../hooks/useZoomSettings"
 import { useKosekiFiles } from "../hooks/useKosekiFiles"
+import { useConfirm } from "../hooks/useConfirm"
+import { ShortcutHelpDialog } from "./ShortcutHelpDialog"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { formatKazoeAge } from "../utils/age"
@@ -150,41 +156,96 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   const [isAddPersonOpen, setIsAddPersonOpen] = useState(false)
   const [isKosekiUploadOpen, setIsKosekiUploadOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false)
 
-  // キーボードショートカット
+  // 画面が狭いときのサイドバー開閉（広い画面では常時表示）
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false)
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false)
+
+  // 確認ダイアログ（ブラウザ標準のconfirmを使わない）
+  const { confirm, confirmDialog } = useConfirm()
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // キーボードショートカット（一覧は「?」キーのヘルプで確認できる）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const modifier = e.metaKey || e.ctrlKey
+
+      // 検索はテキスト入力中でも開けるようにする（ブラウザ既定の検索を置き換える）
+      if (modifier && e.key === 'k') {
+        e.preventDefault()
+        setIsRightPanelOpen(true)
+        // パネルの表示を待ってからフォーカスする
+        requestAnimationFrame(() => searchInputRef.current?.focus())
+        return
+      }
+
       if (isTextInputTarget(e.target)) return
 
-      // Escで選択解除（閲覧のみでも有効）
+      // Escで選択解除・パネルを閉じる（閲覧のみでも有効）
       if (e.key === 'Escape') {
         setSelectedPersonId(null)
+        setIsLeftPanelOpen(false)
+        setIsRightPanelOpen(false)
+        return
+      }
+
+      // ショートカット一覧
+      if (e.key === '?') {
+        e.preventDefault()
+        setIsShortcutHelpOpen(true)
+        return
+      }
+
+      // 全体表示（キャンバス側で処理するためイベントを送る）
+      if (e.key === 'f' && !modifier) {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('family-tree:fit-to-view'))
         return
       }
 
       if (!canEdit) return
 
       // Command+Z (Mac) または Ctrl+Z (Windows/Linux) でアンドゥ
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+      if (modifier && e.key === 'z' && !e.shiftKey) {
         e.preventDefault()
-        if (canUndo) {
-          undo()
-        }
+        if (canUndo) undo()
+        return
       }
 
       // Command+Shift+Z (Mac) または Ctrl+Y (Windows/Linux) でリドゥ
-      if (((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) ||
-          ((e.ctrlKey) && e.key === 'y')) {
+      if ((modifier && e.key === 'z' && e.shiftKey) || (e.ctrlKey && e.key === 'y')) {
         e.preventDefault()
-        if (canRedo) {
-          redo()
-        }
+        if (canRedo) redo()
+        return
+      }
+
+      // 保存
+      if (modifier && e.key === 's') {
+        e.preventDefault()
+        void handleManualSave()
+        return
+      }
+
+      if (modifier) return
+
+      // 単独キーの操作
+      if (e.key === 'n') {
+        e.preventDefault()
+        setIsAddPersonOpen(true)
+      } else if (e.key === 'e' && selectedPersonId) {
+        e.preventDefault()
+        setIsPersonEditOpen(true)
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPersonId) {
+        e.preventDefault()
+        void handleDeleteSelectedPerson()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [canUndo, canRedo, undo, redo, canEdit])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canUndo, canRedo, undo, redo, canEdit, selectedPersonId])
 
   // 人物選択ハンドラー
   const handlePersonSelect = useCallback((person: ProcessedPerson) => {
@@ -219,6 +280,21 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         : `戸籍データを取り込みました（${addedPersonCount}人）`
     )
   }
+
+  // 選択中の人物を削除（確認あり）
+  const handleDeleteSelectedPerson = useCallback(async () => {
+    if (!canEdit || !selectedPerson) return
+    const confirmed = await confirm({
+      title: `${selectedPerson.displayName}を削除しますか？`,
+      description: 'この人物と、関係する家族のつながりも削除されます。元に戻す（Cmd+Z）で取り消せます。',
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (!confirmed) return
+    deletePerson(selectedPerson.id)
+    setSelectedPersonId(null)
+    toast.success('人物を削除しました')
+  }, [canEdit, selectedPerson, confirm, deletePerson])
 
   // 手動保存ハンドラー
   const handleManualSave = async () => {
@@ -284,10 +360,15 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         return
       }
 
-      const shouldReplace = confirm(
-        '現在の家系図を、読み込むファイルの内容で置き換えますか？\n' +
-        '「キャンセル」を選ぶと、既存のデータに追加でマージされます。'
-      )
+      const shouldReplace = await confirm({
+        title: '読み込み方法を選んでください',
+        description:
+          `${data.people.length}人分のデータを読み込みます。\n\n` +
+          '「置き換える」: 現在の家系図を消して、ファイルの内容にします。\n' +
+          '「追加でマージ」: 同じ人物は統合し、新しい人物だけ追加します。',
+        confirmLabel: '置き換える',
+        cancelLabel: '追加でマージ',
+      })
       const { mergedPersonCount, addedPersonCount } = importFamilyTreeData(
         data,
         shouldReplace ? 'replace' : 'merge'
@@ -342,14 +423,23 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* ヘッダー */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <Link href="/projects">
               <Button variant="ghost" size="sm" title="案件一覧に戻る">
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </Link>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="lg:hidden"
+              title="資料パネルを開く"
+              onClick={() => setIsLeftPanelOpen(true)}
+            >
+              <PanelLeft className="w-4 h-4" />
+            </Button>
             <h1 className="text-xl font-bold text-gray-900 truncate">
               {project?.name || '家系図'}
             </h1>
@@ -440,10 +530,27 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setIsShortcutHelpOpen(true)}
+              title="キーボードショートカット (?)"
+            >
+              <Keyboard className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setIsSettingsOpen(true)}
               title="設定（ズーム・ピンチ感度など）"
             >
               <Settings className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="lg:hidden"
+              title="人物パネルを開く"
+              onClick={() => setIsRightPanelOpen(true)}
+            >
+              <PanelRight className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -451,10 +558,27 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
       <div className="flex-1 flex overflow-hidden">
         {/* 左サイドバー */}
+        {/* 画面が狭いときのドロワー用の背景 */}
+        {(isLeftPanelOpen || isRightPanelOpen) && (
+          <div
+            className="fixed inset-0 z-30 bg-black/30 lg:hidden"
+            onClick={() => { setIsLeftPanelOpen(false); setIsRightPanelOpen(false) }}
+            aria-hidden="true"
+          />
+        )}
+
         <aside
           style={{ width: UI_CONFIG.leftSidebarWidth }}
-          className="bg-white border-r border-gray-200 flex flex-col overflow-y-auto"
+          className={`bg-white border-r border-gray-200 flex flex-col overflow-y-auto
+            max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:shadow-xl max-lg:transition-transform
+            ${isLeftPanelOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'}`}
         >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 lg:hidden">
+            <span className="text-sm font-medium text-gray-900">資料</span>
+            <Button variant="ghost" size="sm" onClick={() => setIsLeftPanelOpen(false)}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
           {canEdit && (
             <div className="p-6 border-b border-gray-200">
               <div
@@ -527,13 +651,26 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         </main>
 
         {/* 右サイドバー - 情報表示・検索 */}
-        <aside style={{ width: UI_CONFIG.rightSidebarWidth }} className="bg-white border-l border-gray-200 flex flex-col">
+        <aside
+          style={{ width: UI_CONFIG.rightSidebarWidth }}
+          className={`bg-white border-l border-gray-200 flex flex-col
+            max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:shadow-xl max-lg:transition-transform
+            ${isRightPanelOpen ? 'max-lg:translate-x-0' : 'max-lg:translate-x-full'}`}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 lg:hidden">
+            <span className="text-sm font-medium text-gray-900">人物</span>
+            <Button variant="ghost" size="sm" onClick={() => setIsRightPanelOpen(false)}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+
           {/* 検索機能 */}
           <div className="p-6 border-b border-gray-200">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
-                placeholder="人物を検索..."
+                ref={searchInputRef}
+                placeholder="人物を検索... (Cmd+K)"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
@@ -551,7 +688,10 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                     <div
                       key={person.id}
                       className="p-2 border border-gray-200 rounded cursor-pointer hover:bg-gray-50"
-                      onClick={() => handleSearchResultSelect(person)}
+                      onClick={() => {
+                        handleSearchResultSelect(person)
+                        setIsRightPanelOpen(false)
+                      }}
                     >
                       <div className="text-sm font-medium">{person.displayName}</div>
                       <div className="text-xs text-gray-500">第{person.generation}世代</div>
@@ -602,12 +742,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => {
-                          if (confirm(`${selectedPerson.displayName}を削除してもよろしいですか？`)) {
-                            deletePerson(selectedPerson.id)
-                            setSelectedPersonId(null)
-                          }
-                        }}
+                        title="削除 (Delete)"
+                        onClick={handleDeleteSelectedPerson}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -750,6 +886,14 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         onDataExtracted={handleKosekiDataExtracted}
         onFilesChanged={refreshKosekiFiles}
       />
+
+      <ShortcutHelpDialog
+        isOpen={isShortcutHelpOpen}
+        onClose={() => setIsShortcutHelpOpen(false)}
+        canEdit={canEdit}
+      />
+
+      {confirmDialog}
 
       <SettingsDialog
         isOpen={isSettingsOpen}

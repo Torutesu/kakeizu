@@ -1,13 +1,19 @@
 // 家系図アプリケーションの設定定数
 export const LAYOUT_CONFIG = {
   // レイアウト設定
-  generationSpacing: 250,     // 世代間隔
-  minFamilySpacing: 450,      // 家族間の最小間隔
-  cardSpacing: 200,           // カード間の最小間隔
-  spouseSpacing: 180,         // 配偶者間の間隔
+  generationSpacing: 260,     // 世代間隔
+  minFamilySpacing: 460,      // 家族間の最小間隔
+  cardSpacing: 210,           // カード間の最小間隔
+  // 配偶者間の間隔。結婚線が潰れて見えないことがないよう、
+  // カード幅+56px以上を確保する（56pxが結婚線の見える長さ）
+  spouseSpacing: 216,
   cardWidth: 160,             // カードの幅
-  cardHeight: 120,            // カードの高さ
-  cornerRadius: 8,            // 線の角の丸み
+  // カードの高さ。関係線はこの値を基準にカードの上端・下端へ接続するため、
+  // 実際の描画高さと必ず一致させること（PersonNodeで固定している）
+  cardHeight: 122,
+  cornerRadius: 10,           // 線の角の丸み
+  // 親から下ろした線が兄弟をつなぐ水平線の、子カード上端からの距離
+  siblingBusOffset: 44,
 
   // キャンバス境界
   canvasPadding: 100,         // 人物・関係線の周囲に確保するSVGの余白

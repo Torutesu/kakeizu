@@ -1,14 +1,19 @@
-import { Calendar, AlertCircle } from "lucide-react"
+import { AlertCircle } from "lucide-react"
 import { ProcessedPerson } from '../utils/familyDataProcessor'
 import { formatDate } from '../utils/familyDataProcessor'
 import { formatKazoeAge } from '../utils/age'
 import { COLORS, LAYOUT_CONFIG } from '../constants/config'
 import { useCallback, useMemo, useRef } from 'react'
 
+/** 選択中の人物との関係。無関係な人物を控えめに表示するために使う */
+export type RelationEmphasis = 'selected' | 'related' | 'unrelated' | 'none'
+
 interface PersonNodeProps {
   person: ProcessedPerson
   isSelected?: boolean
   isDragging?: boolean
+  /** 選択中の人物との関係（noneなら強調も減光もしない） */
+  emphasis?: RelationEmphasis
   // ポインター押下でドラッグ開始。動かさずに離した場合の「選択」判定は親（FamilyTree）が行う
   onDragStart?: (person: ProcessedPerson, e: React.PointerEvent) => void
   // ダブルクリック（ダブルタップ）で編集ダイアログを開く。未指定なら何もしない
@@ -25,6 +30,7 @@ export function PersonNode({
   person,
   isSelected = false,
   isDragging = false,
+  emphasis = 'none',
   onDragStart,
   onEdit
 }: PersonNodeProps) {
@@ -64,13 +70,16 @@ export function PersonNode({
     <div
       ref={nodeRef}
       className={`absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 ${
-        isDragging ? "z-50" : "z-10"
+        isDragging ? 'z-50' : isSelected ? 'z-30' : 'z-10'
       }`}
       style={{
         left: person.x,
         top: person.y,
         cursor: isDragging ? 'grabbing' : 'grab',
-        touchAction: 'none'
+        touchAction: 'none',
+        // 選択中の人物と無関係なカードは控えめにして、関係者を目立たせる
+        opacity: emphasis === 'unrelated' ? 0.32 : 1,
+        transition: 'opacity .18s ease',
       }}
       onPointerDown={handlePointerDown}
       onDoubleClick={handleDoubleClick}
@@ -78,18 +87,23 @@ export function PersonNode({
       data-person-id={person.id}
     >
       <div
-        className={`relative w-40 rounded-lg border bg-white overflow-hidden transition-all duration-150 ${
+        className={`relative rounded-lg border bg-white overflow-hidden transition-shadow duration-150 ${
           person.isUncertain
             ? `${COLORS.uncertain.background} ${COLORS.uncertain.border}`
             : `${colors.background} ${colors.border}`
         } ${
           isSelected
-            ? 'ring-2 ring-blue-500 shadow-lg scale-[1.02]'
-            : 'shadow-sm hover:shadow-md hover:-translate-y-0.5'
+            ? 'ring-2 ring-blue-500 ring-offset-1 shadow-lg'
+            : emphasis === 'related'
+              ? 'ring-1 ring-blue-300 shadow-md'
+              : 'shadow-sm hover:shadow-md'
         } ${isDragging ? 'shadow-xl opacity-90' : ''}`}
-        // 親子関係線はLAYOUT_CONFIG.cardHeightを基準にカード上端を狙って描画されるため、
-        // 実際のカードの高さがそれを下回らないようにして線とカードの間に隙間ができないようにする
-        style={{ minHeight: LAYOUT_CONFIG.cardHeight }}
+        // 関係線はこの寸法を基準にカードの上端・下端へ接続するため、
+        // レイアウト定数と実際の描画サイズを必ず一致させる
+        style={{
+          width: LAYOUT_CONFIG.cardWidth,
+          height: LAYOUT_CONFIG.cardHeight,
+        }}
       >
         {/* 性別アクセントバー */}
         <div
@@ -97,43 +111,36 @@ export function PersonNode({
           style={{ backgroundColor: accentColor }}
         />
 
-        <div className="p-3 pl-4">
-          {/* 名前と不確実性アイコン */}
-          <div className="flex items-start justify-between gap-1 mb-1.5">
-            <h4 className="font-semibold text-sm text-gray-900 leading-tight">
+        <div className="h-full px-3 py-2.5 pl-4 flex flex-col">
+          {/* 名前と続柄 */}
+          <div className="flex items-start justify-between gap-1">
+            <h4 className="font-semibold text-sm text-gray-900 leading-snug line-clamp-2">
               {person.displayName}
             </h4>
             {person.isUncertain && (
-              <AlertCircle className={`w-3.5 h-3.5 flex-shrink-0 ${COLORS.uncertain.text}`} />
+              <AlertCircle className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${COLORS.uncertain.text}`} />
             )}
           </div>
 
-          {/* 日付・年齢情報 */}
-          <div className="text-xs text-gray-600 space-y-0.5">
+          {person.relation_to_family_head && (
+            <span className="mt-1 self-start text-[10px] leading-none px-1.5 py-0.5 rounded bg-white/70 border border-gray-200 text-gray-500">
+              {person.relation_to_family_head}
+            </span>
+          )}
+
+          {/* 日付・年齢は下寄せにして、カードの高さが揃っても間延びしないようにする */}
+          <div className="mt-auto text-[11px] leading-tight text-gray-600 space-y-0.5">
             {person.birth?.date && (
-              <div className="flex items-center gap-1">
-                <Calendar className="w-3 h-3 flex-shrink-0 text-gray-400" />
-                <span className="truncate">{formatDate(person.birth.date)}</span>
+              <div className="truncate">
+                <span className="text-gray-400">生</span> {formatDate(person.birth.date)}
               </div>
             )}
-
             {person.death?.date && (
-              <div className="flex items-center gap-1">
-                <span className="flex-shrink-0 text-gray-400 w-3 text-center">†</span>
-                <span className="truncate">{formatDate(person.death.date)}</span>
+              <div className="truncate">
+                <span className="text-gray-400">没</span> {formatDate(person.death.date)}
               </div>
             )}
-
-            {age && (
-              <div className="text-[11px] text-gray-500 pt-0.5">{age}</div>
-            )}
-
-            {/* 出生地（日付情報が少ない場合のみ） */}
-            {person.birth?.place && !person.death?.date && (
-              <div className="text-[11px] text-gray-400 truncate">
-                {person.birth.place}
-              </div>
-            )}
+            {age && <div className="text-gray-500 truncate">{age}</div>}
           </div>
         </div>
       </div>

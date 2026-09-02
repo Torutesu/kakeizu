@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
+import { useConfirm } from '../hooks/useConfirm'
 import { KosekiFile, createKosekiFileUrl } from '../lib/db/kosekiFiles'
 import { analyzeStoredKoseki, AnalyzeOptions } from '../lib/gemini'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
@@ -55,6 +56,7 @@ export function KosekiFilesPanel({
   onDataExtracted,
 }: KosekiFilesPanelProps) {
   const [busyFileId, setBusyFileId] = useState<string | null>(null)
+  const { confirm, confirmDialog } = useConfirm()
 
   const handleDownload = async (file: KosekiFile) => {
     setBusyFileId(file.id)
@@ -87,9 +89,13 @@ export function KosekiFilesPanel({
   }
 
   const handleRemove = async (file: KosekiFile) => {
-    if (!confirm(`「${file.fileName}」を削除してもよろしいですか？\nファイルの実体も削除されます。`)) {
-      return
-    }
+    const confirmed = await confirm({
+      title: `「${file.fileName}」を削除しますか？`,
+      description: 'ファイルの実体も削除され、元に戻せません。取り込み済みの家系図データは残ります。',
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (!confirmed) return
     setBusyFileId(file.id)
     try {
       await onRemove(file)
@@ -103,6 +109,7 @@ export function KosekiFilesPanel({
 
   return (
     <div className="p-6 border-b border-gray-200">
+      {confirmDialog}
       <h3 className="text-sm font-medium text-gray-900 mb-3">
         戸籍ファイル{files.length > 0 && `（${files.length}件）`}
       </h3>

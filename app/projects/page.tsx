@@ -26,6 +26,7 @@ import {
   ProjectSummary,
 } from '@/lib/db/projects'
 import { canCreateProject, canDeleteProject, canAssignProjectMembers } from '@/lib/auth/permissions'
+import { useConfirm } from '@/hooks/useConfirm'
 
 export default function ProjectsPage() {
   const router = useRouter()
@@ -42,6 +43,9 @@ export default function ProjectsPage() {
 
   // アサイン管理ダイアログ
   const [assignTarget, setAssignTarget] = useState<ProjectSummary | null>(null)
+
+  // 確認ダイアログ
+  const { confirm, confirmDialog } = useConfirm()
 
   const load = useCallback(async () => {
     try {
@@ -84,9 +88,13 @@ export default function ProjectsPage() {
   }
 
   const handleDelete = async (project: ProjectSummary) => {
-    if (!confirm(`案件「${project.name}」を削除してもよろしいですか？\n家系図データも完全に削除されます。`)) {
-      return
-    }
+    const confirmed = await confirm({
+      title: `案件「${project.name}」を削除しますか？`,
+      description: '家系図データとアップロード済みの戸籍ファイルも完全に削除され、元に戻せません。',
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (!confirmed) return
     try {
       await deleteProject(project)
       toast.success('案件を削除しました')
@@ -231,6 +239,8 @@ export default function ProjectsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {confirmDialog}
 
       {/* アサイン管理ダイアログ */}
       {assignTarget && (

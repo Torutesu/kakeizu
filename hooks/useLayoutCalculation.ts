@@ -10,13 +10,23 @@ interface LayoutLine {
   y2: number
 }
 
-// 結婚線（離婚済みは破線で描画するためのフラグ付き）
+// 結婚線。夫婦のカードの内側の端どうしを結ぶ横線（離婚済みは破線）
 export interface MarriageLine extends LayoutLine {
   divorced: boolean
 }
 
-// 親子線（養子縁組は破線で描画するためのフラグ付き）
-export interface ParentChildLine extends LayoutLine {
+// 親から子への接続。家系図の慣習に従い
+// 「親（夫婦線の中点 or 単親カードの下端）から垂直に下ろす →
+//   兄弟をつなぐ水平線 → 各子カードの上端へ垂直」の形で描く。
+export interface DescentConnection {
+  /** 親側の接続点 */
+  fromX: number
+  fromY: number
+  /** 兄弟をつなぐ水平線のY座標 */
+  busY: number
+  /** 各子カードの上端への接続点 */
+  children: Array<{ x: number; topY: number }>
+  /** 養子縁組なら破線で描く */
   adoption: boolean
 }
 
@@ -34,7 +44,7 @@ interface UseLayoutCalculationReturn {
 
   // 関係線データ
   marriageLines: MarriageLine[]
-  parentChildLines: ParentChildLine[]
+  descentConnections: DescentConnection[]
 
   // ドラッグ中の一時位置の設定（nullで解除）
   setDragOverride: (override: DragOverride | null) => void
@@ -131,11 +141,14 @@ export function useLayoutCalculation(
         const person2 = layoutPersons.find(p => p.id === parent2.id)
 
         if (person1 && person2) {
+          // 左右を判定し、カードの内側の端から端へ引く（中心同士だとカードに隠れる）
+          const [left, right] = person1.x <= person2.x ? [person1, person2] : [person2, person1]
+          const halfWidth = LAYOUT_CONFIG.cardWidth / 2
           lines.push({
-            x1: person1.x,
-            y1: person1.y,
-            x2: person2.x,
-            y2: person2.y,
+            x1: left.x + halfWidth,
+            y1: left.y,
+            x2: right.x - halfWidth,
+            y2: right.y,
             divorced: Boolean(family.divorceDate)
           })
         }
@@ -145,39 +158,45 @@ export function useLayoutCalculation(
     return lines
   }, [layoutPersons, families])
 
-  // 親子関係線の計算（養子縁組は破線で表示する）
-  const parentChildLines = useMemo(() => {
-    const lines: ParentChildLine[] = []
+  // 親から子への接続を計算する。
+  // 夫婦の場合は結婚線の中点から、単親の場合はカードの下端から下ろす。
+  const descentConnections = useMemo(() => {
+    const connections: DescentConnection[] = []
+    const halfHeight = LAYOUT_CONFIG.cardHeight / 2
 
     families.forEach(family => {
-      if (family.parents.length > 0 && family.children.length > 0) {
-        // 親の中央点を計算
-        const parents = family.parents
-          .map(p => layoutPersons.find(lp => lp.id === p.id))
-          .filter((p): p is ProcessedPerson => p !== undefined)
+      if (family.parents.length === 0 || family.children.length === 0) return
 
-        if (parents.length === 0) return
+      const parents = family.parents
+        .map(p => layoutPersons.find(lp => lp.id === p.id))
+        .filter((p): p is ProcessedPerson => p !== undefined)
+      if (parents.length === 0) return
 
-        const parentCenterX = parents.reduce((sum, p) => sum + p.x, 0) / parents.length
-        const parentCenterY = parents.reduce((sum, p) => sum + p.y, 0) / parents.length
+      const children = family.children
+        .map(c => layoutPersons.find(p => p.id === c.id))
+        .filter((c): c is ProcessedPerson => c !== undefined)
+        .sort((a, b) => a.x - b.x)
+      if (children.length === 0) return
 
-        // 各子供への線
-        family.children.forEach(child => {
-          const childPerson = layoutPersons.find(p => p.id === child.id)
-          if (childPerson) {
-            lines.push({
-              x1: parentCenterX,
-              y1: parentCenterY, // 夫婦の二重線（結婚線）の中心から伸ばす
-              x2: childPerson.x,
-              y2: childPerson.y - LAYOUT_CONFIG.cardHeight / 2, // 子カードの上端へ
-              adoption: family.relationType === 'adoption'
-            })
-          }
-        })
-      }
+      // 親側の接続点: 夫婦なら結婚線の中点、単親ならカードの下端
+      const parentCenterX = parents.reduce((sum, p) => sum + p.x, 0) / parents.length
+      const parentCenterY = parents.reduce((sum, p) => sum + p.y, 0) / parents.length
+      const fromY = parents.length >= 2 ? parentCenterY : parentCenterY + halfHeight
+
+      // 兄弟をつなぐ水平線は、最も上にある子カードの少し上に置く
+      const childTopY = Math.min(...children.map(c => c.y - halfHeight))
+      const busY = childTopY - LAYOUT_CONFIG.siblingBusOffset
+
+      connections.push({
+        fromX: parentCenterX,
+        fromY,
+        busY,
+        children: children.map(c => ({ x: c.x, topY: c.y - halfHeight })),
+        adoption: family.relationType === 'adoption',
+      })
     })
 
-    return lines
+    return connections
   }, [layoutPersons, families])
 
   // 境界の計算
@@ -214,7 +233,7 @@ export function useLayoutCalculation(
   return {
     layoutPersons,
     marriageLines,
-    parentChildLines,
+    descentConnections,
     setDragOverride,
     getBounds,
     getGenerationFromY,

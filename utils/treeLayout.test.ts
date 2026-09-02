@@ -150,6 +150,10 @@ describe('calculateTreeLayout', () => {
       byGeneration.set(p.generation, [...(byGeneration.get(p.generation) ?? []), p.id])
     })
 
+    // 夫婦はspouseSpacing、それ以外はcardSpacingで配置されるため、
+    // 任意の2人に共通して保証される最小間隔は両者の小さい方になる
+    const minSpacing = Math.min(LAYOUT_CONFIG.cardSpacing, LAYOUT_CONFIG.spouseSpacing)
+
     byGeneration.forEach(ids => {
       for (let i = 0; i < ids.length; i++) {
         for (let j = i + 1; j < ids.length; j++) {
@@ -158,7 +162,7 @@ describe('calculateTreeLayout', () => {
           expect(
             Math.abs(p1.x - p2.x),
             `${ids[i]} と ${ids[j]} が接近しすぎ`
-          ).toBeGreaterThanOrEqual(LAYOUT_CONFIG.spouseSpacing)
+          ).toBeGreaterThanOrEqual(minSpacing)
         }
       }
     })
