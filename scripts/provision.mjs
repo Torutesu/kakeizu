@@ -224,6 +224,8 @@ async function provisionVercel(supabase) {
     ['ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY],
     ['OPENAI_API_KEY', process.env.OPENAI_API_KEY],
     ['ANALYSIS_PROVIDER', process.env.ANALYSIS_PROVIDER],
+    // 学習不使用の確認フラグ（本番ではこれが無いと解析が停止する）
+    ['AI_NO_TRAINING_CONFIRMED', process.env.AI_NO_TRAINING_CONFIRMED],
   ].filter(([, value]) => Boolean(value))
 
   const hasAiKey = envVars.some(([key]) =>
@@ -231,6 +233,10 @@ async function provisionVercel(supabase) {
   )
   if (!hasAiKey) {
     console.log('  ⚠ 解析AIのAPIキーが未指定です（解析機能は動きません。後から追加可能）')
+  }
+  if (process.env.AI_NO_TRAINING_CONFIRMED !== 'true') {
+    console.log('  ⚠ AI_NO_TRAINING_CONFIRMED が未設定です。本番では解析が停止します')
+    console.log('     docs/AI_DATA_POLICY.md の要件を満たした上で true を設定してください')
   }
 
   await vercel(`/v10/projects/${PROJECT_NAME}/env?upsert=true`, {
@@ -292,10 +298,13 @@ async function configureAuth(supabase, productionUrl) {
     body: JSON.stringify({
       site_url: productionUrl,
       uri_allow_list: merged.join(','),
+      // なりすまし登録を防ぐため、メール確認を必須にする
+      mailer_autoconfirm: false,
     }),
   })
   console.log(`  Site URL: ${productionUrl}`)
   console.log(`  許可リスト: ${merged.join(', ')}`)
+  console.log('  メール確認: 必須（mailer_autoconfirm=false）')
 }
 
 async function smokeTest(productionUrl) {
@@ -338,7 +347,9 @@ async function main() {
   console.log(`${healthy ? '✅ 完了' : '⚠ デプロイは実行しましたが疎通確認が未完了'}: ${productionUrl}`)
   console.log('============================================================')
   console.log('次にやること:')
-  console.log('  1. 上記URLを開いてアカウント作成 → 組織作成（最初の人がadminになります）')
+  console.log('  1. 【最優先】上記URLで最初のアカウントを作成し、組織を作る')
+  console.log('     招待制のため、組織を作った時点で以降は招待された人しか登録できなくなります')
+  console.log('     （組織が無い間は誰でも登録できるので、デプロイ後すぐに実施してください）')
   console.log('  2. Googleログインを使う場合はSupabaseダッシュボードでProvider設定（docs/SUPABASE_SETUP.md 手順3）')
   console.log('  3. 使い終わったらSUPABASE_ACCESS_TOKENとVERCEL_TOKENを失効させる')
   console.log('  4. mainへのマージで自動デプロイしたい場合はVercelダッシュボードでGitHub連携を有効化')

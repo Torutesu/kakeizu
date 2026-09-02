@@ -11,6 +11,17 @@ import { Loader2 } from 'lucide-react'
 
 type Mode = 'signin' | 'signup'
 
+// DBの招待制トリガーが返すエラーを、利用者に伝わる文言へ変換する
+function toFriendlyMessage(rawMessage: string): string {
+  if (/signup_not_invited|Database error saving new user/i.test(rawMessage)) {
+    return 'このアプリは招待制です。管理者から招待を受けたメールアドレスでご登録ください。'
+  }
+  if (/already registered|User already registered/i.test(rawMessage)) {
+    return 'このメールアドレスは登録済みです。「ログイン」からお進みください。'
+  }
+  return `登録に失敗しました: ${rawMessage}`
+}
+
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -51,7 +62,7 @@ function LoginForm() {
           },
         })
         if (error) {
-          setError(`登録に失敗しました: ${error.message}`)
+          setError(toFriendlyMessage(error.message))
           return
         }
         if (data.session) {
@@ -92,7 +103,7 @@ function LoginForm() {
           <CardDescription>
             {mode === 'signin'
               ? 'アカウントにログインしてください'
-              : '新しいアカウントを作成します（招待を受けたメールアドレスで登録してください）'}
+              : '招待制です。管理者から招待を受けたメールアドレスでご登録ください'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -157,7 +168,7 @@ function LoginForm() {
           <p className="text-sm text-center text-gray-600">
             {mode === 'signin' ? (
               <>
-                アカウントをお持ちでない場合は{' '}
+                招待を受けている方は{' '}
                 <button
                   type="button"
                   className="text-blue-600 hover:underline"

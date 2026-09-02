@@ -9,6 +9,8 @@ import { AnalysisInput, AnalysisProvider } from '../types'
  * OpenAI GPT プロバイダ。
  * 手書き文字認識のベンチマーク（CER）でトップクラスの成績を持つ。
  * Responses API + 構造化出力（json_schema strict）でスキーマを強制する。
+ * 戸籍は機微情報のため store: false を指定し、応答をOpenAI側に保存させない
+ * （データ利用ポリシーは lib/analysis/dataPolicy.ts / docs/AI_DATA_POLICY.md）。
  */
 export const openaiProvider: AnalysisProvider = {
   async analyze(input: AnalysisInput, model: string): Promise<unknown> {
@@ -44,6 +46,8 @@ export const openaiProvider: AnalysisProvider = {
       text: {
         format: zodTextFormat(kosekiResultSchema, 'koseki_result'),
       },
+      // 応答をサーバー側に保存しない（機微情報の残留を避ける）
+      store: false,
     })
 
     if (!response.output_parsed) {

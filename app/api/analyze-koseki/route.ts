@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { runKosekiAnalysis } from '@/lib/analysis'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { validateFileContent, isAllowedKosekiMimeType } from '@/lib/security/fileValidation'
-import { kosekiAnalysisRateLimiter } from '@/lib/security/rateLimit'
+import { checkAnalysisRateLimit } from '@/lib/security/rateLimit'
 
 export const runtime = 'nodejs'
 // 大きな戸籍の解析は1〜2分かかるため、Vercelの関数タイムアウトを延長する
@@ -30,8 +30,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 高コストなGemini API呼び出しの乱用を防ぐ（ユーザー単位）
-    const rateLimit = kosekiAnalysisRateLimiter.check(user.id)
+    // 高コストなAI呼び出しの乱用を防ぐ（ユーザー単位・DBで分散カウント）
+    // 確認できない場合は通さない（保護が消えたまま気づかない事態を避ける）
+    let rateLimit
+    try {
+      rateLimit = await checkAnalysisRateLimit(supabase)
+    } catch (error) {
+      console.error('レート制限の確認に失敗:', error)
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'レート制限を確認できないため解析を中止しました。管理者にお問い合わせください。',
+        },
+        { status: 503 }
+      )
+    }
     if (!rateLimit.allowed) {
       return NextResponse.json(
         {

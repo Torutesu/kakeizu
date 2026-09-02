@@ -1,13 +1,13 @@
-// 簡易レート制限（固定ウィンドウ方式）。
-// Gemini API呼び出しのような高コスト操作の乱用（コスト攻撃・暴走クライアント）を
-// 抑止するための最終防壁。プロセス内メモリで管理するため、サーバーレス環境では
-// インスタンスごとの制限になる（それでも1インスタンスあたりの上限としては機能する）。
-// 厳密な分散レート制限が必要になったら Upstash Redis 等に置き換えること。
+import type { SupabaseClient } from '@supabase/supabase-js'
 
-interface WindowEntry {
-  windowStartMs: number
-  count: number
-}
+// 解析APIのレート制限。
+// カウンタはPostgres（analysis_rate_limits）に置き、security definer関数で
+// 原子的にインクリメントする。サーバーレスでインスタンスが複数あっても
+// 同一の上限が効く（プロセス内メモリ方式はすり抜けるため廃止した）。
+
+// 大量ページの案件でも足り、かつAPIキーの浪費を実質的に防げる値
+export const ANALYSIS_MAX_REQUESTS = 20
+export const ANALYSIS_WINDOW_SECONDS = 10 * 60
 
 export interface RateLimitResult {
   allowed: boolean
@@ -15,43 +15,53 @@ export interface RateLimitResult {
   retryAfterSeconds: number
 }
 
-export class FixedWindowRateLimiter {
-  private entries = new Map<string, WindowEntry>()
-
-  constructor(
-    private readonly maxRequests: number,
-    private readonly windowMs: number
-  ) {}
-
-  check(key: string, nowMs: number = Date.now()): RateLimitResult {
-    const entry = this.entries.get(key)
-
-    if (!entry || nowMs - entry.windowStartMs >= this.windowMs) {
-      this.entries.set(key, { windowStartMs: nowMs, count: 1 })
-      this.cleanup(nowMs)
-      return { allowed: true, retryAfterSeconds: 0 }
-    }
-
-    if (entry.count < this.maxRequests) {
-      entry.count++
-      return { allowed: true, retryAfterSeconds: 0 }
-    }
-
-    const retryAfterSeconds = Math.ceil((entry.windowStartMs + this.windowMs - nowMs) / 1000)
-    return { allowed: false, retryAfterSeconds: Math.max(1, retryAfterSeconds) }
-  }
-
-  /** 期限切れエントリの削除（メモリリーク防止）。呼び出し頻度は低くてよい */
-  private cleanup(nowMs: number) {
-    if (this.entries.size < 1000) return
-    for (const [key, entry] of this.entries) {
-      if (nowMs - entry.windowStartMs >= this.windowMs) {
-        this.entries.delete(key)
-      }
-    }
+/**
+ * RPCの戻り値を検証して結果に変換する。
+ * 想定外の形なら null を返し、呼び出し側で「確認できなかった」として扱う。
+ * （レート制限を確認できないまま高コストな解析を通さないため）
+ */
+export function parseRateLimitRow(row: unknown): RateLimitResult | null {
+  if (!row || typeof row !== 'object') return null
+  const record = row as Record<string, unknown>
+  if (typeof record.allowed !== 'boolean') return null
+  const retryAfter = record.retry_after_seconds
+  return {
+    allowed: record.allowed,
+    retryAfterSeconds: typeof retryAfter === 'number' && Number.isFinite(retryAfter)
+      ? Math.max(0, Math.floor(retryAfter))
+      : ANALYSIS_WINDOW_SECONDS,
   }
 }
 
-// 戸籍解析API用: 1ユーザーあたり10分間に20回まで
-// （大量ページの案件でも足り、かつAPIキーの浪費を実質的に防げる値）
-export const kosekiAnalysisRateLimiter = new FixedWindowRateLimiter(20, 10 * 60 * 1000)
+export class RateLimitUnavailableError extends Error {
+  constructor(detail: string) {
+    super(`レート制限を確認できませんでした: ${detail}`)
+    this.name = 'RateLimitUnavailableError'
+  }
+}
+
+/**
+ * 現在のユーザーの解析回数をカウントし、上限内かを返す。
+ * 確認できない場合は例外を投げる（フェイルクローズ）。黙って無制限に
+ * 通してしまうと、マイグレーション適用漏れ等で保護が消えたことに気づけないため。
+ */
+export async function checkAnalysisRateLimit(
+  supabase: SupabaseClient,
+  maxRequests: number = ANALYSIS_MAX_REQUESTS,
+  windowSeconds: number = ANALYSIS_WINDOW_SECONDS
+): Promise<RateLimitResult> {
+  const { data, error } = await supabase.rpc('check_analysis_rate_limit', {
+    p_max_requests: maxRequests,
+    p_window_seconds: windowSeconds,
+  })
+
+  if (error) throw new RateLimitUnavailableError(error.message)
+
+  // RPCはテーブル関数のため配列で返る
+  const row = Array.isArray(data) ? data[0] : data
+  const result = parseRateLimitRow(row)
+  if (!result) {
+    throw new RateLimitUnavailableError('想定外の応答形式です（マイグレーション0006の適用漏れの可能性）')
+  }
+  return result
+}

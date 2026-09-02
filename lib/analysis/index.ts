@@ -3,6 +3,7 @@ import { AnalysisInput, AnalysisOutcome, AnalysisProvider, AnalysisProviderName,
 import { resolveProviderChain, resolveOverrideCandidate } from './chain'
 import { kosekiResultSchema } from './schema'
 import { sanitizeFamilyTreeData } from './sanitize'
+import { checkDataPolicy } from './dataPolicy'
 import { geminiProvider } from './providers/gemini'
 import { anthropicProvider } from './providers/anthropic'
 import { openaiProvider } from './providers/openai'
@@ -30,6 +31,12 @@ export async function runKosekiAnalysis(
   input: AnalysisInput,
   override?: AnalysisOverride
 ): Promise<AnalysisOutcome> {
+  // 機微情報を送る前に、学習不使用の条件が確認済みかを検査する
+  const policy = checkDataPolicy(process.env)
+  if (!policy.ok) {
+    return { success: false, error: policy.error ?? 'データ利用ポリシーが未確認です' }
+  }
+
   let chain: ProviderCandidate[]
   if (override) {
     const candidate = resolveOverrideCandidate(process.env, override.provider, override.model)

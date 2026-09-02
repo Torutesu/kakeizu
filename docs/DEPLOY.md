@@ -12,7 +12,8 @@ Vercel + Supabase で本番URLに公開する手順。**所要25分程度**（�
 # トークンの発行:
 #   SUPABASE_ACCESS_TOKEN: https://supabase.com/dashboard/account/tokens
 #   VERCEL_TOKEN:          https://vercel.com/account/settings/tokens （有効期限は短く設定）
-SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... pnpm provision
+SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
+  AI_NO_TRAINING_CONFIRMED=true pnpm provision
 ```
 
 - 冪等: 途中で失敗しても再実行すれば続きから進む（既存の同名プロジェクトは再利用）
@@ -59,6 +60,7 @@ SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... pnpm provision
 | `ANTHROPIC_API_KEY` | 任意（フォールバック/比較用） |
 | `OPENAI_API_KEY` | 任意（同上） |
 | `ANALYSIS_PROVIDER` | 任意（ベンチマーク後に勝者を設定） |
+| `AI_NO_TRAINING_CONFIRMED` | **`true` 必須**（未設定だと解析が停止。[AI_DATA_POLICY.md](./AI_DATA_POLICY.md) の要件を満たしてから） |
 
 > 解析APIは `maxDuration = 300` を指定済み。HobbyプランでもFluid compute（既定で有効）
 > により300秒まで実行できる。無効になっている場合は Project Settings → Functions で有効化する。
@@ -77,18 +79,20 @@ SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... pnpm provision
 ## 4. 動作確認（スモークテスト）
 
 1. `https://<デプロイURL>/api/health` を開く →
-   `{"ok":true,"supabaseConfigured":true,"analysisProviders":{"gemini":true,...}}` を確認
+   `supabaseConfigured` `analysisProviders` `noTrainingConfirmed` がすべて `true` を確認
    （falseがあれば環境変数の設定漏れ）
 2. トップへアクセス → `/login` にリダイレクトされることを確認
-3. アカウント作成 → 組織作成 → 案件作成
+3. **【最優先】アカウント作成 → 組織作成**（招待制のゲートを閉じるため、公開直後に必ず実施）
+4. 案件作成
 4. 戸籍書類（テスト用）をアップロード → 解析 → 家系図表示
 5. 「メンバー管理」から自分の別メールを招待 → 別ブラウザでログイン → メンバー化を確認
 6. 書き出し（PDF / Excel / JSON）を確認
 
 ## 5. 運用に入る前に
 
-- [ ] **最初にアカウント作成した人がadmin**になる。周知の上で最初のログインを行うこと
-- [ ] Supabase Authentication → Providers → Email の「Confirm email」を有効化（推奨）
+- [ ] **公開直後に最初のアカウント作成＋組織作成を済ませる**（招待制のゲートが閉じる）
+- [ ] メール確認は自動プロビジョニングで有効化済み（手動の場合は Authentication → Providers → Email で確認）
+- [ ] `AI_NO_TRAINING_CONFIRMED=true` が設定され、各社が有料/学習不使用の条件を満たしているか確認
 - [ ] 独自ドメインを使う場合: Vercel Settings → Domains で追加し、手順3のURLを差し替える
 - [ ] Vercelの環境変数に本番用（学習に使われないプラン）のAIキーが入っていることを再確認
 
@@ -108,3 +112,6 @@ GitHubのリポジトリ設定でデフォルトブランチが `main` になっ
 | 解析が `FUNCTION_INVOCATION_TIMEOUT` | Fluid computeが無効。Project Settings → Functions で確認 |
 | 組織作成で `not authenticated` | `setup_all.sql` の実行漏れ（RPCが存在しない）。SQL Editorで再実行 |
 | ストレージアップロード失敗 | `0002`のバケット作成漏れ。Storageに `koseki` バケットがあるか確認 |
+| 登録時に「招待制です」と出る | 仕様。管理者に招待してもらうか、最初の組織作成がまだなら組織を作る |
+| 解析が「レート制限を確認できない」 | `0006`のマイグレーション未適用。SQL Editorで実行 |
+| 解析が「データ利用ポリシーが未確認」 | `AI_NO_TRAINING_CONFIRMED=true` を設定して再デプロイ |

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { detectMimeType, validateFileContent, isAllowedKosekiMimeType } from './fileValidation'
-import { FixedWindowRateLimiter } from './rateLimit'
+import { parseRateLimitRow, ANALYSIS_WINDOW_SECONDS } from './rateLimit'
 
 function bytesFrom(...values: number[]): Uint8Array {
   const arr = new Uint8Array(Math.max(12, values.length))
@@ -51,33 +51,32 @@ describe('isAllowedKosekiMimeType', () => {
   })
 })
 
-describe('FixedWindowRateLimiter', () => {
-  it('上限までは許可し、超えると拒否する', () => {
-    const limiter = new FixedWindowRateLimiter(3, 60_000)
-    const t0 = 1_000_000
-
-    expect(limiter.check('user1', t0).allowed).toBe(true)
-    expect(limiter.check('user1', t0 + 1000).allowed).toBe(true)
-    expect(limiter.check('user1', t0 + 2000).allowed).toBe(true)
-
-    const denied = limiter.check('user1', t0 + 3000)
-    expect(denied.allowed).toBe(false)
-    expect(denied.retryAfterSeconds).toBeGreaterThan(0)
+describe('parseRateLimitRow', () => {
+  it('許可の応答を解釈する', () => {
+    expect(parseRateLimitRow({ allowed: true, retry_after_seconds: 0 })).toEqual({
+      allowed: true,
+      retryAfterSeconds: 0,
+    })
   })
 
-  it('ウィンドウが切り替わるとリセットされる', () => {
-    const limiter = new FixedWindowRateLimiter(1, 60_000)
-    const t0 = 1_000_000
-    expect(limiter.check('user1', t0).allowed).toBe(true)
-    expect(limiter.check('user1', t0 + 1000).allowed).toBe(false)
-    expect(limiter.check('user1', t0 + 61_000).allowed).toBe(true)
+  it('拒否の応答と待機秒数を解釈する', () => {
+    expect(parseRateLimitRow({ allowed: false, retry_after_seconds: 42 })).toEqual({
+      allowed: false,
+      retryAfterSeconds: 42,
+    })
   })
 
-  it('ユーザーごとに独立してカウントする', () => {
-    const limiter = new FixedWindowRateLimiter(1, 60_000)
-    const t0 = 1_000_000
-    expect(limiter.check('user1', t0).allowed).toBe(true)
-    expect(limiter.check('user2', t0).allowed).toBe(true)
-    expect(limiter.check('user1', t0 + 1).allowed).toBe(false)
+  it('秒数が不正な場合はウィンドウ幅にフォールバックする', () => {
+    expect(parseRateLimitRow({ allowed: false, retry_after_seconds: null })).toEqual({
+      allowed: false,
+      retryAfterSeconds: ANALYSIS_WINDOW_SECONDS,
+    })
+  })
+
+  it('想定外の応答はnull（呼び出し側で解析を止める）', () => {
+    expect(parseRateLimitRow(null)).toBeNull()
+    expect(parseRateLimitRow({})).toBeNull()
+    expect(parseRateLimitRow({ allowed: 'yes' })).toBeNull()
+    expect(parseRateLimitRow('ok')).toBeNull()
   })
 })
