@@ -7,10 +7,11 @@ import {
   ProviderCandidate,
   TokenUsage,
 } from './types'
-import { resolveProviderChain, resolveOverrideCandidate } from './chain'
+import { resolveProviderChain, resolveOverrideCandidate, ChainEnv } from './chain'
 import { kosekiResultSchema } from './schema'
 import { sanitizeFamilyTreeData } from './sanitize'
 import { checkDataPolicy } from './dataPolicy'
+import { compareExtractions, summarizeIssues, CrossCheckIssue } from './ensemble'
 import { geminiProvider } from './providers/gemini'
 import { anthropicProvider } from './providers/anthropic'
 import { openaiProvider } from './providers/openai'
@@ -50,6 +51,68 @@ function logTokenUsage(candidate: ProviderCandidate, usage: TokenUsage | null): 
       `戸籍解析: ${candidate.provider}/${candidate.model} でプロンプトキャッシュが効いていません。` +
         '固定プロンプトが最小トークン数に達しているかを確認してください。'
     )
+  }
+}
+
+/**
+ * 照合用モデルを選ぶ。primaryと**別プロバイダ**であることが要件。
+ * 同じモデルを2回呼んでも同じ誤読を再現するだけで、照合の意味がないため。
+ */
+export function resolveCrossCheckCandidate(
+  env: ChainEnv,
+  primary: ProviderCandidate
+): ProviderCandidate | null {
+  if ((env.ANALYSIS_ENSEMBLE ?? '').trim().toLowerCase() !== 'true') return null
+
+  const configured = (env.ANALYSIS_ENSEMBLE_PROVIDER ?? '').trim().toLowerCase()
+  if (configured) {
+    const candidate = resolveOverrideCandidate(env, configured, env.ANALYSIS_ENSEMBLE_MODEL)
+    return candidate && candidate.provider !== primary.provider ? candidate : null
+  }
+
+  // 未指定なら、キーのあるプロバイダのうちprimary以外の最優先を使う
+  return (
+    resolveProviderChain(env).find(c => c.provider !== primary.provider) ?? null
+  )
+}
+
+/**
+ * 別モデルでも解析し、primaryの結果と突き合わせる。
+ * 照合側が失敗しても解析全体は失敗させない（primaryの結果は有効なため）。
+ * 明示的なモデル指定（ベンチマーク・再解析）時は、比較結果が混ざらないよう照合しない。
+ */
+async function runCrossCheck(
+  input: AnalysisInput,
+  primary: ProviderCandidate,
+  primaryData: FamilyTreeData,
+  override?: AnalysisOverride
+): Promise<CrossCheckIssue[]> {
+  if (override) return []
+  const secondary = resolveCrossCheckCandidate(process.env, primary)
+  if (!secondary) return []
+
+  try {
+    const { raw } = await PROVIDERS[secondary.provider].analyze(input, secondary.model)
+    const parsed = kosekiResultSchema.safeParse(raw)
+    if (!parsed.success) {
+      console.warn(`戸籍解析の照合: ${secondary.provider}/${secondary.model} の出力がスキーマに一致せず、照合を省略しました`)
+      return []
+    }
+    const secondaryData = sanitizeFamilyTreeData(parsed.data as FamilyTreeData)
+    const issues = compareExtractions(primaryData, secondaryData, {
+      primary: primary.model,
+      secondary: secondary.model,
+    })
+    const { errors, warnings } = summarizeIssues(issues)
+    console.info(
+      `戸籍解析の照合: ${primary.model} × ${secondary.model} → 不一致 ${errors}件（要確認）/ ${warnings}件（参考）`
+    )
+    return issues
+  } catch (error) {
+    // 照合はあくまで補助なので、失敗しても解析結果は返す
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`戸籍解析の照合に失敗しました（解析結果は有効です）: ${secondary.provider}/${secondary.model}`, message)
+    return []
   }
 }
 
@@ -111,9 +174,12 @@ export async function runKosekiAnalysis(
       }
       logTokenUsage(candidate, usage)
 
+      // 2モデル照合（有効時のみ）。primaryの結果は変えず、食い違いを注記として付ける
+      const crossCheckIssues = await runCrossCheck(input, candidate, data, override)
+
       return {
         success: true,
-        data,
+        data: crossCheckIssues.length > 0 ? { ...data, crossCheckIssues } : data,
         provider: candidate.provider,
         model: candidate.model,
         usage,

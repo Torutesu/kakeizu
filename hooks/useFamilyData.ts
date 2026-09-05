@@ -10,6 +10,7 @@ import {
 } from '../utils/familyDataProcessor'
 import { useUndoRedo } from './useUndoRedo'
 import { mergeFamilyTreeData } from '../utils/mergeFamilyData'
+import { ConsistencyIssue } from '../utils/consistency'
 import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
 import { fetchCanEditProject } from '../lib/db/projects'
 
@@ -21,6 +22,8 @@ const AUTOSAVE_DEBOUNCE_MS = 800
 interface FamilyDataState {
   persons: ProcessedPerson[]
   families: FamilyGroup[]
+  // 2モデル照合の食い違い。人物・家族から再構築できないため状態として保持する
+  crossCheckIssues?: ConsistencyIssue[]
 }
 
 interface UseFamilyDataReturn {
@@ -95,7 +98,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     redo: redoState,
   } = useUndoRedo<FamilyDataState>({ persons: [], families: [] })
 
-  const { persons, families } = currentState
+  const { persons, families, crossCheckIssues } = currentState
 
   // 非同期処理（複数ファイルの連続マージなど）から呼ばれても常に最新のstateを
   // 参照できるよう、refに現在値を持たせる（クロージャの古いstateによるデータ欠落防止）
@@ -119,7 +122,11 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       setSaveStatus('saved')
       // 読み込んだ状態をアンドゥ履歴の起点にする（空の状態までアンドゥで戻れないようにする）
       resetHistory(
-        { persons: processed.persons, families: processed.families },
+        {
+          persons: processed.persons,
+          families: processed.families,
+          crossCheckIssues: revision.data.crossCheckIssues,
+        },
         'データ読み込み'
       )
     } catch (err) {
@@ -151,7 +158,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       try {
         const result = await saveTreeRevision(
           projectId,
-          toFamilyTreeData(persons, families),
+          toFamilyTreeData(persons, families, crossCheckIssues),
           versionRef.current
         )
         if (result.ok) {
@@ -175,7 +182,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     try {
       const result = await saveTreeRevision(
         projectId,
-        toFamilyTreeData(persons, families),
+        toFamilyTreeData(persons, families, crossCheckIssues),
         versionRef.current
       )
       if (result.ok) {
@@ -321,18 +328,33 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   const importFamilyTreeData = useCallback((data: FamilyTreeData, mode: 'merge' | 'replace' = 'merge') => {
     if (mode === 'replace') {
       const processed = processFamilyData(data)
-      pushState({ persons: processed.persons, families: processed.families }, 'データを読み込み（置き換え）')
+      pushState(
+        {
+          persons: processed.persons,
+          families: processed.families,
+          crossCheckIssues: data.crossCheckIssues,
+        },
+        'データを読み込み（置き換え）'
+      )
       return { mergedPersonCount: 0, addedPersonCount: data.people.length }
     }
 
-    const { persons: currentPersons, families: currentFamilies } = currentStateRef.current
-    const existingRaw = toFamilyTreeData(currentPersons, currentFamilies)
+    const {
+      persons: currentPersons,
+      families: currentFamilies,
+      crossCheckIssues: currentIssues,
+    } = currentStateRef.current
+    const existingRaw = toFamilyTreeData(currentPersons, currentFamilies, currentIssues)
     const { data: mergedData, mergedPersonCount, addedPersonCount } =
       mergeFamilyTreeData(existingRaw, data)
 
     const processed = processFamilyData(mergedData)
     pushState(
-      { persons: processed.persons, families: processed.families },
+      {
+        persons: processed.persons,
+        families: processed.families,
+        crossCheckIssues: mergedData.crossCheckIssues,
+      },
       `戸籍データを読み込み（追加${addedPersonCount}人・統合${mergedPersonCount}人）`
     )
     return { mergedPersonCount, addedPersonCount }
@@ -340,8 +362,8 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
 
   // 現在のデータを可搬性のあるFamilyTreeData形式で取得（書き出し用）
   const exportFamilyTreeData = useCallback((): FamilyTreeData => {
-    return toFamilyTreeData(persons, families)
-  }, [persons, families])
+    return toFamilyTreeData(persons, families, crossCheckIssues)
+  }, [persons, families, crossCheckIssues])
 
   // 人物検索
   const getPersonById = useCallback((id: string) => {

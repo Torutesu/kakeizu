@@ -213,8 +213,20 @@ export function mergeFamilyTreeData(
     familyById.set(remapped.id, remapped)
   })
 
+  // 2モデル照合の食い違いは両側から引き継ぐ。
+  // 取り込み側のpersonIdsは名寄せでidが変わりうるため、マージ後のidに読み替える。
+  const remappedIncomingIssues = (incoming.crossCheckIssues ?? []).map(issue => ({
+    ...issue,
+    personIds: issue.personIds.map(id => idMap.get(id) ?? id),
+  }))
+  const crossCheckIssues = [...(existing.crossCheckIssues ?? []), ...remappedIncomingIssues]
+
   return {
-    data: { people, families },
+    data: {
+      people,
+      families,
+      ...(crossCheckIssues.length > 0 ? { crossCheckIssues } : {}),
+    },
     mergedPersonCount,
     addedPersonCount,
   }

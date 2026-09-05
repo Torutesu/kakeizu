@@ -1,5 +1,5 @@
 import { DATA_CONFIG } from '../constants/config'
-import { checkConsistency, buildUncertaintyMap } from './consistency'
+import { checkConsistency, buildUncertaintyMap, ConsistencyIssue } from './consistency'
 
 // family-info-sep.jsonのデータ構造に対応する型定義
 export interface PersonData {
@@ -45,6 +45,10 @@ export interface FamilyData {
 export interface FamilyTreeData {
   people: PersonData[]
   families: FamilyData[]
+  // 2モデル照合で見つかった食い違い（lib/analysis/ensemble.ts）。
+  // 保存対象のJSONに含めることで、再読み込み後も要確認マークが残る。
+  // 照合が無効・食い違いなしの場合は省略される。
+  crossCheckIssues?: ConsistencyIssue[]
 }
 
 // 処理された人物データの型
@@ -97,8 +101,12 @@ export function processFamilyData(data: FamilyTreeData): {
     return { persons: [], families: [] }
   }
 
-  // OCRの誤読は論理矛盾として現れることが多いため、機械的に検出して要確認マークを付ける
-  const uncertaintyByPersonId = buildUncertaintyMap(checkConsistency(data))
+  // OCRの誤読は論理矛盾として現れることが多いため、機械的に検出して要確認マークを付ける。
+  // 2モデル照合の食い違い（サーバー側で検出済み）も同じ経路で扱う。
+  const uncertaintyByPersonId = buildUncertaintyMap([
+    ...checkConsistency(data),
+    ...(data.crossCheckIssues ?? []),
+  ])
 
   // 人物データを処理
   const processedPersons = data.people.map(person => {
@@ -186,7 +194,12 @@ export function isValidFamilyTreeData(data: unknown): data is FamilyTreeData {
  * アプリ内部の処理済みデータを、可搬性のあるFamilyTreeData形式に変換する
  * （エクスポート・ローカル永続化に使用）
  */
-export function toFamilyTreeData(persons: ProcessedPerson[], families: FamilyGroup[]): FamilyTreeData {
+export function toFamilyTreeData(
+  persons: ProcessedPerson[],
+  families: FamilyGroup[],
+  // 2モデル照合の結果は人物・家族から再構築できないため、明示的に引き回して保存する
+  crossCheckIssues?: ConsistencyIssue[]
+): FamilyTreeData {
   const people: PersonData[] = persons.map(person => ({
     id: person.id,
     generation: person.generation,
@@ -216,7 +229,11 @@ export function toFamilyTreeData(persons: ProcessedPerson[], families: FamilyGro
     relation_type: family.relationType,
   }))
 
-  return { people, families: familiesData }
+  return {
+    people,
+    families: familiesData,
+    ...(crossCheckIssues && crossCheckIssues.length > 0 ? { crossCheckIssues } : {}),
+  }
 }
 
 /**
