@@ -1,4 +1,5 @@
 import { DATA_CONFIG } from '../constants/config'
+import { checkConsistency, buildUncertaintyMap } from './consistency'
 
 // family-info-sep.jsonのデータ構造に対応する型定義
 export interface PersonData {
@@ -52,7 +53,10 @@ export interface ProcessedPerson extends PersonData {
   y: number
   generation: number  // nullを許可しない（処理時に必ずnumberが設定される）
   displayName: string
-  isUncertain: boolean  // 処理時に必ずbooleanが設定される
+  // 論理矛盾が検出された人物にtrueが立つ（utils/consistency.ts）。処理時に必ずbooleanが設定される
+  isUncertain: boolean
+  // 要確認になった理由。画面上で「何がおかしいのか」を示すために使う
+  uncertaintyReasons: string[]
   // trueの場合、x/yはユーザーが手動で決めた位置（自動レイアウトで上書きしない・保存対象）
   manualPosition: boolean
 }
@@ -93,6 +97,9 @@ export function processFamilyData(data: FamilyTreeData): {
     return { persons: [], families: [] }
   }
 
+  // OCRの誤読は論理矛盾として現れることが多いため、機械的に検出して要確認マークを付ける
+  const uncertaintyByPersonId = buildUncertaintyMap(checkConsistency(data))
+
   // 人物データを処理
   const processedPersons = data.people.map(person => {
     const hasValidPosition =
@@ -106,7 +113,8 @@ export function processFamilyData(data: FamilyTreeData): {
       y: hasValidPosition ? person.position!.y : 0,
       generation: person.generation ?? DATA_CONFIG.defaultGeneration,
       displayName: buildDisplayName(person.name),
-      isUncertain: false,
+      isUncertain: uncertaintyByPersonId.has(person.id),
+      uncertaintyReasons: uncertaintyByPersonId.get(person.id) ?? [],
       manualPosition: hasValidPosition
     }
   })

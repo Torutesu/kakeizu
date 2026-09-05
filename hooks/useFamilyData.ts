@@ -214,6 +214,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       y: 0,
       displayName: '',
       isUncertain: false,
+      uncertaintyReasons: [],
       manualPosition: false,
       ...personData
     }

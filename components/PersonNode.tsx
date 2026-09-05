@@ -118,7 +118,13 @@ export function PersonNode({
               {person.displayName}
             </h4>
             {person.isUncertain && (
-              <AlertCircle className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${COLORS.uncertain.text}`} />
+              <AlertCircle
+                className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${COLORS.uncertain.text}`}
+                // 何がおかしいのかを示さないと確認のしようがないため、検出理由をそのまま出す
+                aria-label={`要確認: ${person.uncertaintyReasons.join(' / ')}`}
+              >
+                <title>{person.uncertaintyReasons.join('\n')}</title>
+              </AlertCircle>
             )}
           </div>
 
