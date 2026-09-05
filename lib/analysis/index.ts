@@ -1,5 +1,12 @@
 import '../server-guard'
-import { AnalysisInput, AnalysisOutcome, AnalysisProvider, AnalysisProviderName, ProviderCandidate } from './types'
+import {
+  AnalysisInput,
+  AnalysisOutcome,
+  AnalysisProvider,
+  AnalysisProviderName,
+  ProviderCandidate,
+  TokenUsage,
+} from './types'
 import { resolveProviderChain, resolveOverrideCandidate } from './chain'
 import { kosekiResultSchema } from './schema'
 import { sanitizeFamilyTreeData } from './sanitize'
@@ -18,6 +25,32 @@ const PROVIDERS: Record<AnalysisProviderName, AnalysisProvider> = {
 export interface AnalysisOverride {
   provider: string
   model?: string
+}
+
+/**
+ * トークン消費量とキャッシュヒット率を記録する。
+ * プロンプトキャッシュは「設定したつもりで効いていない」ことが起きやすく
+ * （最小トークン数に届かない、プレフィックスが毎回変わる等）、
+ * その場合も課金額が増えるだけでエラーにはならない。実測値を残して検知できるようにする。
+ */
+function logTokenUsage(candidate: ProviderCandidate, usage: TokenUsage | null): void {
+  if (!usage) return
+  const { inputTokens, outputTokens, cachedInputTokens } = usage
+  const hitRate =
+    inputTokens && inputTokens > 0 && cachedInputTokens !== null
+      ? `${Math.round((cachedInputTokens / inputTokens) * 100)}%`
+      : '不明'
+  console.info(
+    `戸籍解析トークン: ${candidate.provider}/${candidate.model} ` +
+      `入力=${inputTokens ?? '?'} (キャッシュ${cachedInputTokens ?? '?'}, ヒット率${hitRate}) ` +
+      `出力=${outputTokens ?? '?'}`
+  )
+  if (cachedInputTokens === 0) {
+    console.warn(
+      `戸籍解析: ${candidate.provider}/${candidate.model} でプロンプトキャッシュが効いていません。` +
+        '固定プロンプトが最小トークン数に達しているかを確認してください。'
+    )
+  }
 }
 
 /**
@@ -62,7 +95,7 @@ export async function runKosekiAnalysis(
 
   for (const candidate of chain) {
     try {
-      const raw = await PROVIDERS[candidate.provider].analyze(input, candidate.model)
+      const { raw, usage } = await PROVIDERS[candidate.provider].analyze(input, candidate.model)
 
       // プロバイダ差を吸収するため、必ず共通スキーマで検証する
       const parsed = kosekiResultSchema.safeParse(raw)
@@ -76,11 +109,14 @@ export async function runKosekiAnalysis(
           `戸籍解析: フォールバック先 ${candidate.provider}/${candidate.model} で成功しました（試行ログ: ${errors.join(' | ')}）`
         )
       }
+      logTokenUsage(candidate, usage)
+
       return {
         success: true,
         data,
         provider: candidate.provider,
         model: candidate.model,
+        usage,
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

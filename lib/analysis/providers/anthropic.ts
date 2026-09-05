@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT } from '../../koseki-prompt'
 import { kosekiResultSchema } from '../schema'
-import { AnalysisInput, AnalysisProvider } from '../types'
+import { AnalysisInput, AnalysisProvider, ProviderResult } from '../types'
 
 const IMAGE_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number]
@@ -19,7 +19,7 @@ function isImageMediaType(mimeType: string): mimeType is ImageMediaType {
  * 既定の適応的思考（adaptive thinking）で難読箇所の推論精度を高める。
  */
 export const anthropicProvider: AnalysisProvider = {
-  async analyze(input: AnalysisInput, model: string): Promise<unknown> {
+  async analyze(input: AnalysisInput, model: string): Promise<ProviderResult> {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
       throw new Error('ANTHROPIC_API_KEY が設定されていません')
@@ -50,7 +50,17 @@ export const anthropicProvider: AnalysisProvider = {
       model,
       // 大きな戸籍では出力が長くなるため余裕を持たせる（TS SDKは大きなmax_tokensに応じてタイムアウトを自動延長する）
       max_tokens: 64000,
-      system: KOSEKI_SYSTEM_INSTRUCTION,
+      // システムプロンプトは全ページで完全に同一なので、キャッシュの区切りを置く。
+      // レンダリング順は tools → system → messages なので、systemだけを対象にすれば
+      // 後続のメッセージ（ページごとに変わる画像）に影響されず毎回ヒットする。
+      // 画像とテキストの並び順は精度に影響しうるため、キャッシュのために並べ替えない。
+      system: [
+        {
+          type: 'text',
+          text: KOSEKI_SYSTEM_INSTRUCTION,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
       messages: [
         {
           role: 'user',
@@ -65,6 +75,19 @@ export const anthropicProvider: AnalysisProvider = {
     if (!response.parsed_output) {
       throw new Error('構造化出力の解析に失敗しました')
     }
-    return response.parsed_output
+
+    const usage = response.usage
+    return {
+      raw: response.parsed_output,
+      usage: {
+        // input_tokensはキャッシュ分を含まないため、実際の入力総量は3つの合計になる
+        inputTokens:
+          (usage?.input_tokens ?? 0) +
+          (usage?.cache_read_input_tokens ?? 0) +
+          (usage?.cache_creation_input_tokens ?? 0),
+        outputTokens: usage?.output_tokens ?? null,
+        cachedInputTokens: usage?.cache_read_input_tokens ?? null,
+      },
+    }
   },
 }

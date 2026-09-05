@@ -3,7 +3,7 @@ import OpenAI from 'openai'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT } from '../../koseki-prompt'
 import { kosekiResultSchema } from '../schema'
-import { AnalysisInput, AnalysisProvider } from '../types'
+import { AnalysisInput, AnalysisProvider, ProviderResult } from '../types'
 
 /**
  * OpenAI GPT プロバイダ。
@@ -13,7 +13,7 @@ import { AnalysisInput, AnalysisProvider } from '../types'
  * （データ利用ポリシーは lib/analysis/dataPolicy.ts / docs/AI_DATA_POLICY.md）。
  */
 export const openaiProvider: AnalysisProvider = {
-  async analyze(input: AnalysisInput, model: string): Promise<unknown> {
+  async analyze(input: AnalysisInput, model: string): Promise<ProviderResult> {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY が設定されていません')
@@ -46,6 +46,10 @@ export const openaiProvider: AnalysisProvider = {
       text: {
         format: zodTextFormat(kosekiResultSchema, 'koseki_result'),
       },
+      // OpenAIのキャッシュは自動（1,024トークン以上の共通プレフィックスが対象）。
+      // 同じキーのリクエストを同じキャッシュへ寄せることでヒット率が上がる。
+      // 戸籍解析はプロンプトが1種類なので固定値でよい。
+      prompt_cache_key: 'koseki-analysis-v1',
       // 応答をサーバー側に保存しない（機微情報の残留を避ける）
       store: false,
     })
@@ -53,6 +57,15 @@ export const openaiProvider: AnalysisProvider = {
     if (!response.output_parsed) {
       throw new Error('構造化出力の解析に失敗しました')
     }
-    return response.output_parsed
+
+    const usage = response.usage
+    return {
+      raw: response.output_parsed,
+      usage: {
+        inputTokens: usage?.input_tokens ?? null,
+        outputTokens: usage?.output_tokens ?? null,
+        cachedInputTokens: usage?.input_tokens_details?.cached_tokens ?? null,
+      },
+    }
   },
 }

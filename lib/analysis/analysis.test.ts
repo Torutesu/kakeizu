@@ -9,10 +9,11 @@ describe('resolveProviderChain', () => {
     expect(resolveProviderChain({})).toEqual([])
   })
 
-  it('Geminiキーのみ: Gemini最新 → Gemini安定版の順', () => {
+  it('Geminiキーのみ: 最新 → 同世代preview → 旧世代 の順に落ちる', () => {
     const chain = resolveProviderChain({ GEMINI_API_KEY: 'k' })
     expect(chain).toEqual([
       { provider: 'gemini', model: 'gemini-3.1-pro' },
+      { provider: 'gemini', model: 'gemini-3.1-pro-preview' },
       { provider: 'gemini', model: 'gemini-2.5-pro' },
     ])
   })
@@ -25,6 +26,7 @@ describe('resolveProviderChain', () => {
     })
     expect(chain).toEqual([
       { provider: 'gemini', model: DEFAULT_MODELS.gemini },
+      { provider: 'gemini', model: 'gemini-3.1-pro-preview' },
       { provider: 'gemini', model: 'gemini-2.5-pro' },
       { provider: 'anthropic', model: DEFAULT_MODELS.anthropic },
       { provider: 'openai', model: DEFAULT_MODELS.openai },
@@ -70,9 +72,11 @@ describe('resolveProviderChain', () => {
   it('同一候補は重複しない', () => {
     const chain = resolveProviderChain({
       GEMINI_API_KEY: 'k',
-      ANALYSIS_MODEL: 'gemini-2.5-pro', // 安定版フォールバックと同一
+      ANALYSIS_MODEL: 'gemini-2.5-pro', // フォールバック候補と同一
     })
-    expect(chain).toEqual([{ provider: 'gemini', model: 'gemini-2.5-pro' }])
+    // 2.5 Proは第一候補として1回だけ現れ、フォールバック側では重複しない
+    expect(chain.filter(c => c.model === 'gemini-2.5-pro')).toHaveLength(1)
+    expect(chain[0]).toEqual({ provider: 'gemini', model: 'gemini-2.5-pro' })
   })
 })
 

@@ -22,6 +22,7 @@ import {
   AnalysisProvider,
   AnalysisProviderName,
   ProviderCandidate,
+  TokenUsage,
 } from '../../lib/analysis/types'
 import { FamilyTreeData, isValidFamilyTreeData } from '../../utils/familyDataProcessor'
 import { scoreResult, matchPeople, formatPercent, BenchmarkScore } from './metrics'
@@ -58,6 +59,31 @@ interface FileResult {
   missingNames?: string[]
   extraNames?: string[]
   data?: FamilyTreeData
+  usage?: TokenUsage | null
+}
+
+// 実測トークンから原価を出すための単価（USD / 100万トークン、2026年9月時点）。
+// 未知のモデルは概算できないため原価欄を空にする。
+const PRICING: Record<string, { input: number; output: number; cachedInput: number }> = {
+  'gemini-3.1-pro':   { input: 2.0,   output: 12.0, cachedInput: 0.2 },
+  'gemini-2.5-pro':   { input: 1.25,  output: 10.0, cachedInput: 0.125 },
+  'claude-opus-5':    { input: 5.0,   output: 25.0, cachedInput: 0.5 },
+  'claude-sonnet-5':  { input: 2.0,   output: 10.0, cachedInput: 0.2 },
+  'claude-haiku-4-5': { input: 1.0,   output: 5.0,  cachedInput: 0.1 },
+  'gpt-5.2':          { input: 0.875, output: 7.0,  cachedInput: 0.0875 },
+}
+const USD_TO_JPY = Number(process.env.BENCHMARK_USD_JPY ?? 150)
+
+/** 実測トークンから1ページあたりの原価（円）を求める。単価未登録ならnull */
+function estimateYen(model: string, usage: TokenUsage | null | undefined): number | null {
+  if (!usage) return null
+  const price = PRICING[model]
+  if (!price) return null
+  const cached = usage.cachedInputTokens ?? 0
+  const uncachedInput = Math.max(0, (usage.inputTokens ?? 0) - cached)
+  const usd =
+    (uncachedInput * price.input + cached * price.cachedInput + (usage.outputTokens ?? 0) * price.output) / 1e6
+  return usd * USD_TO_JPY
 }
 
 // ---- .env.local の読み込み（Next外のNode実行のため簡易パーサで読む） ----
@@ -169,7 +195,7 @@ async function main() {
       const startedAt = Date.now()
 
       try {
-        const raw = await PROVIDERS[candidate.provider].analyze({ base64Data, mimeType }, candidate.model)
+        const { raw, usage } = await PROVIDERS[candidate.provider].analyze({ base64Data, mimeType }, candidate.model)
         const parsed = kosekiResultSchema.safeParse(raw)
         if (!parsed.success) {
           throw new Error(`スキーマ不一致: ${parsed.error.issues[0]?.message ?? ''}`)
@@ -185,6 +211,7 @@ async function main() {
           personCount: data.people.length,
           familyCount: data.families.length,
           data,
+          usage,
         }
         if (expected) {
           result.score = scoreResult(expected, data)
@@ -245,8 +272,8 @@ async function main() {
   // 候補別の集計（正解データがあるファイルのみ）
   lines.push('## モデル別の集計（正解データのあるファイルのみ）')
   lines.push('')
-  lines.push('| モデル | 成功/試行 | 平均F1 | 平均再現率 | 平均適合率 | 平均生年一致 | 平均所要 |')
-  lines.push('|---|---|---|---|---|---|---|')
+  lines.push('| モデル | 成功/試行 | 平均F1 | 平均再現率 | 平均適合率 | 平均生年一致 | 平均所要 | 平均入力tok | キャッシュ率 | 平均原価/枚 |')
+  lines.push('|---|---|---|---|---|---|---|---|---|---|')
   for (const candidate of candidates) {
     const label = `${candidate.provider}:${candidate.model}`
     const all = results.filter(r => r.candidate === label)
@@ -258,10 +285,26 @@ async function main() {
       return values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length
     }
     const avgDuration = all.length === 0 ? 0 : all.reduce((a, r) => a + r.durationSeconds, 0) / all.length
+    // トークンと原価の実測（usageを返したファイルのみ）
+    const withUsage = all.filter(r => r.ok && r.usage)
+    const mean = (values: number[]): number | null =>
+      values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length
+    const avgInput = mean(withUsage.map(r => r.usage!.inputTokens ?? 0).filter(v => v > 0))
+    const totalInput = withUsage.reduce((a, r) => a + (r.usage!.inputTokens ?? 0), 0)
+    const totalCached = withUsage.reduce((a, r) => a + (r.usage!.cachedInputTokens ?? 0), 0)
+    const cacheRate = totalInput > 0 ? totalCached / totalInput : null
+    const avgYen = mean(
+      withUsage
+        .map(r => estimateYen(candidate.model, r.usage))
+        .filter((v): v is number => v !== null)
+    )
     lines.push(
       `| ${label} | ${all.filter(r => r.ok).length}/${all.length} | ${formatPercent(avg(s => s.f1))} | ` +
       `${formatPercent(avg(s => s.recall))} | ${formatPercent(avg(s => s.precision))} | ` +
-      `${formatPercent(avg(s => s.birthDateAccuracy))} | ${avgDuration.toFixed(1)}s |`
+      `${formatPercent(avg(s => s.birthDateAccuracy))} | ${avgDuration.toFixed(1)}s | ` +
+      `${avgInput === null ? '-' : Math.round(avgInput).toLocaleString()} | ` +
+      `${cacheRate === null ? '-' : formatPercent(cacheRate)} | ` +
+      `${avgYen === null ? '-' : '¥' + avgYen.toFixed(2)} |`
     )
   }
   lines.push('')

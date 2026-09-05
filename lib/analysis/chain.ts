@@ -20,9 +20,15 @@ export const DEFAULT_MODELS: Record<AnalysisProviderName, string> = {
   openai: 'gpt-5.2',
 }
 
-// プロバイダ内のフォールバック（プレビュー/最新モデルがAPIキーで使えない場合の安定版）
-export const PROVIDER_FALLBACK_MODELS: Partial<Record<AnalysisProviderName, string>> = {
-  gemini: 'gemini-2.5-pro',
+// プロバイダ内のフォールバック（先頭から順に試す）。
+//
+// Geminiは公式ドキュメント上のエンドポイントが `gemini-3.1-pro-preview` である一方、
+// エイリアス `gemini-3.1-pro` が使えるかはキー・提供状況によって変わる。
+// 素の3.1が解決できないときに一気に2.5 Proまで落ちると、
+// 3.1 Proで動いているつもりで実際は旧世代という状態になり、精度差の原因が見えなくなる。
+// 同世代のpreview IDを間に挟んで、世代を落とすのを最後の手段にする。
+export const PROVIDER_FALLBACK_MODELS: Partial<Record<AnalysisProviderName, string[]>> = {
+  gemini: ['gemini-3.1-pro-preview', 'gemini-2.5-pro'],
 }
 
 const API_KEY_ENV: Record<AnalysisProviderName, string> = {
@@ -94,9 +100,10 @@ export function resolveProviderChain(env: ChainEnv): ProviderCandidate[] {
   // 1. 第一候補
   push(primary, modelFor(primary))
 
-  // 2. 同一プロバイダの安定版フォールバック
-  const stableFallback = PROVIDER_FALLBACK_MODELS[primary]
-  if (stableFallback) push(primary, stableFallback)
+  // 2. 同一プロバイダのフォールバック（同世代 → 旧世代の順）
+  for (const fallbackModel of PROVIDER_FALLBACK_MODELS[primary] ?? []) {
+    push(primary, fallbackModel)
+  }
 
   // 3. 他プロバイダへのフォールバック（キーがあるもののみ、優先順）
   for (const provider of PROVIDER_PRIORITY) {
