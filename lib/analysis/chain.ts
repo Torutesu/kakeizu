@@ -4,11 +4,14 @@ import { AnalysisProviderName, ProviderCandidate } from './types'
 // 解析プロバイダチェーンの解決（純関数・テスト対象）。
 //
 // 2026年時点のリサーチに基づく既定モデル:
-// - Gemini 3.1 Pro: 文書処理のコスト効率が最良（$2/$12 per 1M tok）、
-//   デコード時に強制される構造化出力、日本語文書に強い → 既定
+// - Gemini 3.1 Pro: デコード時に強制される構造化出力、日本語文書に強い → 暫定の既定
 // - Claude Opus 5: 複雑な構造化抽出・長文手書き文書でベンチマーク最高精度
 // - GPT-5.2: 手書き文字認識CERでSOTA級（ラテン文字ベンチマーク基準）
-// 詳細な比較と根拠は docs/MODEL_RESEARCH.md を参照。
+//
+// 注意: 既定をコスト効率で選んではならない。月100案件規模でも最安モデルと
+// 最高モデルのAPI料金差は人手の修正コストより一桁小さく、精度差のほうが
+// 支配的になる（試算は docs/MODEL_RESEARCH.md「原価はモデル選定の根拠にならない」）。
+// 実データでのベンチマーク（docs/BENCHMARK_GUIDE.md）の結果で決め直すこと。
 // ============================================================================
 
 export const DEFAULT_MODELS: Record<AnalysisProviderName, string> = {
