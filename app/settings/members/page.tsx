@@ -87,10 +87,9 @@ export default function MembersSettingsPage() {
     if (!ctx) return
     setIsInviting(true)
     try {
-      await inviteMember(ctx.orgId, inviteEmail, inviteRole)
-      toast.success(
-        `${inviteEmail} を招待しました。このメールアドレスでログイン（新規登録）すると自動的にメンバーになります。`
-      )
+      // メール送信の結果によって文言が変わる（既に登録済み・送信失敗など）
+      const message = await inviteMember(ctx.orgId, inviteEmail, inviteRole)
+      toast.success(message)
       setInviteEmail('')
       setInvitations(await fetchPendingInvitations(ctx.orgId))
     } catch (err) {

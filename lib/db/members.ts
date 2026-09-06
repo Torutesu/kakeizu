@@ -84,17 +84,20 @@ export async function inviteMember(
   orgId: string,
   email: string,
   role: OrgRole
-): Promise<void> {
-  const supabase = getSupabaseBrowserClient()
-  const { error } = await supabase
-    .from('invitations')
-    .insert({ org_id: orgId, email: email.trim().toLowerCase(), role })
-  if (error) {
-    if (error.code === '23505') {
-      throw new Error('このメールアドレスは既に招待済みです')
-    }
-    throw new Error(`招待の作成に失敗しました: ${error.message}`)
+): Promise<string> {
+  // 招待メールの送信にはサービスロールキーが要るため、サーバー側のルートで行う。
+  // 権限の検査はそのルート内でRLSに委ねている
+  const response = await fetch('/api/invitations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orgId, email: email.trim().toLowerCase(), role }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(payload.error ?? '招待に失敗しました')
   }
+  // メール送信の結果によって文言が変わる（既に登録済みの場合など）
+  return payload.message ?? `${email} を招待しました`
 }
 
 export async function revokeInvitation(orgId: string, invitationId: string): Promise<void> {
