@@ -92,12 +92,17 @@ export async function inviteMember(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orgId, email: email.trim().toLowerCase(), role }),
   })
-  const payload = await response.json().catch(() => ({}))
+  // 本文がJSONでない場合（想定外のエラー画面など）に
+  // 「成功した」と誤認しないよう、状態コードを先に見る
+  const payload = await response.json().catch(() => ({}) as { error?: string; message?: string })
   if (!response.ok) {
-    throw new Error(payload.error ?? '招待に失敗しました')
+    throw new Error(payload.error ?? `招待に失敗しました（${response.status}）`)
+  }
+  if (typeof payload.message !== 'string') {
+    throw new Error('招待の結果を確認できませんでした。メンバー一覧を再読み込みして確認してください。')
   }
   // メール送信の結果によって文言が変わる（既に登録済みの場合など）
-  return payload.message ?? `${email} を招待しました`
+  return payload.message
 }
 
 export async function revokeInvitation(orgId: string, invitationId: string): Promise<void> {

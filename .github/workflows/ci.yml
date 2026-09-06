@@ -32,6 +32,18 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # マイグレーションが実際に適用できること、および担当外・他事務所のデータへ
+      # 到達できないこと（要件N-01/N-02）をDB層で検証する。
+      # 画面のテストでは確かめられない層であり、実際にここで
+      # 「作業者が担当外の案件を閲覧できる」不具合を検出している。
+      - name: Verify migrations and access control
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql postgresql-client
+          sudo bash scripts/verify-db.sh
+        env:
+          PG_BIN: /usr/lib/postgresql/16/bin
+
       - name: Build
         run: pnpm build
 

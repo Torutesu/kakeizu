@@ -35,3 +35,6 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Supabase CLI の作業用（バージョン確認キャッシュなど）
+/supabase/.temp/
