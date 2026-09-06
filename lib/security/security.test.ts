@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { detectMimeType, validateFileContent, isAllowedKosekiMimeType } from './fileValidation'
-import { parseRateLimitRow, ANALYSIS_WINDOW_SECONDS } from './rateLimit'
+import {
+  parseRateLimitRow,
+  ANALYSIS_WINDOW_SECONDS,
+  INVITE_MAX_PER_USER,
+  INVITE_USER_WINDOW_SECONDS,
+  INVITE_MAX_PER_ORG_PER_DAY,
+} from './rateLimit'
 
 function bytesFrom(...values: number[]): Uint8Array {
   const arr = new Uint8Array(Math.max(12, values.length))
@@ -78,5 +84,41 @@ describe('parseRateLimitRow', () => {
     expect(parseRateLimitRow({})).toBeNull()
     expect(parseRateLimitRow({ allowed: 'yes' })).toBeNull()
     expect(parseRateLimitRow('ok')).toBeNull()
+  })
+
+  it('フォールバックの秒数を操作ごとに指定できる', () => {
+    // 招待は解析よりウィンドウが長いため、既定値のままだと待ち時間の案内がずれる
+    expect(
+      parseRateLimitRow({ allowed: false, retry_after_seconds: null }, INVITE_USER_WINDOW_SECONDS)
+    ).toEqual({
+      allowed: false,
+      retryAfterSeconds: INVITE_USER_WINDOW_SECONDS,
+    })
+  })
+
+  it('負の秒数は0に丸める', () => {
+    expect(parseRateLimitRow({ allowed: false, retry_after_seconds: -5 })).toEqual({
+      allowed: false,
+      retryAfterSeconds: 0,
+    })
+  })
+})
+
+describe('招待の回数制限の設定値', () => {
+  // 招待は任意のアドレスへメールを送れる経路になるため、
+  // 実運用に足りる範囲で、迷惑メールの送信元にならない値であることを固定する
+  it('チームの一括登録（5〜10人）が1時間で通る', () => {
+    expect(INVITE_MAX_PER_USER).toBeGreaterThanOrEqual(10)
+    expect(INVITE_USER_WINDOW_SECONDS).toBe(60 * 60)
+  })
+
+  it('事務所単位の日次上限が利用者単位の上限より大きい', () => {
+    // 逆転していると、利用者単位の制限に達する前に事務所単位で止まってしまう
+    expect(INVITE_MAX_PER_ORG_PER_DAY).toBeGreaterThan(INVITE_MAX_PER_USER)
+  })
+
+  it('1事務所での利用として妥当な範囲に収まっている', () => {
+    expect(INVITE_MAX_PER_USER).toBeLessThanOrEqual(20)
+    expect(INVITE_MAX_PER_ORG_PER_DAY).toBeLessThanOrEqual(50)
   })
 })

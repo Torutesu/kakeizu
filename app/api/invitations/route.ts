@@ -7,6 +7,13 @@ import {
   InviteMailOutcome,
 } from '@/lib/invitations/inviteResult'
 import { ORG_ROLE_LABELS, OrgRole } from '@/lib/auth/permissions'
+import {
+  checkRateLimit,
+  RateLimitUnavailableError,
+  INVITE_MAX_PER_USER,
+  INVITE_USER_WINDOW_SECONDS,
+  INVITE_MAX_PER_ORG_PER_DAY,
+} from '@/lib/security/rateLimit'
 
 // ============================================================================
 // メンバー招待。招待の行を作り、招待メールを送る。
@@ -18,6 +25,11 @@ import { ORG_ROLE_LABELS, OrgRole } from '@/lib/auth/permissions'
 // またこの順序は auth.users の enforce_invite_only トリガの前提でもある。
 // inviteUserByEmail は auth.users に行を作るため、招待の行が先に無いと
 // トリガに弾かれる（招待されていない登録を拒否する仕組みのため）。
+//
+// 回数制限は2段階でかける。招待は任意のアドレスへメールを送れる経路であり、
+// 管理者アカウントが乗っ取られた場合に迷惑メールの送信元になりうるため。
+// - 利用者ごと: 1時間あたり INVITE_MAX_PER_USER 件
+// - 事務所ごと: 1日あたり INVITE_MAX_PER_ORG_PER_DAY 件
 // ============================================================================
 
 function isOrgRole(value: unknown): value is OrgRole {
@@ -50,6 +62,62 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
+  }
+
+  // 利用者ごとの回数制限。確認できない場合は通さない（フェイルクローズ）
+  try {
+    const limit = await checkRateLimit(
+      supabase,
+      'invitation',
+      INVITE_MAX_PER_USER,
+      INVITE_USER_WINDOW_SECONDS
+    )
+    if (!limit.allowed) {
+      return NextResponse.json(
+        {
+          error:
+            '短時間に招待を送りすぎています。' +
+            `${Math.ceil(limit.retryAfterSeconds / 60)}分ほど時間をおいてからお試しください。`,
+        },
+        { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } }
+      )
+    }
+  } catch (error) {
+    if (error instanceof RateLimitUnavailableError) {
+      console.error('招待の回数制限を確認できませんでした', error.message)
+      return NextResponse.json(
+        { error: '現在招待を受け付けられません。管理者へご連絡ください。' },
+        { status: 503 }
+      )
+    }
+    throw error
+  }
+
+  // 事務所ごとの総量。招待の行そのものを数えるので、専用のカウンタは要らない。
+  // 参照はRLSで自組織のadminに限られる
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { count: recentCount, error: countError } = await supabase
+    .from('invitations')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .gte('created_at', since)
+
+  if (countError) {
+    console.error('招待件数を確認できませんでした', countError.message)
+    return NextResponse.json(
+      { error: '現在招待を受け付けられません。管理者へご連絡ください。' },
+      { status: 503 }
+    )
+  }
+  if ((recentCount ?? 0) >= INVITE_MAX_PER_ORG_PER_DAY) {
+    return NextResponse.json(
+      {
+        error:
+          `1日に送れる招待は${INVITE_MAX_PER_ORG_PER_DAY}件までです。` +
+          '明日以降にあらためてお試しください。',
+      },
+      { status: 429 }
+    )
   }
 
   // 招待の行を作る。adminでなければRLSがここで拒否する
