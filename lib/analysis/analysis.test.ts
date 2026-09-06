@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveProviderChain, DEFAULT_MODELS } from './chain'
+import { resolveProviderChain, resolveCrossCheckCandidate, DEFAULT_MODELS } from './chain'
 import { kosekiResultSchema } from './schema'
 import { sanitizeFamilyTreeData } from './sanitize'
 import { FamilyTreeData } from '../../utils/familyDataProcessor'
@@ -77,6 +77,73 @@ describe('resolveProviderChain', () => {
     // 2.5 Proは第一候補として1回だけ現れ、フォールバック側では重複しない
     expect(chain.filter(c => c.model === 'gemini-2.5-pro')).toHaveLength(1)
     expect(chain[0]).toEqual({ provider: 'gemini', model: 'gemini-2.5-pro' })
+  })
+})
+
+describe('resolveCrossCheckCandidate', () => {
+  const gemini = { provider: 'gemini' as const, model: 'gemini-3.1-pro' }
+
+  it('キーが2つ以上あれば、設定なしでも既定で有効になる', () => {
+    // opt-inにすると設定を知らないまま運用が始まり、一度も動かないまま終わるため
+    const candidate = resolveCrossCheckCandidate(
+      { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k' },
+      gemini
+    )
+    expect(candidate?.provider).toBe('anthropic')
+  })
+
+  it('ANALYSIS_ENSEMBLE=false で明示的に無効化できる', () => {
+    expect(
+      resolveCrossCheckCandidate(
+        { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k', ANALYSIS_ENSEMBLE: 'false' },
+        gemini
+      )
+    ).toBeNull()
+  })
+
+  it('キーが1つしかなければ照合しようがないので無効になる', () => {
+    expect(resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k' }, gemini)).toBeNull()
+  })
+
+  it('必ずprimaryと別のプロバイダを選ぶ', () => {
+    // 同じモデルを2回呼んでも同じ誤読を再現するだけで照合にならない
+    const candidate = resolveCrossCheckCandidate(
+      { GEMINI_API_KEY: 'k', OPENAI_API_KEY: 'k' },
+      gemini
+    )
+    expect(candidate?.provider).not.toBe('gemini')
+  })
+
+  it('照合先を明示指定できる', () => {
+    const candidate = resolveCrossCheckCandidate(
+      {
+        GEMINI_API_KEY: 'k',
+        ANTHROPIC_API_KEY: 'k',
+        OPENAI_API_KEY: 'k',
+        ANALYSIS_ENSEMBLE_PROVIDER: 'openai',
+        ANALYSIS_ENSEMBLE_MODEL: 'gpt-5.2',
+      },
+      gemini
+    )
+    expect(candidate).toEqual({ provider: 'openai', model: 'gpt-5.2' })
+  })
+
+  it('照合先にprimaryと同じプロバイダを指定した場合は無効になる', () => {
+    expect(
+      resolveCrossCheckCandidate(
+        { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k', ANALYSIS_ENSEMBLE_PROVIDER: 'gemini' },
+        gemini
+      )
+    ).toBeNull()
+  })
+
+  it('照合先に指定したプロバイダのキーがなければ無効になる', () => {
+    expect(
+      resolveCrossCheckCandidate(
+        { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k', ANALYSIS_ENSEMBLE_PROVIDER: 'openai' },
+        gemini
+      )
+    ).toBeNull()
   })
 })
 

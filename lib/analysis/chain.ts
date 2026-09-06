@@ -113,3 +113,32 @@ export function resolveProviderChain(env: ChainEnv): ProviderCandidate[] {
 
   return chain
 }
+
+/**
+ * 照合用モデルを選ぶ。primaryと**別プロバイダ**であることが要件。
+ * 同じモデルを2回呼んでも同じ誤読を再現するだけで、照合の意味がないため。
+ *
+ * **既定で有効。** 明示的に ANALYSIS_ENSEMBLE=false を設定した場合のみ無効になる。
+ * opt-inにすると設定を知らないまま運用が始まり、実装したのに一度も動かないまま
+ * 終わる（照合はOCR精度の中核なので、既定で効いているべき）。
+ * APIコストは2倍になるが、人手の修正コストより1桁小さい（docs/MODEL_RESEARCH.md）。
+ *
+ * 2つ目のプロバイダのAPIキーがなければ、静かに無効になる（照合しようがないため）。
+ */
+export function resolveCrossCheckCandidate(
+  env: ChainEnv,
+  primary: ProviderCandidate
+): ProviderCandidate | null {
+  if ((env.ANALYSIS_ENSEMBLE ?? '').trim().toLowerCase() === 'false') return null
+
+  const configured = (env.ANALYSIS_ENSEMBLE_PROVIDER ?? '').trim().toLowerCase()
+  if (configured) {
+    const candidate = resolveOverrideCandidate(env, configured, env.ANALYSIS_ENSEMBLE_MODEL)
+    return candidate && candidate.provider !== primary.provider ? candidate : null
+  }
+
+  // 未指定なら、キーのあるプロバイダのうちprimary以外の最優先を使う
+  return (
+    resolveProviderChain(env).find(c => c.provider !== primary.provider) ?? null
+  )
+}
