@@ -29,3 +29,9 @@ next-env.d.ts
 # ベンチマーク用テストデータと結果（戸籍=機微情報のためコミット禁止）
 /testdata/
 /benchmark-results/
+
+# Playwright（E2E）
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

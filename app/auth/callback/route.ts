@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
-// OAuth・メール確認リンクからのリダイレクトを受けてセッションを確立する
+// メール確認リンクからのリダイレクトを受けてセッションを確立する。
+// 外部アカウント連携は行わないため、OAuthコールバックとしては使用しない。
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')

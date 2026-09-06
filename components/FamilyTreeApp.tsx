@@ -40,6 +40,7 @@ import { useZoomSettings } from "../hooks/useZoomSettings"
 import { useKosekiFiles } from "../hooks/useKosekiFiles"
 import { useConfirm } from "../hooks/useConfirm"
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog"
+import { IssuesPanel } from "./IssuesPanel"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { formatKazoeAge } from "../utils/age"
@@ -76,6 +77,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   const {
     persons,
     families,
+    issues,
     isLoading,
     error,
     saveStatus,
@@ -96,7 +98,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     refreshData
   } = useFamilyData(projectId)
 
-  // 案件情報（表示名と、監査ログに必要な組織ID）
+  // 案件情報（表示名と、メンバー操作に必要な組織ID）
   const [project, setProject] = useState<ProjectSummary | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -663,6 +665,16 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
               <X className="w-4 h-4" />
             </Button>
           </div>
+
+          {/* 要確認の指摘一覧（論理矛盾・2モデル照合の食い違い） */}
+          <IssuesPanel
+            issues={issues}
+            persons={persons}
+            onFocusPerson={(person: ProcessedPerson) => {
+              handleSearchResultSelect(person)
+              setIsRightPanelOpen(false)
+            }}
+          />
 
           {/* 検索機能 */}
           <div className="p-6 border-b border-gray-200">

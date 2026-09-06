@@ -22,6 +22,8 @@ const AUTOSAVE_DEBOUNCE_MS = 800
 interface FamilyDataState {
   persons: ProcessedPerson[]
   families: FamilyGroup[]
+  // 検出された指摘（論理矛盾＋2モデル照合）。一覧表示に使う
+  issues?: ConsistencyIssue[]
   // 2モデル照合の食い違い。人物・家族から再構築できないため状態として保持する
   crossCheckIssues?: ConsistencyIssue[]
 }
@@ -30,6 +32,8 @@ interface UseFamilyDataReturn {
   // データ
   persons: ProcessedPerson[]
   families: FamilyGroup[]
+  // 検出された指摘（論理矛盾＋2モデル照合）
+  issues: ConsistencyIssue[]
 
   // 状態
   isLoading: boolean
@@ -99,6 +103,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   } = useUndoRedo<FamilyDataState>({ persons: [], families: [] })
 
   const { persons, families, crossCheckIssues } = currentState
+  const issues = currentState.issues ?? []
 
   // 非同期処理（複数ファイルの連続マージなど）から呼ばれても常に最新のstateを
   // 参照できるよう、refに現在値を持たせる（クロージャの古いstateによるデータ欠落防止）
@@ -125,6 +130,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
         {
           persons: processed.persons,
           families: processed.families,
+          issues: processed.issues,
           crossCheckIssues: revision.data.crossCheckIssues,
         },
         'データ読み込み'
@@ -332,6 +338,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
         {
           persons: processed.persons,
           families: processed.families,
+          issues: processed.issues,
           crossCheckIssues: data.crossCheckIssues,
         },
         'データを読み込み（置き換え）'
@@ -353,6 +360,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       {
         persons: processed.persons,
         families: processed.families,
+        issues: processed.issues,
         crossCheckIssues: mergedData.crossCheckIssues,
       },
       `戸籍データを読み込み（追加${addedPersonCount}人・統合${mergedPersonCount}人）`
@@ -392,6 +400,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   return {
     persons,
     families,
+    issues,
     isLoading,
     error,
     saveStatus,

@@ -1,5 +1,4 @@
 import { getSupabaseBrowserClient } from '../supabase/client'
-import { logAudit } from './audit'
 
 export interface ProjectSummary {
   id: string
@@ -72,9 +71,6 @@ export async function deleteProject(project: ProjectSummary): Promise<void> {
   const supabase = getSupabaseBrowserClient()
   const { error } = await supabase.from('projects').delete().eq('id', project.id)
   if (error) throw new Error(`案件の削除に失敗しました: ${error.message}`)
-  await logAudit(project.orgId, 'project.delete', 'project', project.id, {
-    name: project.name,
-  })
 }
 
 /** この案件を現在のユーザーが編集できるか（RLSと同じ判定をRPCで問い合わせる） */
@@ -107,7 +103,6 @@ export async function assignProjectMember(
     .from('project_members')
     .insert({ project_id: projectId, user_id: userId })
   if (error) throw new Error(`アサインに失敗しました: ${error.message}`)
-  await logAudit(orgId, 'project.assign_member', 'project', projectId, { userId })
 }
 
 export async function unassignProjectMember(
@@ -122,5 +117,4 @@ export async function unassignProjectMember(
     .eq('project_id', projectId)
     .eq('user_id', userId)
   if (error) throw new Error(`アサイン解除に失敗しました: ${error.message}`)
-  await logAudit(orgId, 'project.unassign_member', 'project', projectId, { userId })
 }

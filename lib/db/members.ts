@@ -1,6 +1,5 @@
 import { getSupabaseBrowserClient } from '../supabase/client'
 import { OrgRole } from '../auth/permissions'
-import { logAudit } from './audit'
 
 export interface OrgMember {
   userId: string
@@ -48,7 +47,6 @@ export async function updateMemberRole(
     .eq('org_id', orgId)
     .eq('user_id', userId)
   if (error) throw new Error(`ロールの変更に失敗しました: ${error.message}`)
-  await logAudit(orgId, 'member.update_role', 'user', userId, { role })
 }
 
 export async function removeMember(orgId: string, userId: string): Promise<void> {
@@ -59,7 +57,6 @@ export async function removeMember(orgId: string, userId: string): Promise<void>
     .eq('org_id', orgId)
     .eq('user_id', userId)
   if (error) throw new Error(`メンバーの削除に失敗しました: ${error.message}`)
-  await logAudit(orgId, 'member.remove', 'user', userId)
 }
 
 export async function fetchPendingInvitations(orgId: string): Promise<PendingInvitation[]> {
@@ -98,12 +95,10 @@ export async function inviteMember(
     }
     throw new Error(`招待の作成に失敗しました: ${error.message}`)
   }
-  await logAudit(orgId, 'member.invite', 'invitation', email, { role })
 }
 
 export async function revokeInvitation(orgId: string, invitationId: string): Promise<void> {
   const supabase = getSupabaseBrowserClient()
   const { error } = await supabase.from('invitations').delete().eq('id', invitationId)
   if (error) throw new Error(`招待の取り消しに失敗しました: ${error.message}`)
-  await logAudit(orgId, 'member.revoke_invitation', 'invitation', invitationId)
 }

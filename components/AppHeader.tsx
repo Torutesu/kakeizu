@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { LogOut, Users, FolderKanban, ScrollText } from 'lucide-react'
+import { LogOut, Users, FolderKanban } from 'lucide-react'
 import { signOut, OrgContext } from '@/lib/db/org'
 import { canManageMembers, ORG_ROLE_LABELS } from '@/lib/auth/permissions'
 
@@ -32,20 +32,12 @@ export function AppHeader({ ctx }: AppHeaderProps) {
             </Button>
           </Link>
           {canManageMembers(ctx.role) && (
-            <>
-              <Link href="/settings/members">
-                <Button variant="ghost" size="sm">
-                  <Users className="w-4 h-4 mr-1" />
-                  メンバー管理
-                </Button>
-              </Link>
-              <Link href="/settings/audit">
-                <Button variant="ghost" size="sm">
-                  <ScrollText className="w-4 h-4 mr-1" />
-                  監査ログ
-                </Button>
-              </Link>
-            </>
+            <Link href="/settings/members">
+              <Button variant="ghost" size="sm">
+                <Users className="w-4 h-4 mr-1" />
+                メンバー管理
+              </Button>
+            </Link>
           )}
           <div className="flex items-center gap-2 border-l border-gray-200 pl-3">
             <span className="text-sm text-gray-600">{ctx.email}</span>

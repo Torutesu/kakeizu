@@ -1,5 +1,4 @@
 import { getSupabaseBrowserClient } from '../supabase/client'
-import { logAudit } from './audit'
 import {
   isAllowedKosekiMimeType,
   MIME_EXTENSIONS,
@@ -123,9 +122,6 @@ export async function uploadKosekiFile(
     throw new Error(`ファイル情報の登録に失敗しました: ${error.message}`)
   }
 
-  await logAudit(orgId, 'koseki.upload', 'koseki_file', (data as KosekiFileRow).id, {
-    fileName: file.name,
-  })
 
   return toKosekiFile(data as KosekiFileRow)
 }
@@ -144,9 +140,6 @@ export async function deleteKosekiFile(orgId: string, file: KosekiFile): Promise
     console.error('ストレージ上のファイル削除に失敗:', storageError.message)
   }
 
-  await logAudit(orgId, 'koseki.delete', 'koseki_file', file.id, {
-    fileName: file.fileName,
-  })
 }
 
 /** 閲覧・ダウンロード用の一時URLを発行する（バケットは非公開のため直リンクは不可） */

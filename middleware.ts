@@ -4,7 +4,15 @@ import { createServerClient } from '@supabase/ssr'
 // 未ログインでもアクセスできるパス
 const PUBLIC_PATHS = ['/login', '/auth', '/api/health']
 
+// E2Eテスト用のフィクスチャ画面。E2E_FIXTURES=1 のときだけ認証を通す。
+// 画面側でも同じ環境変数を検査して本番では404にしているため、
+// ここを通しても未設定環境で中身が見えることはない。
+const E2E_FIXTURE_PATH = '/e2e-fixture'
+
 function isPublicPath(pathname: string): boolean {
+  if (process.env.E2E_FIXTURES === '1' && pathname.startsWith(E2E_FIXTURE_PATH)) {
+    return true
+  }
   return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(`${p}/`))
 }
 

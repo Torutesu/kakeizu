@@ -94,19 +94,23 @@ export function buildDisplayName(name: { surname?: string | null, given_name?: s
  * 生データを処理可能な形式に変換
  */
 export function processFamilyData(data: FamilyTreeData): {
+  // 検出された指摘。人物カードの印だけでは大きな家系図から探せないため、
+  // 一覧として表示できるよう呼び出し側へ返す
+  issues: ConsistencyIssue[]
   persons: ProcessedPerson[]
   families: FamilyGroup[]
 } {
   if (!data.people || !Array.isArray(data.people)) {
-    return { persons: [], families: [] }
+    return { persons: [], families: [], issues: [] }
   }
 
   // OCRの誤読は論理矛盾として現れることが多いため、機械的に検出して要確認マークを付ける。
   // 2モデル照合の食い違い（サーバー側で検出済み）も同じ経路で扱う。
-  const uncertaintyByPersonId = buildUncertaintyMap([
+  const issues: ConsistencyIssue[] = [
     ...checkConsistency(data),
     ...(data.crossCheckIssues ?? []),
-  ])
+  ]
+  const uncertaintyByPersonId = buildUncertaintyMap(issues)
 
   // 人物データを処理
   const processedPersons = data.people.map(person => {
@@ -155,7 +159,7 @@ export function processFamilyData(data: FamilyTreeData): {
     })
   }
 
-  return { persons: processedPersons, families: processedFamilies }
+  return { persons: processedPersons, families: processedFamilies, issues }
 }
 
 /**
