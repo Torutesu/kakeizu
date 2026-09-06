@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -42,6 +42,9 @@ import { useConfirm } from "../hooks/useConfirm"
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog"
 import { IssuesPanel } from "./IssuesPanel"
 import { RegistriesPanel } from "./RegistriesPanel"
+import { PdfExportDialog } from "./PdfExportDialog"
+import { PdfExportOptions } from "../utils/pdfLayout"
+import { LAYOUT_CONFIG } from "../constants/config"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { formatKazoeAge } from "../utils/age"
@@ -161,6 +164,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   const [isKosekiUploadOpen, setIsKosekiUploadOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false)
+  const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false)
 
   // 画面が狭いときのサイドバー開閉（広い画面では常時表示）
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false)
@@ -338,16 +342,30 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     }
   }
 
-  // PDF書き出し（家系図をA4に描画）
-  const handleExportPdf = async () => {
+  // PDF書き出し。用紙と収め方はダイアログで選ぶ（大きい家系図は1枚だと読めなくなるため）
+  const handleExportPdf = () => setIsPdfDialogOpen(true)
+
+  const runPdfExport = async (options: PdfExportOptions) => {
     try {
       const { exportTreePdf } = await import("../utils/exportPdf")
-      await exportTreePdf(persons, families, project?.name || '家系図', exportBaseName())
+      await exportTreePdf(persons, families, project?.name || '家系図', exportBaseName(), options)
       toast.success('PDFファイルを書き出しました')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'PDF書き出しに失敗しました')
     }
   }
+
+  // ダイアログでページ数・倍率を計算するため、実際の描画サイズを求める
+  const pdfContentSize = useMemo(() => {
+    if (persons.length === 0) return { width: 0, height: 0 }
+    const xs = persons.map(p => p.x)
+    const ys = persons.map(p => p.y)
+    const padding = LAYOUT_CONFIG.canvasPadding
+    return {
+      width: Math.max(...xs) - Math.min(...xs) + LAYOUT_CONFIG.cardWidth + padding * 2,
+      height: Math.max(...ys) - Math.min(...ys) + LAYOUT_CONFIG.cardHeight + padding * 2,
+    }
+  }, [persons])
 
   // JSON読み込みハンドラー
   const handleLoadFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -915,6 +933,13 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         isOpen={isShortcutHelpOpen}
         onClose={() => setIsShortcutHelpOpen(false)}
         canEdit={canEdit}
+      />
+
+      <PdfExportDialog
+        open={isPdfDialogOpen}
+        onOpenChange={setIsPdfDialogOpen}
+        contentSize={pdfContentSize}
+        onExport={runPdfExport}
       />
 
       {confirmDialog}

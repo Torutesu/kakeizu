@@ -35,8 +35,9 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # E2Eは実ブラウザで動かす。フィクスチャ画面はDBを使わないため
-      # Supabaseの実接続なしで家系図エディタの挙動を検証できる。
+      # E2Eは本番ビルドに対して実ブラウザで動かす。フィクスチャ画面はDBを使わ
+      # ないため、Supabaseの実接続なしで家系図エディタの挙動を検証できる。
+      # （devサーバーはルートの遅延コンパイルでテストが不安定になるため使わない）
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
 

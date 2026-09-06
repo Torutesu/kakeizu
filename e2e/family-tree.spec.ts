@@ -11,7 +11,9 @@ import { test, expect } from '@playwright/test'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/e2e-fixture')
-  // レイアウト計算後にカードが配置されるまで待つ
+  // ハイドレーションの完了を待つ。カードはSSRの時点で描画されるため、
+  // カードの表示だけを待つとクリックが効かない状態で操作してしまう
+  await expect(page.locator('[data-hydrated="true"]')).toBeAttached()
   await expect(page.locator('[data-person-card]').first()).toBeVisible()
 })
 
@@ -129,5 +131,56 @@ test.describe('戸籍（本籍）', () => {
       .getByRole('button', { name: '阿吹 美則' })
       .click()
     await expect(page.getByTestId('selected-person')).toContainText('阿吹 美則')
+  })
+})
+
+test.describe('PDF書き出しの設定', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.getByRole('button', { name: 'PDF書き出し' }).click()
+    await expect(page.getByTestId('pdf-plan')).toBeVisible()
+  })
+
+  // 従来はA4 1ページ固定で、大きい家系図は文字が読めなくなっていた（G-08）
+  test('A4に1枚で収めると小さすぎる旨が警告される', async ({ page }) => {
+    await page.getByTestId('paper-a4').click()
+    await page.getByTestId('mode-fit').click()
+    await expect(page.getByTestId('too-small-warning')).toBeVisible()
+  })
+
+  test('提案に従うと警告が解消する', async ({ page }) => {
+    await page.getByTestId('paper-a4').click()
+    await page.getByTestId('mode-fit').click()
+    await page.getByTestId('apply-recommendation').click()
+    await expect(page.getByTestId('too-small-warning')).toHaveCount(0)
+  })
+
+  test('用紙を大きくすると倍率が上がる', async ({ page }) => {
+    await page.getByTestId('paper-a4').click()
+    const a4 = await page.getByTestId('pdf-plan').textContent()
+    await page.getByTestId('paper-a2').click()
+    await expect(page.getByTestId('pdf-plan')).not.toHaveText(a4 ?? '')
+  })
+
+  test('分割を選ぶと複数ページになり、警告が出ない', async ({ page }) => {
+    await page.getByTestId('paper-a4').click()
+    await page.getByTestId('mode-tile').click()
+    await expect(page.getByTestId('pdf-plan')).toContainText('ページ（横')
+    await expect(page.getByTestId('too-small-warning')).toHaveCount(0)
+  })
+
+  test('分割の大きさを変えるとページ数が変わる', async ({ page }) => {
+    await page.getByTestId('mode-tile').click()
+    await page.getByTestId('scale-0.75').click()
+    const small = await page.getByTestId('pdf-plan').textContent()
+    await page.getByTestId('scale-1.5').click()
+    await expect(page.getByTestId('pdf-plan')).not.toHaveText(small ?? '')
+  })
+
+  test('選んだ設定で書き出される', async ({ page }) => {
+    await page.getByTestId('paper-a3').click()
+    await page.getByTestId('orientation-portrait').click()
+    await page.getByTestId('mode-tile').click()
+    await page.getByTestId('confirm-export').click()
+    await expect(page.getByTestId('exported-options')).toHaveText('a3/portrait/tile')
   })
 })

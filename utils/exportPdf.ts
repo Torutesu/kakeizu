@@ -2,6 +2,10 @@ import { ProcessedPerson, FamilyGroup } from './familyDataProcessor'
 import { calculateTreeLayout, Point } from './treeLayout'
 import { LAYOUT_CONFIG } from '../constants/config'
 import { formatKazoeAge } from './age'
+import { planPdfPages, PdfExportOptions, DEFAULT_PDF_OPTIONS } from './pdfLayout'
+
+// Canvasの1辺の上限。これを超えるとブラウザによっては描画が失敗する
+const MAX_CANVAS_EDGE = 8000
 
 // 家系図のPDFエクスポート。
 // レイアウトエンジンで座標を計算し、SVGとして描画 → Canvasでラスタライズ →
@@ -140,8 +144,13 @@ export function buildTreeSvg(
   return { svg, width, height }
 }
 
-/** SVG文字列をPNGデータURLへラスタライズする（ブラウザ専用） */
-async function rasterizeSvg(svg: string, width: number, height: number, scale: number): Promise<string> {
+/** SVG文字列をCanvasへラスタライズする（ブラウザ専用）。分割出力のため切り出せる形で返す */
+async function rasterizeSvg(
+  svg: string,
+  width: number,
+  height: number,
+  scale: number
+): Promise<HTMLCanvasElement> {
   const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   try {
@@ -159,46 +168,117 @@ async function rasterizeSvg(svg: string, width: number, height: number, scale: n
     if (!ctx) throw new Error('Canvasの初期化に失敗しました')
     ctx.scale(scale, scale)
     ctx.drawImage(image, 0, 0)
-    return canvas.toDataURL('image/png')
+    return canvas
   } finally {
     URL.revokeObjectURL(url)
   }
 }
 
-/** 家系図をA4横向きのPDFとしてダウンロードする */
+/** ラスタライズ済みCanvasから1ページ分の領域を切り出す */
+function cropToDataUrl(
+  source: HTMLCanvasElement,
+  sx: number,
+  sy: number,
+  sw: number,
+  sh: number
+): string {
+  // 端のページは残り幅しかないため、はみ出さないよう実際に取れる範囲に丸める
+  const width = Math.max(1, Math.min(sw, source.width - sx))
+  const height = Math.max(1, Math.min(sh, source.height - sy))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvasの初期化に失敗しました')
+  // 余白が透明のままだとPDF上で黒く出るため、白で塗ってから描く
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, width, height)
+  ctx.drawImage(source, sx, sy, width, height, 0, 0, width, height)
+  return canvas.toDataURL('image/png')
+}
+
+/**
+ * 家系図をPDFとしてダウンロードする。
+ *
+ * 1枚に収める（fit）か、読める大きさを保って分割する（tile）かを選べる。
+ * 分割時はラスタライズ済みの画像をページ単位で切り出して貼る。
+ */
 export async function exportTreePdf(
   persons: ProcessedPerson[],
   families: FamilyGroup[],
   projectName: string,
-  baseName: string
+  baseName: string,
+  options: PdfExportOptions = DEFAULT_PDF_OPTIONS
 ): Promise<void> {
   const { svg, width, height } = buildTreeSvg(persons, families, projectName)
+  const plan = planPdfPages({ width, height }, options)
 
-  // 大きい家系図でもテキストが読める解像度を確保しつつ、Canvasの上限を超えない範囲でスケール
-  const scale = Math.min(2, 8000 / Math.max(width, height))
-  const pngDataUrl = await rasterizeSvg(svg, width, height, scale)
+  // 印刷解像度を確保しつつ、Canvasの上限（辺の長さ）を超えない範囲に抑える。
+  // planのscaleはpt単位の配置倍率なので、描画解像度はその2倍を上限に取る
+  const rasterScale = Math.min(2, MAX_CANVAS_EDGE / Math.max(width, height))
+  const canvas = await rasterizeSvg(svg, width, height, rasterScale)
 
   const { jsPDF } = await import('jspdf')
-  const orientation = width >= height ? 'landscape' : 'portrait'
-  const pdf = new jsPDF({ orientation, unit: 'pt', format: 'a4' })
+  const pdf = new jsPDF({
+    orientation: plan.orientation,
+    unit: 'pt',
+    format: options.paperSize,
+  })
+  const margin = Math.max(0, options.margin)
 
-  const pageWidth = pdf.internal.pageSize.getWidth()
-  const pageHeight = pdf.internal.pageSize.getHeight()
-  const margin = 24
-  const fitScale = Math.min(
-    (pageWidth - margin * 2) / width,
-    (pageHeight - margin * 2) / height
-  )
-  const drawWidth = width * fitScale
-  const drawHeight = height * fitScale
+  if (plan.pageCount === 1) {
+    const drawWidth = width * plan.scale
+    const drawHeight = height * plan.scale
+    pdf.addImage(
+      canvas.toDataURL('image/png'),
+      'PNG',
+      (plan.pageWidth - drawWidth) / 2,
+      (plan.pageHeight - drawHeight) / 2,
+      drawWidth,
+      drawHeight
+    )
+    pdf.save(`${baseName}.pdf`)
+    return
+  }
 
-  pdf.addImage(
-    pngDataUrl,
-    'PNG',
-    (pageWidth - drawWidth) / 2,
-    (pageHeight - drawHeight) / 2,
-    drawWidth,
-    drawHeight
-  )
+  // 分割出力。ptでのページ領域を、ラスタ画像上の画素領域に読み替えて切り出す
+  const pxPerPt = rasterScale / plan.scale
+  const tileWidthPx = plan.contentWidth * pxPerPt
+  const tileHeightPx = plan.contentHeight * pxPerPt
+
+  for (let row = 0; row < plan.rows; row++) {
+    for (let column = 0; column < plan.columns; column++) {
+      if (row > 0 || column > 0) pdf.addPage(options.paperSize, plan.orientation)
+
+      const sx = Math.floor(column * tileWidthPx)
+      const sy = Math.floor(row * tileHeightPx)
+      const sw = Math.ceil(tileWidthPx)
+      const sh = Math.ceil(tileHeightPx)
+      if (sx >= canvas.width || sy >= canvas.height) continue
+
+      const actualWidthPx = Math.min(sw, canvas.width - sx)
+      const actualHeightPx = Math.min(sh, canvas.height - sy)
+      pdf.addImage(
+        cropToDataUrl(canvas, sx, sy, sw, sh),
+        'PNG',
+        margin,
+        margin,
+        actualWidthPx / pxPerPt,
+        actualHeightPx / pxPerPt
+      )
+
+      // どの位置のページかが分からないと貼り合わせられないため、隅に位置を入れる
+      pdf.setFontSize(8)
+      pdf.setTextColor(150)
+      pdf.text(
+        `${row + 1}-${column + 1} / 縦${plan.rows}×横${plan.columns}`,
+        plan.pageWidth - margin,
+        plan.pageHeight - margin / 2,
+        { align: 'right' }
+      )
+    }
+  }
+
   pdf.save(`${baseName}.pdf`)
 }

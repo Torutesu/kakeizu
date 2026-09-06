@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FamilyTree } from '@/components/FamilyTree'
 import { IssuesPanel } from '@/components/IssuesPanel'
 import { RegistriesPanel } from '@/components/RegistriesPanel'
+import { PdfExportDialog } from '@/components/PdfExportDialog'
+import { Button } from '@/components/ui/button'
 import { processFamilyData, FamilyTreeData, ProcessedPerson } from '@/utils/familyDataProcessor'
 
 // E2Eの固定データ。実際の戸籍解析で起きうる状況を意図的に含める:
@@ -86,9 +88,18 @@ export function E2EFixtureClient() {
   const [selected, setSelected] = useState<ProcessedPerson | null>(null)
   const [focus, setFocus] = useState<{ id: string; requestId: number } | null>(null)
   const [focusCount, setFocusCount] = useState(0)
+  const [isPdfOpen, setIsPdfOpen] = useState(false)
+  const [exported, setExported] = useState<string | null>(null)
+  // 大きい家系図を想定した寸法。A4 1枚では判読できない大きさにしてある
+  const contentSize = { width: 2400, height: 1400 }
+
+  // ハイドレーション完了の目印。SSRの時点でボタンは描画されるがクリックは効かないため、
+  // これを待たないとE2Eが操作を取りこぼす
+  const [isReady, setIsReady] = useState(false)
+  useEffect(() => setIsReady(true), [])
 
   return (
-    <div className="w-screen h-screen flex">
+    <div className="w-screen h-screen flex" data-hydrated={isReady ? 'true' : undefined}>
       <div className="flex-1 relative">
         <FamilyTree
           persons={initial.persons}
@@ -114,10 +125,28 @@ export function E2EFixtureClient() {
             setFocus({ id: person.id, requestId: next })
           }}
         />
+        <div className="px-6 py-3">
+          <Button size="sm" onClick={() => setIsPdfOpen(true)}>
+            PDF書き出し
+          </Button>
+        </div>
+        <div className="px-6 pb-3 text-xs text-gray-500" data-testid="exported-options">
+          {exported ?? '未書き出し'}
+        </div>
         <div className="px-6 py-3 text-xs text-gray-500" data-testid="selected-person">
           {selected ? `選択中: ${selected.displayName}` : '未選択'}
         </div>
       </aside>
+
+      <PdfExportDialog
+        open={isPdfOpen}
+        onOpenChange={setIsPdfOpen}
+        contentSize={contentSize}
+        onExport={async options => {
+          // 実際のPDF生成はブラウザのCanvasに依存するため、E2Eでは選択内容の伝達だけを確かめる
+          setExported(`${options.paperSize}/${options.orientation}/${options.mode}`)
+        }}
+      />
     </div>
   )
 }

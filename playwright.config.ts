@@ -3,8 +3,12 @@ import { defineConfig, devices } from '@playwright/test'
 // ============================================================================
 // E2Eテストの設定。
 //
-// 本番ビルドではなく dev サーバーを使う。E2E_FIXTURES=1 が必要なフィクスチャ画面は
-// 本番では404になるため、この設定で明示的に有効化する。
+// 本番ビルドに対して実行する。dev サーバーはルートを遅延コンパイルするため、
+// 並列実行するとハイドレーションが数秒〜十数秒遅れてテストが不安定になる。
+// 本番ビルドなら待ち時間が一定で、利用者が触るものとも一致する。
+//
+// フィクスチャ画面は E2E_FIXTURES=1 のときだけ有効になる（動的ページなので
+// ビルド時ではなくリクエスト時に判定される）。
 //
 // ブラウザは環境にインストール済みのChromiumを使う。@playwright/test の版が
 // 想定するビルド番号と一致しない環境があるため、実行ファイルを明示して
@@ -41,10 +45,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm dev --port ${PORT}`,
+    command: `pnpm build && pnpm start --port ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    // ビルドを含むため長めに取る
+    timeout: 300_000,
     env: {
       E2E_FIXTURES: '1',
       // Supabaseに接続しなくてもフィクスチャ画面が動くようダミー値を入れておく。
