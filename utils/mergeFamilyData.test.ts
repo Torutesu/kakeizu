@@ -244,3 +244,115 @@ describe('mergeFamilyTreeData: 家族関係の統合', () => {
     expect(result.mergedPersonCount).toBe(0)
   })
 })
+
+describe('mergeFamilyTreeData: 戸籍の統合', () => {
+  const registry = (
+    id: string,
+    domicile: string | null,
+    head: string | null,
+    memberIds: string[]
+  ) => ({
+    id,
+    registered_domicile: domicile,
+    head_of_family: head,
+    registry_type: null,
+    member_ids: memberIds,
+  })
+
+  it('本籍と筆頭者が一致する戸籍は1件にまとまり、記載人物は和集合になる', () => {
+    const existing: FamilyTreeData = {
+      people: [makePerson({ id: 'a', name: { surname: '阿吹', given_name: '軍一' } })],
+      families: [],
+      registries: [registry('r1', '広島県福山市一丁目1番地', '阿吹 軍一', ['a'])],
+    }
+    const incoming: FamilyTreeData = {
+      people: [makePerson({ id: 'b', name: { surname: '阿吹', given_name: '美則' } })],
+      families: [],
+      registries: [registry('rX', '広島県福山市一丁目1番地', '阿吹 軍一', ['b'])],
+    }
+
+    const { data } = mergeFamilyTreeData(existing, incoming)
+    expect(data.registries).toHaveLength(1)
+    expect(data.registries![0].member_ids.sort()).toEqual(['a', 'b'])
+  })
+
+  it('本籍が異なる戸籍は別件として残る（転籍を1件にまとめない）', () => {
+    const existing: FamilyTreeData = {
+      people: [makePerson({ id: 'a' })],
+      families: [],
+      registries: [registry('r1', '広島県福山市一丁目1番地', '阿吹 軍一', ['a'])],
+    }
+    const incoming: FamilyTreeData = {
+      people: [makePerson({ id: 'a' })],
+      families: [],
+      registries: [registry('r2', '東京都千代田区一番地', '阿吹 軍一', ['a'])],
+    }
+
+    const { data } = mergeFamilyTreeData(existing, incoming)
+    expect(data.registries).toHaveLength(2)
+  })
+
+  it('本籍も筆頭者も不明な戸籍は互いに区別できないため名寄せしない', () => {
+    const existing: FamilyTreeData = {
+      people: [makePerson({ id: 'a' })],
+      families: [],
+      registries: [registry('r1', null, null, ['a'])],
+    }
+    const incoming: FamilyTreeData = {
+      people: [makePerson({ id: 'a' })],
+      families: [],
+      registries: [registry('r2', null, null, ['a'])],
+    }
+
+    const { data } = mergeFamilyTreeData(existing, incoming)
+    expect(data.registries).toHaveLength(2)
+  })
+
+  it('取り込み側のidが名寄せで変わった場合、記載人物のidも読み替えられる', () => {
+    // 同姓同名・同生年なので既存の 'a' に名寄せされる
+    const person = {
+      name: { surname: '阿吹', given_name: '軍一' },
+      birth: { original_date: null, date: '1881-06-29', place: null },
+    }
+    const existing: FamilyTreeData = {
+      people: [makePerson({ id: 'a', ...person })],
+      families: [],
+    }
+    const incoming: FamilyTreeData = {
+      people: [makePerson({ id: 'zzz', ...person })],
+      families: [],
+      registries: [registry('r1', '広島県福山市一丁目1番地', '阿吹 軍一', ['zzz'])],
+    }
+
+    const { data } = mergeFamilyTreeData(existing, incoming)
+    expect(data.registries![0].member_ids).toEqual(['a'])
+  })
+
+  it('戸籍のidが衝突する場合は別idを振って両方残す', () => {
+    const existing: FamilyTreeData = {
+      people: [makePerson({ id: 'a' })],
+      families: [],
+      registries: [registry('r1', '広島県福山市一丁目1番地', '阿吹 軍一', ['a'])],
+    }
+    const incoming: FamilyTreeData = {
+      people: [makePerson({ id: 'a' })],
+      families: [],
+      // idは同じだが別の戸籍
+      registries: [registry('r1', '東京都千代田区一番地', '遠藤 ハナ', ['a'])],
+    }
+
+    const { data } = mergeFamilyTreeData(existing, incoming)
+    expect(data.registries).toHaveLength(2)
+    expect(new Set(data.registries!.map(r => r.id)).size).toBe(2)
+  })
+
+  it('戸籍がない側とマージしても落ちない', () => {
+    const withRegistry: FamilyTreeData = {
+      people: [makePerson({ id: 'a' })],
+      families: [],
+      registries: [registry('r1', '広島県福山市一丁目1番地', '阿吹 軍一', ['a'])],
+    }
+    expect(mergeFamilyTreeData(empty, withRegistry).data.registries).toHaveLength(1)
+    expect(mergeFamilyTreeData(withRegistry, empty).data.registries).toHaveLength(1)
+  })
+})

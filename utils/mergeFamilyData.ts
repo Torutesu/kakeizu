@@ -1,4 +1,4 @@
-import { FamilyTreeData, PersonData, FamilyData } from './familyDataProcessor'
+import { FamilyTreeData, PersonData, FamilyData, RegistryData } from './familyDataProcessor'
 import { extractYear } from './age'
 
 // ============================================================================
@@ -213,6 +213,52 @@ export function mergeFamilyTreeData(
     familyById.set(remapped.id, remapped)
   })
 
+  // 戸籍のマージ。本籍と筆頭者の組で同一の戸籍とみなす。
+  // 同じ戸籍が複数のファイルに現れる（連続した謄本など）ため、
+  // まとめないと同じ本籍が何件も並ぶことになる。
+  const registryKey = (r: RegistryData): string =>
+    `${(r.registered_domicile ?? '').trim()}|${(r.head_of_family ?? '').trim()}`
+
+  const registries: RegistryData[] = (existing.registries ?? []).map(r => ({
+    ...r,
+    member_ids: [...r.member_ids],
+  }))
+  const registryByKey = new Map<string, RegistryData>()
+  const usedRegistryIds = new Set<string>()
+  registries.forEach(r => {
+    usedRegistryIds.add(r.id)
+    // 本籍も筆頭者も不明な戸籍は互いに区別できないため、名寄せの対象にしない
+    if (registryKey(r) !== '|') registryByKey.set(registryKey(r), r)
+  })
+
+  ;(incoming.registries ?? []).forEach(incomingRegistry => {
+    const memberIds = incomingRegistry.member_ids
+      .map(id => idMap.get(id) ?? id)
+      .filter(id => byId.has(id))
+    const key = registryKey(incomingRegistry)
+    const target = key === '|' ? undefined : registryByKey.get(key)
+
+    if (target) {
+      // 構成員は和集合。既存側が空欄の項目のみ補完する（手動修正を守る方針と揃える）
+      target.member_ids = [...new Set([...target.member_ids, ...memberIds])]
+      target.registry_type = target.registry_type ?? incomingRegistry.registry_type
+      target.registered_domicile = target.registered_domicile ?? incomingRegistry.registered_domicile
+      target.head_of_family = target.head_of_family ?? incomingRegistry.head_of_family
+      return
+    }
+
+    // id衝突を避ける（別の戸籍が同じidを持っている場合）
+    let id = incomingRegistry.id
+    let suffix = 2
+    while (usedRegistryIds.has(id)) {
+      id = `${incomingRegistry.id}_${suffix++}`
+    }
+    usedRegistryIds.add(id)
+    const added: RegistryData = { ...incomingRegistry, id, member_ids: memberIds }
+    registries.push(added)
+    if (key !== '|') registryByKey.set(key, added)
+  })
+
   // 2モデル照合の食い違いは両側から引き継ぐ。
   // 取り込み側のpersonIdsは名寄せでidが変わりうるため、マージ後のidに読み替える。
   const remappedIncomingIssues = (incoming.crossCheckIssues ?? []).map(issue => ({
@@ -225,6 +271,7 @@ export function mergeFamilyTreeData(
     data: {
       people,
       families,
+      ...(registries.length > 0 ? { registries } : {}),
       ...(crossCheckIssues.length > 0 ? { crossCheckIssues } : {}),
     },
     mergedPersonCount,

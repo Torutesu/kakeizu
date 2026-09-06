@@ -41,6 +41,7 @@ import { useKosekiFiles } from "../hooks/useKosekiFiles"
 import { useConfirm } from "../hooks/useConfirm"
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog"
 import { IssuesPanel } from "./IssuesPanel"
+import { RegistriesPanel } from "./RegistriesPanel"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { formatKazoeAge } from "../utils/age"
@@ -78,6 +79,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     persons,
     families,
     issues,
+    registries,
     isLoading,
     error,
     saveStatus,
@@ -329,7 +331,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   const handleExportExcel = async () => {
     try {
       const { exportExcelFile } = await import("../utils/exportExcel")
-      exportExcelFile(persons, families, exportBaseName())
+      exportExcelFile(persons, families, exportBaseName(), registries)
       toast.success('Excelファイルを書き出しました')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Excel書き出しに失敗しました')
@@ -669,6 +671,16 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
           {/* 要確認の指摘一覧（論理矛盾・2モデル照合の食い違い） */}
           <IssuesPanel
             issues={issues}
+            persons={persons}
+            onFocusPerson={(person: ProcessedPerson) => {
+              handleSearchResultSelect(person)
+              setIsRightPanelOpen(false)
+            }}
+          />
+
+          {/* 読み取った戸籍（本籍・筆頭者） */}
+          <RegistriesPanel
+            registries={registries}
             persons={persons}
             onFocusPerson={(person: ProcessedPerson) => {
               handleSearchResultSelect(person)

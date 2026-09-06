@@ -56,7 +56,32 @@ export const kosekiFamilySchema = z.object({
     .describe('戸籍上に養子縁組の明記がある場合のみ adoption。それ以外は必ず blood。'),
 })
 
+// 戸籍そのもの。本籍は人物ではなく戸籍に属する情報で、
+// 1人が生涯に複数の戸籍（出生時・婚姻後・転籍後・改製後）を渡り歩くため、
+// 人物に1つだけ持たせると本籍の履歴が失われる。戸籍を独立した要素として扱う。
+export const kosekiRegistrySchema = z.object({
+  id: z.string().describe('戸籍の一意ID。例: r001'),
+  registered_domicile: z
+    .string()
+    .nullable()
+    .describe('本籍の原文表記（例: "広島県福山市○○町一丁目1番地"）。記載がなければ null。'),
+  head_of_family: z
+    .string()
+    .nullable()
+    .describe('筆頭者（戸主）の氏名。本籍と組で戸籍を特定する。記載がなければ null。'),
+  registry_type: z
+    .enum(['current', 'removed', 'revised'])
+    .nullable()
+    .describe('戸籍の種別。current=現在戸籍 / removed=除籍 / revised=改製原戸籍。判断できなければ null。'),
+  member_ids: z
+    .array(z.string())
+    .describe('この戸籍に記載されている人物のid。people[].id を参照する。'),
+})
+
 export const kosekiResultSchema = z.object({
+  registries: z
+    .array(kosekiRegistrySchema)
+    .describe('この書類に含まれる戸籍のリスト。転籍・改製で戸籍が切り替わる場合はそれぞれ別の要素にする。'),
   people: z
     .array(kosekiPersonSchema)
     .describe('戸籍に言及のある全人物のフラットなリスト（関係性は含まない）。'),

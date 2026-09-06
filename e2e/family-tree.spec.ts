@@ -97,3 +97,37 @@ test.describe('キャンバス操作', () => {
     }
   })
 })
+
+test.describe('戸籍（本籍）', () => {
+  // 本籍は戸籍に属する情報であり、転籍すると変わる。
+  // 人物に1つだけ持たせる設計では表現できないことを、この2件で確かめる
+  test('複数の戸籍が件数付きで表示される', async ({ page }) => {
+    const section = page.getByTestId('registries')
+    await expect(section).toContainText('戸籍')
+    await section.getByRole('button', { name: /戸籍/ }).click()
+    await expect(page.locator('[data-registry]')).toHaveCount(2)
+  })
+
+  test('転籍前後の本籍がどちらも保持される', async ({ page }) => {
+    await page.getByTestId('registries').getByRole('button', { name: /戸籍/ }).click()
+    const domiciles = page.locator('[data-registry-domicile]')
+    await expect(domiciles.nth(0)).toContainText('広島県福山市')
+    await expect(domiciles.nth(1)).toContainText('東京都千代田区')
+  })
+
+  test('戸籍の種別が表示される', async ({ page }) => {
+    await page.getByTestId('registries').getByRole('button', { name: /戸籍/ }).click()
+    await expect(page.locator('[data-registry]').nth(0)).toContainText('改製原戸籍')
+    await expect(page.locator('[data-registry]').nth(1)).toContainText('現在戸籍')
+  })
+
+  test('戸籍の記載人物から該当人物を選択できる', async ({ page }) => {
+    await page.getByTestId('registries').getByRole('button', { name: /戸籍/ }).click()
+    await page
+      .locator('[data-registry]')
+      .nth(1)
+      .getByRole('button', { name: '阿吹 美則' })
+      .click()
+    await expect(page.getByTestId('selected-person')).toContainText('阿吹 美則')
+  })
+})

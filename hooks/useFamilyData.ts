@@ -11,6 +11,7 @@ import {
 import { useUndoRedo } from './useUndoRedo'
 import { mergeFamilyTreeData } from '../utils/mergeFamilyData'
 import { ConsistencyIssue } from '../utils/consistency'
+import type { RegistryData } from '../utils/familyDataProcessor'
 import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
 import { fetchCanEditProject } from '../lib/db/projects'
 
@@ -26,6 +27,8 @@ interface FamilyDataState {
   issues?: ConsistencyIssue[]
   // 2モデル照合の食い違い。人物・家族から再構築できないため状態として保持する
   crossCheckIssues?: ConsistencyIssue[]
+  // 元になった戸籍（本籍・筆頭者）。同じく人物・家族からは再構築できない
+  registries?: RegistryData[]
 }
 
 interface UseFamilyDataReturn {
@@ -34,6 +37,8 @@ interface UseFamilyDataReturn {
   families: FamilyGroup[]
   // 検出された指摘（論理矛盾＋2モデル照合）
   issues: ConsistencyIssue[]
+  // 元になった戸籍（本籍・筆頭者）
+  registries: RegistryData[]
 
   // 状態
   isLoading: boolean
@@ -103,6 +108,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   } = useUndoRedo<FamilyDataState>({ persons: [], families: [] })
 
   const { persons, families, crossCheckIssues } = currentState
+  const registries = currentState.registries ?? []
   const issues = currentState.issues ?? []
 
   // 非同期処理（複数ファイルの連続マージなど）から呼ばれても常に最新のstateを
@@ -132,6 +138,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
           families: processed.families,
           issues: processed.issues,
           crossCheckIssues: revision.data.crossCheckIssues,
+          registries: revision.data.registries,
         },
         'データ読み込み'
       )
@@ -164,7 +171,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       try {
         const result = await saveTreeRevision(
           projectId,
-          toFamilyTreeData(persons, families, crossCheckIssues),
+          toFamilyTreeData(persons, families, crossCheckIssues, registries),
           versionRef.current
         )
         if (result.ok) {
@@ -188,7 +195,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     try {
       const result = await saveTreeRevision(
         projectId,
-        toFamilyTreeData(persons, families, crossCheckIssues),
+        toFamilyTreeData(persons, families, crossCheckIssues, registries),
         versionRef.current
       )
       if (result.ok) {
@@ -340,6 +347,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
           families: processed.families,
           issues: processed.issues,
           crossCheckIssues: data.crossCheckIssues,
+          registries: data.registries,
         },
         'データを読み込み（置き換え）'
       )
@@ -351,7 +359,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       families: currentFamilies,
       crossCheckIssues: currentIssues,
     } = currentStateRef.current
-    const existingRaw = toFamilyTreeData(currentPersons, currentFamilies, currentIssues)
+    const existingRaw = toFamilyTreeData(currentPersons, currentFamilies, currentIssues, currentStateRef.current.registries)
     const { data: mergedData, mergedPersonCount, addedPersonCount } =
       mergeFamilyTreeData(existingRaw, data)
 
@@ -362,6 +370,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
         families: processed.families,
         issues: processed.issues,
         crossCheckIssues: mergedData.crossCheckIssues,
+        registries: mergedData.registries,
       },
       `戸籍データを読み込み（追加${addedPersonCount}人・統合${mergedPersonCount}人）`
     )
@@ -370,7 +379,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
 
   // 現在のデータを可搬性のあるFamilyTreeData形式で取得（書き出し用）
   const exportFamilyTreeData = useCallback((): FamilyTreeData => {
-    return toFamilyTreeData(persons, families, crossCheckIssues)
+    return toFamilyTreeData(persons, families, crossCheckIssues, registries)
   }, [persons, families, crossCheckIssues])
 
   // 人物検索
@@ -401,6 +410,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     persons,
     families,
     issues,
+    registries,
     isLoading,
     error,
     saveStatus,

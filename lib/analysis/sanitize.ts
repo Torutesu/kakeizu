@@ -1,4 +1,4 @@
-import { FamilyTreeData } from '../../utils/familyDataProcessor'
+import { FamilyTreeData, RegistryData } from '../../utils/familyDataProcessor'
 
 /**
  * どのプロバイダの構造化出力も、各フィールドの型・enum は保証するが、
@@ -44,5 +44,32 @@ export function sanitizeFamilyTreeData(data: FamilyTreeData): FamilyTreeData {
       return true
     })
 
-  return { people, families }
+  // 戸籍の参照も同様に検査する。本籍だけが分かっていて人物が特定できない戸籍は
+  // 情報として意味があるため、member_ids が空になっても戸籍自体は残す
+  const seenRegistryIds = new Set<string>()
+  const registries: RegistryData[] = (data.registries ?? [])
+    .filter(registry => {
+      if (typeof registry.id !== 'string' || registry.id.trim() === '') {
+        console.warn('戸籍解析結果: idが空の戸籍を除外しました', registry)
+        return false
+      }
+      if (seenRegistryIds.has(registry.id)) {
+        console.warn(`戸籍解析結果: 重複したid "${registry.id}" の戸籍を除外しました`)
+        return false
+      }
+      seenRegistryIds.add(registry.id)
+      return true
+    })
+    .map(registry => ({
+      ...registry,
+      member_ids: (registry.member_ids ?? []).filter(id => {
+        const exists = seenIds.has(id)
+        if (!exists) {
+          console.warn(`戸籍解析結果: 戸籍 "${registry.id}" が未知の人物id "${id}" を参照していたため除外しました`)
+        }
+        return exists
+      }),
+    }))
+
+  return registries.length > 0 ? { people, families, registries } : { people, families }
 }

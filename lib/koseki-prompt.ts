@@ -19,18 +19,27 @@ export const KOSEKI_SYSTEM_INSTRUCTION = `# 役割 (Role)
 
 # 実行プロセス (Execution Process)
 
-内部で以下の4ステップを順に検討してから最終的なJSONを組み立ててください（途中経過は出力せず、最終結果のみを出力する）。
+内部で以下の5ステップを順に検討してから最終的なJSONを組み立ててください（途中経過は出力せず、最終結果のみを出力する）。
 
-## ステップ1: ページ横断での人物の名寄せ
+## ステップ1: 戸籍そのものの把握 (registries)
+書類に含まれる戸籍を1件ずつ特定し、registries 配列に格納する。転籍・婚姻・改製によって戸籍が切り替わる場合は、それぞれを別の要素とする。
+
+- **本籍 (registered_domicile)**: 戸籍の冒頭に記載された本籍を原文のまま記録する。番地の表記も省略しない。
+- **筆頭者 (head_of_family)**: 筆頭者（戦前の戸籍では戸主）の氏名。本籍と組で戸籍を特定する。
+- **registry_type**: 現在戸籍は current、除籍は removed、改製原戸籍は revised。判断できない場合は null。
+- **member_ids**: その戸籍に記載されている人物のidを列挙する（ステップ2で採番したidを使う）。1人が複数の戸籍に登場してよい。
+- 本籍は人物ではなく戸籍に属する情報である。人物側に本籍を書かないこと。
+
+## ステップ2: ページ横断での人物の名寄せ
 戸籍は複数ページ・複数の「戸籍」（改製・転籍・婚姻等による戸籍の切り替わり）にまたがって同一人物が繰り返し登場する。氏名・生年月日・続柄の記載を突き合わせ、同一人物を重複登録しないよう名寄せする。一方で、同姓同名だが生年が異なる別人（親子で名前が似ている等）を誤って同一人物にまとめないよう注意する。
 
-## ステップ2: 全人物の個人情報リスト (people) の生成
+## ステップ3: 全人物の個人情報リスト (people) の生成
 戸籍に記載されている全ての人物（筆頭者、配偶者、子、養子、親、それ以前の戸籍の被相続人など、氏名の言及があるものすべて）を一人も漏らさず特定し、個人情報をフラットなリストとして people 配列に格納する。
 
 - **ID採番**: 各人物に「姓のローマ字_名のローマ字_生年(西暦4桁、不明ならunknown)」形式で一意なIDを付与する（例: abuki_gunichi_1871）。同一ローマ字表記が重複する場合は末尾に連番を付す（例: _2）。
 - この段階では個人に属する情報のみを抽出し、親子・夫婦などの関係性情報は含めない。
 
-## ステップ3: 家族ユニット (families) の構築
+## ステップ4: 家族ユニット (families) の構築
 people を基に人物間の関係性を解析し、families 配列を構築する。
 
 - 人物参照は必ず id で行い、氏名文字列での関連付けは厳禁。
@@ -38,7 +47,7 @@ people を基に人物間の関係性を解析し、families 配列を構築す�
 - 再婚がある場合、新しい配偶者との組み合わせで別の family オブジェクトを作成する（1人が複数の family に親として登場してよい）。
 - 養子縁組は relation_type: "adoption" を用いる。実子は "blood"。
 
-## ステップ4: 補助情報の付与
+## ステップ5: 補助情報の付与
 - **generation**: families の親子関係をたどり、戸籍内で最も古い世代（起点となる人物）を1として子孫に世代番号を付与する。配偶者は婚姻相手と同じ世代とする。祖先方向に family が続く場合は起点より上の世代に負数や0を割り当てず、起点を1に据え直して全体を整合させる。
 - **sex**: 続柄表記（「夫」「妻」「長男」「二女」「養子」等）や名前から論理的に判断できる場合のみ male/female を設定する。判断できない場合は必ず null とし、憶測で設定しない。
 - **relation_to_family_head**: 戸籍上の続柄表記をそのまま保持する（例: "夫", "妻", "長男", "二女", "養子"）。
@@ -47,7 +56,7 @@ people を基に人物間の関係性を解析し、families 配列を構築す�
 # 重要原則とルール (Guiding Principles & Rules)
 
 1. **ID is King**: 全ての人物参照は id のみで行う。
-2. **単一情報源**: 個人情報は people に、関係性は families にのみ記述し、情報を重複させない。
+2. **単一情報源**: 個人情報は people に、関係性は families に、戸籍そのもの（本籍・筆頭者）は registries にのみ記述し、情報を重複させない。
 3. **和暦・旧字体・異体字の正規化**: 明治・大正・昭和・平成・令和の年号はすべて西暦（YYYY-MM-DD）に変換する。変換不能・判読不能・記載が「不詳」等の場合は、変換後フィールドを null とし、original_date / 原文表記に読み取れた文字をそのまま保持する。氏名の旧字体・異体字は、戸籍上の表記をそのまま original として残しつつ、現代の一般的な字体があれば name フィールドに用いてよい。
 4. **堅牢性**: フォーマット不能・判読不能な情報は original_ 系フィールドに原文（または「判読不能」）を保持し、変換後フィールドは null とする。情報の欠損よりも、誤った断定を避けることを優先する。
 5. **完全性**: 戸籍にわずかでも言及がある人物は、関係性や生死が不明でも people に必ず含める。死亡・除籍・転籍で情報が乏しい人物も省略しない。
@@ -115,6 +124,41 @@ const personDateFieldSchema: Schema = {
 export const KOSEKI_RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
+    registries: {
+      type: Type.ARRAY,
+      description:
+        'この書類に含まれる戸籍のリスト。転籍・改製で戸籍が切り替わる場合はそれぞれ別の要素にする。',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.STRING, description: '戸籍の一意ID。例: r001' },
+          registered_domicile: {
+            type: Type.STRING,
+            description: '本籍の原文表記（例: "広島県福山市○○町一丁目1番地"）。記載がなければ null。',
+            nullable: true,
+          },
+          head_of_family: {
+            type: Type.STRING,
+            description: '筆頭者（戸主）の氏名。本籍と組で戸籍を特定する。記載がなければ null。',
+            nullable: true,
+          },
+          registry_type: {
+            type: Type.STRING,
+            format: 'enum',
+            enum: ['current', 'removed', 'revised'],
+            description:
+              '戸籍の種別。current=現在戸籍 / removed=除籍 / revised=改製原戸籍。判断できなければ null。',
+            nullable: true,
+          },
+          member_ids: {
+            type: Type.ARRAY,
+            description: 'この戸籍に記載されている人物のid。people[].id を参照する。',
+            items: { type: Type.STRING },
+          },
+        },
+        required: ['id', 'registered_domicile', 'head_of_family', 'registry_type', 'member_ids'],
+      },
+    },
     people: {
       type: Type.ARRAY,
       description: '戸籍に言及のある全人物のフラットなリスト（関係性は含まない）。',
@@ -186,5 +230,5 @@ export const KOSEKI_RESPONSE_SCHEMA: Schema = {
       },
     },
   },
-  required: ['people', 'families'],
+  required: ['registries', 'people', 'families'],
 }

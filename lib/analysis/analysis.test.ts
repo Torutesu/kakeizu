@@ -91,8 +91,17 @@ describe('kosekiResultSchema', () => {
     relation_to_family_head: '夫',
   }
 
+  const validRegistry = {
+    id: 'r1',
+    registered_domicile: '広島県福山市○○町一丁目1番地',
+    head_of_family: '阿吹 軍一',
+    registry_type: 'revised',
+    member_ids: ['abuki_gunichi_1881'],
+  }
+
   it('正しい解析結果を受理する', () => {
     const result = kosekiResultSchema.safeParse({
+      registries: [validRegistry],
       people: [validPerson],
       families: [
         {
@@ -111,14 +120,41 @@ describe('kosekiResultSchema', () => {
   it('不正なenum値・欠損フィールドを拒否する', () => {
     expect(
       kosekiResultSchema.safeParse({
+        registries: [],
         people: [{ ...validPerson, sex: 'unknown' }],
         families: [],
       }).success
     ).toBe(false)
     expect(
-      kosekiResultSchema.safeParse({ people: [{ id: 'x' }], families: [] }).success
+      kosekiResultSchema.safeParse({ registries: [], people: [{ id: 'x' }], families: [] }).success
     ).toBe(false)
     expect(kosekiResultSchema.safeParse({ people: [] }).success).toBe(false)
+  })
+
+  it('本籍が読み取れない戸籍も受理する（記載がないことは正常）', () => {
+    const result = kosekiResultSchema.safeParse({
+      registries: [{ ...validRegistry, registered_domicile: null, head_of_family: null, registry_type: null }],
+      people: [validPerson],
+      families: [],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('戸籍の種別が想定外の値なら拒否する', () => {
+    expect(
+      kosekiResultSchema.safeParse({
+        registries: [{ ...validRegistry, registry_type: '改製原戸籍' }],
+        people: [validPerson],
+        families: [],
+      }).success
+    ).toBe(false)
+  })
+
+  // registries が抜けると本籍が丸ごと落ちるため、必須であることを固定する
+  it('registries が欠けていれば拒否する', () => {
+    expect(
+      kosekiResultSchema.safeParse({ people: [validPerson], families: [] }).success
+    ).toBe(false)
   })
 })
 
@@ -157,5 +193,76 @@ describe('sanitizeFamilyTreeData', () => {
     const result = sanitizeFamilyTreeData(data)
     expect(result.people).toHaveLength(1)
     expect(result.families).toHaveLength(0)
+  })
+})
+
+describe('sanitizeFamilyTreeData: 戸籍', () => {
+  const person = {
+    id: 'a',
+    generation: 1,
+    sex: null,
+    name: { surname: '阿吹', given_name: '軍一' },
+    birth: { original_date: null, date: null, place: null },
+    death: { original_date: null, date: null, place: null },
+  }
+
+  it('未知の人物idを参照する戸籍から、その参照だけを除去する', () => {
+    const result = sanitizeFamilyTreeData({
+      people: [person],
+      families: [],
+      registries: [
+        {
+          id: 'r1',
+          registered_domicile: '広島県福山市一丁目1番地',
+          head_of_family: '阿吹 軍一',
+          registry_type: 'current',
+          member_ids: ['a', 'missing'],
+        },
+      ],
+    })
+    expect(result.registries).toHaveLength(1)
+    expect(result.registries![0].member_ids).toEqual(['a'])
+  })
+
+  it('記載人物が0人になっても戸籍自体は残す（本籍だけでも情報として意味がある）', () => {
+    const result = sanitizeFamilyTreeData({
+      people: [person],
+      families: [],
+      registries: [
+        {
+          id: 'r1',
+          registered_domicile: '広島県福山市一丁目1番地',
+          head_of_family: null,
+          registry_type: null,
+          member_ids: ['missing'],
+        },
+      ],
+    })
+    expect(result.registries).toHaveLength(1)
+    expect(result.registries![0].registered_domicile).toBe('広島県福山市一丁目1番地')
+  })
+
+  it('重複したidの戸籍を除外する', () => {
+    const base = {
+      registered_domicile: '広島県福山市一丁目1番地',
+      head_of_family: null,
+      registry_type: null,
+      member_ids: [],
+    }
+    const result = sanitizeFamilyTreeData({
+      people: [person],
+      families: [],
+      registries: [
+        { id: 'r1', ...base },
+        { id: 'r1', ...base },
+      ],
+    })
+    expect(result.registries).toHaveLength(1)
+  })
+
+  it('戸籍がないデータ（v1形式）でも落ちない', () => {
+    const result = sanitizeFamilyTreeData({ people: [person], families: [] })
+    expect(result.registries).toBeUndefined()
+    expect(result.people).toHaveLength(1)
   })
 })

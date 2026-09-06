@@ -42,9 +42,31 @@ export interface FamilyData {
   relation_type: 'blood' | 'adoption'
 }
 
+/**
+ * 戸籍そのもの。本籍は人物ではなく戸籍に属する情報で、
+ * 1人が生涯に複数の戸籍（出生時・婚姻後・転籍後・改製後）に登場するため、
+ * 人物に本籍を1つだけ持たせると履歴が失われる。
+ */
+export interface RegistryData {
+  id: string
+  /** 本籍の原文表記 */
+  registered_domicile: string | null
+  /** 筆頭者（戦前は戸主）の氏名。本籍と組で戸籍を特定する */
+  head_of_family: string | null
+  /** current=現在戸籍 / removed=除籍 / revised=改製原戸籍 */
+  registry_type: 'current' | 'removed' | 'revised' | null
+  /** この戸籍に記載されている人物のid */
+  member_ids: string[]
+}
+
 export interface FamilyTreeData {
   people: PersonData[]
   families: FamilyData[]
+  /**
+   * この家系図の元になった戸籍。v1形式のデータには存在しないため省略を許容する。
+   * 人物の本籍はここから引く（人物データには本籍を持たせない）。
+   */
+  registries?: RegistryData[]
   // 2モデル照合で見つかった食い違い（lib/analysis/ensemble.ts）。
   // 保存対象のJSONに含めることで、再読み込み後も要確認マークが残る。
   // 照合が無効・食い違いなしの場合は省略される。
@@ -201,8 +223,9 @@ export function isValidFamilyTreeData(data: unknown): data is FamilyTreeData {
 export function toFamilyTreeData(
   persons: ProcessedPerson[],
   families: FamilyGroup[],
-  // 2モデル照合の結果は人物・家族から再構築できないため、明示的に引き回して保存する
-  crossCheckIssues?: ConsistencyIssue[]
+  // 人物・家族から再構築できない情報は、明示的に引き回して保存する
+  crossCheckIssues?: ConsistencyIssue[],
+  registries?: RegistryData[]
 ): FamilyTreeData {
   const people: PersonData[] = persons.map(person => ({
     id: person.id,
@@ -237,6 +260,7 @@ export function toFamilyTreeData(
     people,
     families: familiesData,
     ...(crossCheckIssues && crossCheckIssues.length > 0 ? { crossCheckIssues } : {}),
+    ...(registries && registries.length > 0 ? { registries } : {}),
   }
 }
 

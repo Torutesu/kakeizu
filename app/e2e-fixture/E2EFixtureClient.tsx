@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { FamilyTree } from '@/components/FamilyTree'
 import { IssuesPanel } from '@/components/IssuesPanel'
+import { RegistriesPanel } from '@/components/RegistriesPanel'
 import { processFamilyData, FamilyTreeData, ProcessedPerson } from '@/utils/familyDataProcessor'
 
 // E2Eの固定データ。実際の戸籍解析で起きうる状況を意図的に含める:
@@ -11,6 +12,24 @@ import { processFamilyData, FamilyTreeData, ProcessedPerson } from '@/utils/fami
 // - 西暦に変換できなかった日付
 // - 2モデル照合で照合側だけが抽出した人物（人物カードに紐づかない指摘）
 const FIXTURE: FamilyTreeData = {
+  // 転籍で本籍が変わった状況。人物に本籍を1つだけ持たせると
+  // 履歴が失われることを、この2件で検証する
+  registries: [
+    {
+      id: 'r1',
+      registered_domicile: '広島県福山市○○町一丁目1番地',
+      head_of_family: '阿吹 軍一',
+      registry_type: 'revised',
+      member_ids: ['oya', 'haha', 'ko1', 'ko2'],
+    },
+    {
+      id: 'r2',
+      registered_domicile: '東京都千代田区△△一番地',
+      head_of_family: '阿吹 美則',
+      registry_type: 'current',
+      member_ids: ['ko1'],
+    },
+  ],
   people: [
     {
       id: 'oya', generation: 1, sex: 'male',
@@ -80,6 +99,11 @@ export function E2EFixtureClient() {
         />
       </div>
       <aside className="w-80 border-l border-gray-200 bg-white overflow-y-auto" data-testid="sidebar">
+        <RegistriesPanel
+          registries={FIXTURE.registries ?? []}
+          persons={initial.persons}
+          onFocusPerson={setSelected}
+        />
         <IssuesPanel
           issues={initial.issues}
           persons={initial.persons}
