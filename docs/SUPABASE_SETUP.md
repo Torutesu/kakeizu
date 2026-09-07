@@ -40,14 +40,23 @@
 Authentication → Providers → Email はデフォルトで有効です。
 「Confirm email」を有効にしておくと、新規登録時にメール確認が必須になります（推奨）。
 
-### Googleログイン
+### 外部サービスでのログインは無効にする
 
-1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) でOAuthクライアントIDを作成
-   - 承認済みリダイレクトURI: `https://<プロジェクトID>.supabase.co/auth/v1/callback`
-2. Supabaseの Authentication → Providers → Google に Client ID / Client Secret を設定
-3. Authentication → URL Configuration で以下を設定:
-   - Site URL: 本番URL（例: `https://kakeizu.example.com`）
-   - Redirect URLs: `http://localhost:3000/auth/callback`（開発用）と `https://<本番ドメイン>/auth/callback`
+ログインはメールアドレスのみとしているため、**Authentication → Providers で
+Google をはじめとする外部プロバイダが無効であること**を確認してください。
+
+アプリの画面からは削除済みですが、プロバイダが有効なままだと
+認可エンドポイントを直接叩くことで認証が成立しえます。画面から消えていることと、
+認証経路が塞がっていることは別です。
+
+### リダイレクトURLの設定
+
+Authentication → URL Configuration で以下を設定します。
+確認メールと招待メールのリンク先になるため、未設定だとlocalhostに飛びます。
+
+- Site URL: 本番URL（例: `https://kakeizu.example.com`）
+- Redirect URLs: `https://<本番ドメイン>/auth/callback`
+  （ローカル開発も併用するなら `http://localhost:3000/auth/callback` も追加）
 
 ## 4. 環境変数の設定
 
@@ -56,6 +65,7 @@ Authentication → Providers → Email はデフォルトで有効です。
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://<プロジェクトID>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon publicキー>
+SUPABASE_SERVICE_ROLE_KEY=<service_roleキー>  # 招待メールの送信に使用。NEXT_PUBLIC_ を付けないこと
 GEMINI_API_KEY=<Gemini APIキー>      # 既定プロバイダ（gemini-3.1-pro）
 # ANTHROPIC_API_KEY=<Claude APIキー> # 任意: 精度最優先の場合の選択肢＋フォールバック
 # OPENAI_API_KEY=<OpenAI APIキー>    # 任意: フォールバック

@@ -20,8 +20,12 @@ SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
 - **スキーマ適用は新規プロジェクト作成時のみ**。マイグレーションを追加した後の再実行では
   自動適用されないので、ダッシュボードのSQL Editorで未適用分を手動実行すること
 - 完了後は**両トークンを必ず失効させる**こと
-- Googleログインだけは手動設定が必要（下記「3. 認証」のGoogle項。メール+パスワードは即使える）
+- ログインはメールアドレスのみ。外部サービスでのログインは提供していない
 - mainマージでの自動デプロイにしたい場合は、VercelダッシュボードでGitHub連携を後から有効化する
+
+`pnpm provision` が設定する環境変数は、Supabaseの接続情報（anonキーとservice_roleキー）と、
+コマンドに渡したAIのキーおよび `AI_NO_TRAINING_CONFIRMED` です。
+service_roleキーはSupabase APIから自動取得してVercelに設定します（招待メールの送信に必要）。
 
 以下は手動で行う場合（方法B）の手順。
 
@@ -39,10 +43,15 @@ SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
 
 1. https://supabase.com/dashboard → New project（リージョン: Tokyo）
 2. **SQL Editor で `supabase/setup_all.sql` を貼り付けて実行**
-   （全マイグレーションの結合版。個別に実行する場合は `migrations/0001`〜`0004` を番号順に）
-3. Settings → API から `Project URL` と `anon public` キーを控える
-4. Googleログインを使う場合は Authentication → Providers → Google を設定
-   （Google Cloud ConsoleのリダイレクトURIは `https://<プロジェクトID>.supabase.co/auth/v1/callback`）
+   （全マイグレーションの結合版。個別に実行する場合は `migrations/` 配下を番号順に全て）
+
+   > `setup_all.sql` はマイグレーションから自動生成する。手で編集しないこと。
+   > `pnpm verify:db` が生成結果との一致を検査し、ずれていれば失敗する。
+
+3. Settings → API から `Project URL`・`anon public`・`service_role` の3つを控える
+4. **Authentication → Providers で Google が無効であることを確認する**
+   （メールアドレスのみの運用にしているため。有効なままだと認可エンドポイントを
+   直接叩けば認証が成立しうる）
 
 ## 2. Vercel（約10分）
 
@@ -56,6 +65,7 @@ SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | SupabaseのProject URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabaseのanon publicキー |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabaseのservice_roleキー。**`NEXT_PUBLIC_` を付けないこと**（RLSを完全に迂回するキーで、付けるとブラウザに露出する）。未設定だと招待メールが送信されない |
 | `GEMINI_API_KEY` | Gemini APIキー（**有料プラン推奨** — 無料枠はデータが学習に使われ得る） |
 | `ANTHROPIC_API_KEY` | 任意（フォールバック/比較用） |
 | `OPENAI_API_KEY` | 任意（同上） |
@@ -74,7 +84,7 @@ SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
 - **Redirect URLs**: `https://kakeizu.vercel.app/auth/callback`
   （ローカル開発も併用するなら `http://localhost:3000/auth/callback` も追加）
 
-これを忘れるとGoogleログイン・確認メールのリンクがlocalhostに飛ぶので注意。
+これを忘れると確認メールと招待メールのリンクがlocalhostに飛ぶので注意。
 
 ## 4. 動作確認（スモークテスト）
 
@@ -84,9 +94,12 @@ SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
 2. トップへアクセス → `/login` にリダイレクトされることを確認
 3. **【最優先】アカウント作成 → 組織作成**（招待制のゲートを閉じるため、公開直後に必ず実施）
 4. 案件作成
-4. 戸籍書類（テスト用）をアップロード → 解析 → 家系図表示
-5. 「メンバー管理」から自分の別メールを招待 → 別ブラウザでログイン → メンバー化を確認
-6. 書き出し（PDF / Excel / JSON）を確認
+5. 戸籍書類をアップロード → 解析 → 家系図表示
+6. 「メンバー管理」から自分の別メールを招待 → **メールが実際に届くこと**を確認 →
+   別ブラウザでログイン → メンバー化を確認
+7. 書き出し（PDF / Excel / JSON）を確認
+
+詳しい確認項目は [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) 「4. 手動での動作確認」を参照。
 
 ## 5. 運用に入る前に
 
@@ -95,6 +108,10 @@ SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
 - [ ] `AI_NO_TRAINING_CONFIRMED=true` が設定され、各社が有料/学習不使用の条件を満たしているか確認
 - [ ] 独自ドメインを使う場合: Vercel Settings → Domains で追加し、手順3のURLを差し替える
 - [ ] Vercelの環境変数に本番用（学習に使われないプラン）のAIキーが入っていることを再確認
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` が設定され、招待メールが実際に届くことを確認
+- [ ] Authentication → Providers で Google が無効であることを確認
+- [ ] 作業者アカウントで、担当外の案件が一覧に出ないことを確認
+      （既定は `assigned_only`。全案件を共有する場合のみ設定で明示的に変更する）
 
 ## ブランチ運用について
 
@@ -115,3 +132,6 @@ GitHubのリポジトリ設定でデフォルトブランチが `main` になっ
 | 登録時に「招待制です」と出る | 仕様。管理者に招待してもらうか、最初の組織作成がまだなら組織を作る |
 | 解析が「レート制限を確認できない」 | `0006`のマイグレーション未適用。SQL Editorで実行 |
 | 解析が「データ利用ポリシーが未確認」 | `AI_NO_TRAINING_CONFIRMED=true` を設定して再デプロイ |
+| 招待は成功するがメールが届かない | `SUPABASE_SERVICE_ROLE_KEY` 未設定。設定後は **Redeploy** が必要 |
+| 「ログインの有効期限が切れました」と出る | 仕様。セッション切れ時にAPIが401を返す。再ログインすれば解消 |
+| 担当外の案件が見えてしまう | `0009` のマイグレーション未適用。SQL Editorで実行 |
