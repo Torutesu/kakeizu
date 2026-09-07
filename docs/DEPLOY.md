@@ -9,12 +9,14 @@ Vercel + Supabase で本番URLに公開する手順。**所要25分程度**（�
 認証URL設定 → 疎通確認までを1コマンドで行える:
 
 ```bash
-# トークンの発行:
-#   SUPABASE_ACCESS_TOKEN: https://supabase.com/dashboard/account/tokens
-#   VERCEL_TOKEN:          https://vercel.com/account/settings/tokens （有効期限は短く設定）
+# キーとトークンの取得手順: docs/KEYS_SETUP.md
 SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
   AI_NO_TRAINING_CONFIRMED=true pnpm provision
 ```
+
+**必要な4つの値の取り方は [KEYS_SETUP.md](./KEYS_SETUP.md) に手順をまとめてある。**
+特にGeminiは無料枠のキーだと入力が学習に使われ得るため、
+発行元プロジェクトの課金状態の確認が要る。
 
 - 冪等: 途中で失敗しても再実行すれば続きから進む（既存の同名プロジェクトは再利用）
 - **スキーマ適用は新規プロジェクト作成時のみ**。マイグレーションを追加した後の再実行では
