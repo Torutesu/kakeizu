@@ -250,3 +250,49 @@ describe('読み取り失敗の明示（要件v1.1 4.4）', () => {
     expect(issues.some(i => i.code === 'unreadable_field')).toBe(false)
   })
 })
+
+describe('和暦の機械換算による検算（要件v1.1 4.4）', () => {
+  it('元号の読み違いで西暦が食い違う場合はerror', () => {
+    const issues = checkConsistency({
+      people: [
+        person({
+          id: 'p',
+          // 「明治三十年」を「明治二十年」と読み違えた場合、親子の前後関係は崩れないため
+          // 論理矛盾では拾えない。機械換算との突き合わせで気づける
+          birth: { original_date: '明治三十年五月一日', date: '1887-05-01', place: null },
+        }),
+      ],
+      families: [],
+    })
+    const issue = issues.find(i => i.code === 'wareki_year_mismatch')
+    expect(issue?.severity).toBe('error')
+    expect(issue?.message).toContain('1897年')
+  })
+
+  it('換算が合っていれば指摘しない', () => {
+    const issues = checkConsistency({
+      people: [
+        person({
+          id: 'p',
+          birth: { original_date: '明治四十三年一月十日', date: '1910-01-10', place: null },
+        }),
+      ],
+      families: [],
+    })
+    expect(issues.some(i => i.code.startsWith('wareki_'))).toBe(false)
+  })
+
+  it('旧暦（明治5年12月2日以前）はwarningで知らせる', () => {
+    const issues = checkConsistency({
+      people: [
+        person({
+          id: 'p',
+          birth: { original_date: '明治三年一月一日', date: '1870-01-01', place: null },
+        }),
+      ],
+      families: [],
+    })
+    const issue = issues.find(i => i.code === 'wareki_lunar_calendar')
+    expect(issue?.severity).toBe('warning')
+  })
+})

@@ -1,4 +1,5 @@
 import { FamilyTreeData, PersonData, UNREADABLE_FIELD_LABELS } from './familyDataProcessor'
+import { checkWarekiConversion } from './wareki'
 
 // ============================================================================
 // 抽出結果の論理整合性チェック。
@@ -146,6 +147,18 @@ export function checkConsistency(data: FamilyTreeData, now: Date = new Date()): 
           personIds: [person.id],
         })
       }
+
+      // 和暦の換算を機械換算と突き合わせる。元号の読み違いは前後関係が崩れないため、
+      // 論理矛盾のチェックでは拾えない
+      const wareki = checkWarekiConversion(field?.original_date, field?.date)
+      if (wareki) {
+        issues.push({
+          severity: wareki.code === 'lunar_calendar' ? 'warning' : 'error',
+          code: `wareki_${wareki.code}`,
+          message: `${name}の${label}: ${wareki.message}`,
+          personIds: [person.id],
+        })
+      }
     }
   }
 
@@ -157,6 +170,21 @@ export function checkConsistency(data: FamilyTreeData, now: Date = new Date()): 
     const children = (family.children ?? [])
       .map(id => byId.get(id))
       .filter((p): p is PersonData => p !== undefined)
+
+    // 婚姻日・離婚日の和暦も同じ規則で検算する。関係する人物は親（夫婦）
+    for (const [label, field] of [
+      ['婚姻日', family.marriage_date],
+      ['離婚日', family.divorce_date],
+    ] as const) {
+      const wareki = checkWarekiConversion(field?.original_date, field?.date)
+      if (!wareki) continue
+      issues.push({
+        severity: wareki.code === 'lunar_calendar' ? 'warning' : 'error',
+        code: `wareki_${wareki.code}`,
+        message: `${label}: ${wareki.message}`,
+        personIds: parents.map(parent => parent.id),
+      })
+    }
 
     for (const child of children) {
       const childBirth = yearOf(child.birth?.date)
