@@ -89,7 +89,7 @@ describe('useFamilyData', () => {
     expect(result.current.persons[0].manualPosition).toBe(false)
   })
 
-  it('人物削除で、その人物が関わる家族関係も削除される', async () => {
+  it('子のいない夫婦の一方を削除すると、その婚姻関係も削除される', async () => {
     const result = await setupHook()
 
     act(() => { result.current.addPerson({ id: 'p1' }) })
@@ -101,6 +101,122 @@ describe('useFamilyData', () => {
 
     act(() => { result.current.deletePerson('p1') })
     expect(result.current.families).toHaveLength(0)
+  })
+
+  it('子を1人削除しても、親の婚姻関係ときょうだいの親子関係は残る', async () => {
+    const result = await setupHook()
+
+    for (const id of ['father', 'mother', 'c1', 'c2']) {
+      act(() => { result.current.addPerson({ id }) })
+    }
+    act(() => {
+      result.current.addFamily({
+        parentIds: ['father', 'mother'],
+        childrenIds: ['c1', 'c2'],
+        relationType: 'blood',
+      })
+    })
+
+    act(() => { result.current.deletePerson('c2') })
+
+    expect(result.current.families).toHaveLength(1)
+    expect(result.current.families[0].parents.map(p => p.id)).toEqual(['father', 'mother'])
+    expect(result.current.families[0].children.map(c => c.id)).toEqual(['c1'])
+  })
+
+  it('子のいる夫婦の一方を削除しても、残った親と子の関係は残る', async () => {
+    const result = await setupHook()
+
+    for (const id of ['father', 'mother', 'c1']) {
+      act(() => { result.current.addPerson({ id }) })
+    }
+    act(() => {
+      result.current.addFamily({
+        parentIds: ['father', 'mother'],
+        childrenIds: ['c1'],
+        relationType: 'blood',
+      })
+    })
+
+    act(() => { result.current.deletePerson('father') })
+
+    expect(result.current.families).toHaveLength(1)
+    expect(result.current.families[0].parents.map(p => p.id)).toEqual(['mother'])
+    expect(result.current.families[0].children.map(c => c.id)).toEqual(['c1'])
+  })
+
+  it('人物の氏名を変更すると、家族関係が持つ写しにも反映される', async () => {
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1', name: { surname: '山田', given_name: '太郎' } }) })
+    act(() => { result.current.addPerson({ id: 'p2' }) })
+    act(() => {
+      result.current.addFamily({ parentIds: ['p1'], childrenIds: ['p2'], relationType: 'blood' })
+    })
+
+    act(() => {
+      result.current.updatePerson('p1', { name: { surname: '山田', given_name: '次郎' } })
+    })
+
+    expect(result.current.families[0].parents[0].displayName).toBe('山田 次郎')
+  })
+
+  it('保存中に次の変更をしても、自分の保存同士で競合にならない（直列に保存される）', async () => {
+    // 1回目の保存を遅らせ、その間に2回目の変更を入れる
+    let releaseFirst: (() => void) | null = null
+    mockedSave.mockImplementationOnce(
+      () => new Promise(resolve => { releaseFirst = () => resolve({ ok: true, version: 1 }) })
+    )
+    mockedSave.mockImplementationOnce(async (_p, _tree, expectedVersion) =>
+      expectedVersion === 1 ? { ok: true, version: 2 } : { ok: false, reason: 'conflict' }
+    )
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
+
+    // 1回目が返る前に2回目の変更
+    act(() => { result.current.addPerson({ id: 'p2' }) })
+    await new Promise(r => setTimeout(r, 1000))
+    // 直列化されているため、1回目が終わるまで2回目は始まらない
+    expect(mockedSave).toHaveBeenCalledTimes(1)
+
+    act(() => { releaseFirst?.() })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    // 2回目は1回目で進んだバージョンを前提にする
+    expect(mockedSave.mock.calls[1][2]).toBe(1)
+    await waitFor(() => expect(result.current.saveStatus).toBe('saved'))
+    expect((mockedSave.mock.calls[1][1] as FamilyTreeData).people).toHaveLength(2)
+  })
+
+  it('保存中にアンドゥで保存済みの状態へ戻しても、サーバーに古い変更が残らない', async () => {
+    let releaseFirst: (() => void) | null = null
+    mockedSave.mockImplementationOnce(
+      () => new Promise(resolve => { releaseFirst = () => resolve({ ok: true, version: 1 }) })
+    )
+    mockedSave.mockImplementationOnce(async () => ({ ok: true, version: 2 }))
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
+
+    // 1回目（人物あり）の保存が返る前にアンドゥで読み込み時の状態に戻す
+    act(() => { result.current.undo() })
+    expect(result.current.persons).toHaveLength(0)
+
+    act(() => { releaseFirst?.() })
+    // 戻した状態（人物なし）が続けて保存される
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    expect((mockedSave.mock.calls[1][1] as FamilyTreeData).people).toHaveLength(0)
+    expect(mockedSave.mock.calls[1][2]).toBe(1)
+    await waitFor(() => expect(result.current.saveStatus).toBe('saved'))
+  })
+
+  it('再読み込みしただけでは保存しない（他の編集者に競合を起こさない）', async () => {
+    const result = await setupHook()
+    await act(async () => { await result.current.refreshData() })
+    await new Promise(r => setTimeout(r, 1200))
+    expect(mockedSave).not.toHaveBeenCalled()
   })
 
   it('変更するとデバウンス後に自動保存される', async () => {

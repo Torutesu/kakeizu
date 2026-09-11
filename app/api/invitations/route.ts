@@ -7,6 +7,7 @@ import {
   InviteMailOutcome,
 } from '@/lib/invitations/inviteResult'
 import { ORG_ROLE_LABELS, OrgRole } from '@/lib/auth/permissions'
+import { buildAuthCallbackUrl, SET_PASSWORD_PATH } from '@/lib/auth/authLinks'
 import {
   checkRateLimit,
   RateLimitUnavailableError,
@@ -144,9 +145,11 @@ export async function POST(request: Request) {
   let outcome: InviteMailOutcome
   try {
     const admin = createSupabaseAdminClient()
+    // 招待された人はまだパスワードを持たないため、リンクの着地先は
+    // パスワード設定画面にする（案件一覧へ直接送ると次回ログインできない）
     const origin = new URL(request.url).origin
     const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${origin}/auth/callback?next=/projects`,
+      redirectTo: buildAuthCallbackUrl(origin, SET_PASSWORD_PATH),
     })
     outcome = classifyInviteMailError(error)
   } catch (error) {

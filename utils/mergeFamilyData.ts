@@ -191,7 +191,11 @@ export function mergeFamilyTreeData(
     }
     if (remapped.parents.length === 0) return
 
-    const target = familyById.get(remapped.id) ?? familyByKey.get(familyKey(remapped))
+    // 同一視の基準は「親の組み合わせ」。idは書類ごとに f001 から振り直されるため、
+    // id が同じでも親が違えば別の家族（別の書類の別の夫婦）として扱う
+    const byId = familyById.get(remapped.id)
+    const target =
+      byId && familyKey(byId) === familyKey(remapped) ? byId : familyByKey.get(familyKey(remapped))
     if (target) {
       // 子は和集合、日付は既存優先で補完
       target.children = [...new Set([...target.children, ...remapped.children])]
@@ -208,6 +212,12 @@ export function mergeFamilyTreeData(
       return
     }
 
+    // 別の家族と id が衝突する場合は振り直す（衝突したまま保存すると参照が混線する）
+    if (familyById.has(remapped.id)) {
+      let candidate = `${remapped.id}_${families.length + 1}`
+      while (familyById.has(candidate)) candidate = `${candidate}_`
+      remapped.id = candidate
+    }
     families.push(remapped)
     familyByKey.set(familyKey(remapped), remapped)
     familyById.set(remapped.id, remapped)

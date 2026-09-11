@@ -50,6 +50,17 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   if (!user && !isPublicPath(pathname)) {
+    // APIはログイン画面へ飛ばさず、401を返す。
+    // リダイレクトするとfetchがHTMLのログイン画面を受け取ってしまい、
+    // 呼び出し側では「成功した」ように見えることがある
+    // （実際、招待APIで送信していないのに完了と表示される不具合があった）
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'ログインの有効期限が切れました。再度ログインしてください。' },
+        { status: 401 }
+      )
+    }
+
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = '/login'
     redirectUrl.search = ''

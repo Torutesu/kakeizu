@@ -40,14 +40,28 @@
 Authentication → Providers → Email はデフォルトで有効です。
 「Confirm email」を有効にしておくと、新規登録時にメール確認が必須になります（推奨）。
 
-### Googleログイン
+### 外部サービスでのログインは無効にする
 
-1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) でOAuthクライアントIDを作成
-   - 承認済みリダイレクトURI: `https://<プロジェクトID>.supabase.co/auth/v1/callback`
-2. Supabaseの Authentication → Providers → Google に Client ID / Client Secret を設定
-3. Authentication → URL Configuration で以下を設定:
-   - Site URL: 本番URL（例: `https://kakeizu.example.com`）
-   - Redirect URLs: `http://localhost:3000/auth/callback`（開発用）と `https://<本番ドメイン>/auth/callback`
+ログインはメールアドレスのみとしているため、**Authentication → Providers で
+Google をはじめとする外部プロバイダが無効であること**を確認してください。
+
+アプリの画面からは削除済みですが、プロバイダが有効なままだと
+認可エンドポイントを直接叩くことで認証が成立しえます。画面から消えていることと、
+認証経路が塞がっていることは別です。
+
+### リダイレクトURLの設定
+
+Authentication → URL Configuration で以下を設定します。
+確認メールと招待メールのリンク先になるため、未設定だとlocalhostに飛びます。
+
+- Site URL: 本番URL（例: `https://kakeizu.example.com`）
+- Redirect URLs: `https://<本番ドメイン>/auth/callback`
+  （ローカル開発も併用するなら `http://localhost:3000/auth/callback` も追加）
+
+  招待・パスワード再設定・メール確認のリンクはすべて `/auth/callback` を経由してから
+  目的の画面へ進むため、登録するURLはこの1つで足ります。メールテンプレートは既定のままで
+  動作します（`{{ .ConfirmationURL }}`）。`token_hash` 方式にテンプレートを変更した場合も、
+  `/auth/callback?token_hash=...&type=...` の形なら同じ経路で受け取れます
 
 ## 4. 環境変数の設定
 
@@ -56,6 +70,7 @@ Authentication → Providers → Email はデフォルトで有効です。
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://<プロジェクトID>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon publicキー>
+SUPABASE_SERVICE_ROLE_KEY=<service_roleキー>  # 招待メールの送信に使用。NEXT_PUBLIC_ を付けないこと
 GEMINI_API_KEY=<Gemini APIキー>      # 既定プロバイダ（gemini-3.1-pro）
 # ANTHROPIC_API_KEY=<Claude APIキー> # 任意: 精度最優先の場合の選択肢＋フォールバック
 # OPENAI_API_KEY=<OpenAI APIキー>    # 任意: フォールバック
@@ -74,9 +89,12 @@ GEMINI_API_KEY=<Gemini APIキー>      # 既定プロバイダ（gemini-3.1-pro�
 2. どの組織にも所属していないため、オンボーディング画面が表示される
 3. 組織名を入力して作成 → 自動的にその組織の **管理者 (admin)** になる
 4. 「メンバー管理」から同僚のメールアドレスを招待
-   - 招待された人が **同じメールアドレスで** 新規登録すると、自動的にメンバーになります
-   - 招待メールは送信されないため、登録を促す連絡は別途行ってください
+   - 招待メールが届き、リンクを開くとパスワード設定画面（`/auth/set-password`）に着地します。
+     設定が済むとそのまま案件一覧に入れます（`SUPABASE_SERVICE_ROLE_KEY` が必要）
+   - メールが送れない環境でも、招待された人が **同じメールアドレスで** 新規登録すれば自動的にメンバーになります
    - 未招待のアドレスで登録しようとすると、DB層のゲートにより登録自体が拒否されます
+   - パスワードを忘れた場合はログイン画面の「パスワードをお忘れですか？」から再設定できます。
+     再設定メールのリンクも同じパスワード設定画面に着地します
 
 ### 招待制を解除して一般公開する場合
 
@@ -102,13 +120,13 @@ APIやフロントエンドのバグによって他組織・権限外のデー�
 
 ## セキュリティに関する注意
 
-- 戸籍PDFはGemini APIに送信されます。Google AI Studioの無料枠はデータが品質改善に
-  使用される可能性があるため、**実運用では有料枠（データが学習に使用されない）の利用を推奨**します
-- `service_role` キーはこのアプリでは使用しません。誤ってクライアントに配布しないでください
+- 戸籍書類は設定したAIプロバイダ（Gemini / Claude / GPT）に送信されます。無料枠はデータが品質改善に
+  使用される可能性があるため、**実運用では有料枠（データが学習に使用されない）の利用が必須**です
+- `service_role` キーは招待メールの送信にのみサーバー側で使います。`NEXT_PUBLIC_` を付けず、クライアントに配布しないでください
 - アップロードされた戸籍書類は非公開バケットに保存され、閲覧は有効期限60秒の署名付きURL経由でのみ行われます
 - 解析APIには「ユーザーごとのレート制限（10分に20回・Postgresで分散カウント）」と
   「ファイル実体のマジックバイト検証」があり、APIキーの乱用や偽装ファイルの送信を防ぎます
 - 本番では `AI_NO_TRAINING_CONFIRMED=true` が無いと解析が実行されません
   （AIに学習されない条件の確認。詳細は [AI_DATA_POLICY.md](./AI_DATA_POLICY.md)）
 - すべてのレスポンスに防御的なセキュリティヘッダー（X-Frame-Options / HSTS 等）が付与されます
-- 監査ログは `audit_logs` テーブルに記録され、管理者は「監査ログ」画面から閲覧できます
+- 操作履歴（監査ログ）は保持しません。戸籍に関する個人情報をログに残さない方針のためです

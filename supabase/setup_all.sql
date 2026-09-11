@@ -742,3 +742,379 @@ begin
     return query select true, 0;
   end if;
 end $$;
+
+-- ----- supabase/migrations/0007_drop_audit_logs.sql -----
+-- ============================================================================
+-- 監査ログの廃止
+--
+-- 操作記録は要件から外れたため、テーブルと書き込み経路をすべて削除する。
+-- audit_logs へ insert している SECURITY DEFINER 関数を先に作り直してから
+-- テーブルを落とす（順序を逆にすると関数が壊れる）。
+--
+-- 関数の中身は 0001_init.sql / 0005_invite_only.sql の定義から
+-- audit_logs への insert のみを取り除いたもので、他の挙動は変えていない。
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. 書き込み元の関数を作り直す
+-- ---------------------------------------------------------------------------
+
+-- 組織の作成（招待制のゲートは 0005 のまま維持する）
+create or replace function public.create_organization(p_name text)
+returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_org uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  if not public.can_create_organization() then
+    raise exception 'organization_creation_disabled'
+      using hint = 'このアプリは招待制です。新しい組織の作成は許可されていません。';
+  end if;
+  if p_name is null or length(trim(p_name)) = 0 then
+    raise exception 'organization name is required';
+  end if;
+
+  insert into organizations (name) values (trim(p_name)) returning id into v_org;
+  insert into memberships (org_id, user_id, role) values (v_org, auth.uid(), 'admin');
+  return v_org;
+end $$;
+
+-- 自分宛の未承諾の招待をメンバーシップに変換する
+create or replace function public.accept_pending_invitations()
+returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  v_email text;
+  v_count integer := 0;
+  r record;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  select email into v_email from auth.users where id = auth.uid();
+
+  for r in
+    select * from invitations
+    where lower(email) = lower(v_email) and accepted_at is null
+  loop
+    insert into memberships (org_id, user_id, role)
+    values (r.org_id, auth.uid(), r.role)
+    on conflict (org_id, user_id) do nothing;
+
+    update invitations set accepted_at = now() where id = r.id;
+
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end $$;
+
+-- 案件の作成（作成者を自動でアサインする）
+create or replace function public.create_project(p_org uuid, p_name text, p_client_name text default null)
+returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+  v_role public.org_role;
+begin
+  v_role := current_org_role(p_org);
+  if v_role is null or v_role = 'viewer' then
+    raise exception 'permission denied';
+  end if;
+  if p_name is null or length(trim(p_name)) = 0 then
+    raise exception 'project name is required';
+  end if;
+
+  insert into projects (org_id, name, client_name, created_by)
+  values (p_org, trim(p_name), nullif(trim(coalesce(p_client_name, '')), ''), auth.uid())
+  returning id into v_id;
+
+  insert into project_members (project_id, user_id)
+  values (v_id, auth.uid())
+  on conflict do nothing;
+
+  return v_id;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 2. テーブルを削除する
+--
+-- 0002 で追加したポリシーもテーブルと一緒に落ちる。
+-- 記録済みのログは戸籍に関する個人情報を含みうるため、残さず削除する。
+-- ---------------------------------------------------------------------------
+drop table if exists public.audit_logs cascade;
+
+-- ----- supabase/migrations/0008_generic_rate_limit.sql -----
+-- ============================================================================
+-- レート制限を解析以外にも使えるように一般化する
+--
+-- 招待メールの送信にも回数制限が要るため、操作の種類（action）を持たせた
+-- 汎用のテーブルへ移行する。方式は 0006 と同じ固定ウィンドウ＋原子的UPSERT。
+--
+-- 解析用の check_analysis_rate_limit は呼び出し側（lib/security/rateLimit.ts）が
+-- 使い続けるため、汎用関数へ委譲する薄いラッパとして残す。
+-- ============================================================================
+
+create table public.rate_limits (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  -- 操作の種類。'analysis' / 'invitation' など
+  action text not null,
+  window_start timestamptz not null,
+  request_count integer not null default 0,
+  primary key (user_id, action, window_start)
+);
+
+alter table public.rate_limits enable row level security;
+-- ポリシーは意図的に作らない → APIから直接読み書きできない。
+-- 更新は下のsecurity definer関数経由のみ（利用者がカウンタを消せないようにする）。
+
+create or replace function public.check_rate_limit(
+  p_action text,
+  p_max_requests integer,
+  p_window_seconds integer
+)
+returns table (allowed boolean, retry_after_seconds integer)
+language plpgsql security definer set search_path = public as $$
+declare
+  v_user uuid := auth.uid();
+  v_window_start timestamptz;
+  v_count integer;
+begin
+  if v_user is null then
+    return query select false, p_window_seconds;
+    return;
+  end if;
+  if p_action is null or length(trim(p_action)) = 0 then
+    raise exception 'action is required';
+  end if;
+  if p_max_requests < 1 or p_window_seconds < 1 then
+    raise exception 'invalid rate limit parameters';
+  end if;
+
+  -- 現在時刻をウィンドウ幅で切り捨て（例: 3600秒なら1時間刻みの境界）
+  v_window_start := to_timestamp(
+    floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds
+  );
+
+  insert into rate_limits as rl (user_id, action, window_start, request_count)
+  values (v_user, p_action, v_window_start, 1)
+  on conflict (user_id, action, window_start)
+  do update set request_count = rl.request_count + 1
+  returning rl.request_count into v_count;
+
+  -- 自分の古いウィンドウを掃除（テーブルの肥大化防止）
+  delete from rate_limits
+   where user_id = v_user and action = p_action and window_start < v_window_start;
+
+  if v_count > p_max_requests then
+    return query select
+      false,
+      greatest(
+        1,
+        ceil(
+          extract(epoch from (v_window_start + make_interval(secs => p_window_seconds) - now()))
+        )::integer
+      );
+  else
+    return query select true, 0;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 解析用は汎用関数への委譲に置き換える（呼び出し側の変更は不要）
+-- ---------------------------------------------------------------------------
+create or replace function public.check_analysis_rate_limit(
+  p_max_requests integer default 20,
+  p_window_seconds integer default 600
+)
+returns table (allowed boolean, retry_after_seconds integer)
+language sql security definer set search_path = public as $$
+  select * from public.check_rate_limit('analysis', p_max_requests, p_window_seconds);
+$$;
+
+-- 旧テーブルは不要になる。カウンタは短命（ウィンドウ幅の間だけ）なので移行しない
+drop table if exists public.analysis_rate_limits;
+
+-- ----- supabase/migrations/0009_default_assigned_only.sql -----
+-- ============================================================================
+-- 案件へのアクセス既定を assigned_only に変更する
+--
+-- worker_access_mode の既定が all_projects だったため、
+-- **作業者・閲覧者が担当していない案件まで閲覧・編集できる**状態だった。
+-- 要件（案件へのアクセス: 担当者として割り当てられていない案件のデータには
+-- 到達できない）と食い違っており、RLSの実地検証で検出した。
+--
+-- 戸籍という個人情報を扱う以上、既定は制限の強い側であるべき。
+-- 緩い設定を既定にすると、新しい事務所が常に最も緩い状態から始まる。
+-- 全案件を共有したい事務所は、明示的に all_projects へ変更する。
+-- ============================================================================
+
+alter table public.organizations
+  alter column worker_access_mode set default 'assigned_only';
+
+-- 既存の組織も制限側へ寄せる。
+-- 意図して全案件共有にしていた組織は、設定画面から戻せる
+update public.organizations
+   set worker_access_mode = 'assigned_only'
+ where worker_access_mode = 'all_projects';
+
+-- ----- supabase/migrations/0010_touch_project_updated_at.sql -----
+-- ============================================================================
+-- 案件の更新日時を、家系図や戸籍ファイルの変化に追従させる
+--
+-- projects.updated_at は案件作成時にしか入らず、家系図を編集しても
+-- 戸籍を取り込んでも動かなかった。案件一覧は updated_at 順に並び、
+-- 「更新: …」として表示しているため、**最近作業した案件が上に来ず、
+-- 表示される日時も作成日のまま**という状態だった。
+--
+-- tree_revisions・koseki_files の変更時に親の案件へ書き戻すトリガーを置く。
+-- security definer にしているのは、閲覧者が戸籍ファイルを開いただけでは
+-- 発火せず（select は対象外）、更新できる人の操作でのみ発火するため
+-- RLS の update ポリシーと矛盾しないが、projects への直接 update 権限が
+-- 無い作業者（assigned_only で担当外）が経由することはない。
+-- ============================================================================
+
+create or replace function public.touch_project_updated_at()
+returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  target uuid;
+begin
+  if tg_op = 'DELETE' then
+    target := old.project_id;
+  else
+    target := new.project_id;
+  end if;
+  update public.projects set updated_at = now() where id = target;
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists on_tree_revision_touch_project on public.tree_revisions;
+create trigger on_tree_revision_touch_project
+after update on public.tree_revisions
+for each row execute function public.touch_project_updated_at();
+
+drop trigger if exists on_koseki_file_touch_project on public.koseki_files;
+create trigger on_koseki_file_touch_project
+after insert or update or delete on public.koseki_files
+for each row execute function public.touch_project_updated_at();
+
+-- ----- supabase/migrations/0011_release_hardening.sql -----
+-- ============================================================================
+-- リリース前レビューで見つかった、DB層の4件の修正
+--
+-- 1. 一度参加した人を再招待できない
+--    invitations は (org_id, email) が一意で、承諾済みの行も残るため、
+--    退会した人を再招待すると重複エラー（画面では「既に招待済みです」）になり、
+--    承諾済みの行は一覧に出ないので取り消すこともできなかった。
+--    → 一意制約を「未承諾の招待」に限る部分インデックスに置き換える。
+--
+-- 2. 招待済みメールアドレスの列挙
+--    email_has_pending_invitation() は security definer の公開関数で、
+--    Supabase の既定では anon からも呼べるため、任意のアドレスが招待済みかを
+--    未ログインで確かめられた。トリガー（security definer）だけが使う関数なので、
+--    アプリのロールからは実行権限を外す。
+--
+-- 3. 回数制限の action が自由入力だった
+--    利用者が任意の action 名で check_rate_limit を呼べ、掃除は action 単位のため
+--    行が際限なく増やせた。既知の action だけを受け付け、掃除も全 action に広げる。
+--
+-- 4. 戸籍ファイルの保存パスが案件に紐づいていなかった
+--    別案件配下のパスを登録でき、削除時にその案件の実体を消せた。
+--    パスの先頭が自案件の id であることをテーブル側で強制する。
+--
+-- あわせて、メールアドレスを変更しても profiles.email が古いまま
+-- （メンバー一覧に旧アドレスが出続ける）だったため、auth.users の更新を追従させる。
+-- ============================================================================
+
+-- 1. 再招待できるようにする
+alter table public.invitations drop constraint if exists invitations_org_id_email_key;
+create unique index if not exists invitations_pending_org_email_key
+  on public.invitations (org_id, lower(email))
+  where accepted_at is null;
+
+-- 2. 招待済みアドレスの列挙を塞ぐ
+revoke execute on function public.email_has_pending_invitation(text) from public, anon, authenticated;
+
+-- 3. 回数制限の action を既知のものに限る
+create or replace function public.check_rate_limit(
+  p_action text,
+  p_max_requests integer,
+  p_window_seconds integer
+)
+returns table (allowed boolean, retry_after_seconds integer)
+language plpgsql security definer set search_path = public as $$
+declare
+  v_user uuid := auth.uid();
+  v_window_start timestamptz;
+  v_count integer;
+begin
+  if v_user is null then
+    return query select false, p_window_seconds;
+    return;
+  end if;
+  -- 新しい操作に回数制限を付けるときは、ここに action を追加する
+  if p_action is null or p_action not in ('analysis', 'invitation') then
+    raise exception 'unknown rate limit action';
+  end if;
+  if p_max_requests < 1 or p_window_seconds < 1 then
+    raise exception 'invalid rate limit parameters';
+  end if;
+
+  v_window_start := to_timestamp(
+    floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds
+  );
+
+  insert into rate_limits as rl (user_id, action, window_start, request_count)
+  values (v_user, p_action, v_window_start, 1)
+  on conflict (user_id, action, window_start)
+  do update set request_count = rl.request_count + 1
+  returning rl.request_count into v_count;
+
+  -- 自分の古いウィンドウを掃除する（action を問わず、1日より前のものは不要）
+  delete from rate_limits
+   where user_id = v_user
+     and (
+       (action = p_action and window_start < v_window_start)
+       or window_start < now() - interval '1 day'
+     );
+
+  if v_count > p_max_requests then
+    return query select
+      false,
+      greatest(
+        1,
+        ceil(
+          extract(epoch from (v_window_start + make_interval(secs => p_window_seconds) - now()))
+        )::integer
+      );
+  else
+    return query select true, 0;
+  end if;
+end $$;
+
+-- 4. 保存パスを案件に紐づける（既存データは全て `<project_id>/<uuid>.<ext>` 形式）
+alter table public.koseki_files
+  add constraint koseki_files_storage_path_matches_project
+  check (left(storage_path, 37) = project_id::text || '/');
+
+-- メールアドレス変更を profiles に追従させる
+create or replace function public.handle_user_email_updated()
+returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.profiles set email = new.email where id = new.id;
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_email_updated on auth.users;
+create trigger on_auth_user_email_updated
+after update of email on auth.users
+for each row
+when (old.email is distinct from new.email)
+execute function public.handle_user_email_updated();

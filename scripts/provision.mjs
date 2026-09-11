@@ -160,16 +160,29 @@ async function provisionSupabase() {
     console.log(`     supabase/migrations/ の未適用分を手動実行してください（project: ${ref}）`)
   }
 
-  step('Supabase: anonキー（publishableキー）を取得')
+  step('Supabase: APIキーを取得')
   const keys = await supa(`/v1/projects/${ref}/api-keys?reveal=true`)
-  // 旧APIキー（name=anon）と新APIキー（type=publishable）の両方に対応する
+  // 旧APIキー（name=anon/service_role）と新APIキー（type=publishable/secret）の両方に対応する
   const anonKey =
     keys.find(k => k.name === 'anon')?.api_key ??
     keys.find(k => k.type === 'publishable')?.api_key ??
     keys.find(k => /publishable|anon/i.test(k.name ?? ''))?.api_key
   if (!anonKey) fail('anon/publishableキーが取得できませんでした。ダッシュボードのSettings → APIから手動で取得してください。')
 
-  return { ref, url: `https://${ref}.supabase.co`, anonKey }
+  // 招待メールの送信に必要（ブラウザには送らず、サーバー側のルートでのみ使う）。
+  // これが無いと招待レコードは作られるがメールが一通も飛ばない
+  const serviceRoleKey =
+    keys.find(k => k.name === 'service_role')?.api_key ??
+    keys.find(k => k.type === 'secret')?.api_key ??
+    keys.find(k => /service_role|secret/i.test(k.name ?? ''))?.api_key
+  if (!serviceRoleKey) {
+    console.log('  ⚠ service_roleキーが取得できませんでした。招待メールは送信されません')
+    console.log('     ダッシュボードのSettings → APIから取得し、VercelにSUPABASE_SERVICE_ROLE_KEYとして設定してください')
+  } else {
+    console.log('  anon / service_role の両方を取得しました')
+  }
+
+  return { ref, url: `https://${ref}.supabase.co`, anonKey, serviceRoleKey }
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +233,8 @@ async function provisionVercel(supabase) {
   const envVars = [
     ['NEXT_PUBLIC_SUPABASE_URL', supabase.url],
     ['NEXT_PUBLIC_SUPABASE_ANON_KEY', supabase.anonKey],
+    // ⚠ NEXT_PUBLIC_ を付けないこと。RLSを完全に迂回するキーで、付けるとブラウザに露出する
+    ['SUPABASE_SERVICE_ROLE_KEY', supabase.serviceRoleKey],
     ['GEMINI_API_KEY', process.env.GEMINI_API_KEY],
     ['ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY],
     ['OPENAI_API_KEY', process.env.OPENAI_API_KEY],
@@ -237,6 +252,9 @@ async function provisionVercel(supabase) {
   if (process.env.AI_NO_TRAINING_CONFIRMED !== 'true') {
     console.log('  ⚠ AI_NO_TRAINING_CONFIRMED が未設定です。本番では解析が停止します')
     console.log('     docs/AI_DATA_POLICY.md の要件を満たした上で true を設定してください')
+  }
+  if (!supabase.serviceRoleKey) {
+    console.log('  ⚠ SUPABASE_SERVICE_ROLE_KEY が未設定です。招待は作成されますがメールは届きません')
   }
 
   await vercel(`/v10/projects/${PROJECT_NAME}/env?upsert=true`, {
@@ -350,9 +368,11 @@ async function main() {
   console.log('  1. 【最優先】上記URLで最初のアカウントを作成し、組織を作る')
   console.log('     招待制のため、組織を作った時点で以降は招待された人しか登録できなくなります')
   console.log('     （組織が無い間は誰でも登録できるので、デプロイ後すぐに実施してください）')
-  console.log('  2. Googleログインを使う場合はSupabaseダッシュボードでProvider設定（docs/SUPABASE_SETUP.md 手順3）')
+  console.log('  2. Supabaseダッシュボード → Authentication → Providers で Google が無効であることを確認')
+  console.log('     （メールアドレスのみの運用にしているため。有効だと認可エンドポイント経由で認証が成立しうる）')
   console.log('  3. 使い終わったらSUPABASE_ACCESS_TOKENとVERCEL_TOKENを失効させる')
   console.log('  4. mainへのマージで自動デプロイしたい場合はVercelダッシュボードでGitHub連携を有効化')
+  console.log('  5. 動作確認は docs/RELEASE_CHECKLIST.md 「4. 手動での動作確認」に従う')
 }
 
 main().catch(error => {

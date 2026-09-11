@@ -29,6 +29,14 @@ export async function analyzeStoredKoseki(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectId, fileId, ...options }),
     })
+    // 解析は数分かかることがあり、その間にログインの期限が切れうる。
+    // 本文がJSONとは限らないため、状態コードから先に判断する
+    if (response.status === 401) {
+      return {
+        success: false,
+        error: 'ログインの有効期限が切れました。再度ログインしてから解析してください。',
+      }
+    }
     return (await response.json()) as KosekiAnalysisResult
   } catch (error) {
     console.error('戸籍解析エラー:', error)
