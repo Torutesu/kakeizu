@@ -97,10 +97,15 @@ export function KosekiFilesPanel({
     }
   }
 
-  const handleRemove = async (file: KosekiFile) => {
+  const handleRemove = async (file: KosekiFile, groupPageCount: number) => {
     const confirmed = await confirm({
       title: `「${file.fileName}」を削除しますか？`,
-      description: 'ファイルの実体も削除され、元に戻せません。取り込み済みの家系図データは残ります。',
+      description:
+        groupPageCount > 1
+          ? `この書類は${groupPageCount}枚で1通の戸籍として読み取ります。1枚だけ削除すると、` +
+            '次の再解析ではその枚が欠けたまま読み取られます。' +
+            'ファイルの実体も削除され、元に戻せません。取り込み済みの家系図データは残ります。'
+          : 'ファイルの実体も削除され、元に戻せません。取り込み済みの家系図データは残ります。',
       confirmLabel: '削除する',
       destructive: true,
     })
@@ -133,7 +138,12 @@ export function KosekiFilesPanel({
         </p>
       ) : (
         <div className="space-y-2">
-          {files.map(file => {
+          {files.map((file, index) => {
+            // 束（1通の戸籍を複数枚に分けたもの）は、先頭の1枚にまとめて表示する
+            const groupFiles = files.filter(f => f.documentGroupId === file.documentGroupId)
+            const isGrouped = groupFiles.length > 1
+            const isFirstOfGroup =
+              files.findIndex(f => f.documentGroupId === file.documentGroupId) === index
             const expired = isRetentionExpired(file)
             const canOpen = canOpenKosekiFile(file, isAdmin)
             return (
@@ -146,13 +156,14 @@ export function KosekiFilesPanel({
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs text-gray-400">{formatSize(file.fileSize)}</span>
-                    {file.analysisStatus === 'success' && (
+                    {file.analysisStatus === 'success' && (!isGrouped || isFirstOfGroup) && (
                       <Badge
                         variant="secondary"
                         className="text-xs"
                         title={file.analysisModel ? `解析モデル: ${file.analysisModel}` : undefined}
                       >
                         {file.personCount ?? 0}人を抽出
+                        {isGrouped && `（${groupFiles.length}枚まとめて）`}
                       </Badge>
                     )}
                     {file.analysisStatus === 'failed' && (
@@ -168,6 +179,15 @@ export function KosekiFilesPanel({
                         title={`取り込みから${KOSEKI_RETENTION_DAYS}日を過ぎています`}
                       >
                         保管期間切れ
+                      </Badge>
+                    )}
+                    {isGrouped && (
+                      <Badge
+                        variant="outline"
+                        className="text-xs border-blue-300 text-blue-700"
+                        title={`1通の戸籍として${groupFiles.length}枚まとめて読み取ります`}
+                      >
+                        1通{groupFiles.length}枚中 {file.pageNumber}枚目
                       </Badge>
                     )}
                   </div>
@@ -194,48 +214,54 @@ export function KosekiFilesPanel({
                 >
                   <Download className="w-3.5 h-3.5" />
                 </Button>
-                {canEdit && canOpen && (
-                  <>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2"
-                          title="再解析して家系図に取り込む（モデルを選択）"
-                          disabled={busyFileId === file.id}
+                {/* 再解析は束ごとに1回でよいため、先頭の1枚にだけ出す */}
+                {canEdit && canOpen && (!isGrouped || isFirstOfGroup) && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2"
+                        title={
+                          isGrouped
+                            ? `${groupFiles.length}枚をまとめて再解析する（モデルを選択）`
+                            : '再解析して家系図に取り込む（モデルを選択）'
+                        }
+                        disabled={busyFileId === file.id}
+                      >
+                        {busyFileId === file.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel className="text-xs">再解析に使うモデル</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {REANALYZE_CHOICES.map(choice => (
+                        <DropdownMenuItem
+                          key={choice.label}
+                          onClick={() => handleReanalyze(file, choice.options)}
                         >
-                          {busyFileId === file.id ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="w-3.5 h-3.5" />
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel className="text-xs">再解析に使うモデル</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {REANALYZE_CHOICES.map(choice => (
-                          <DropdownMenuItem
-                            key={choice.label}
-                            onClick={() => handleReanalyze(file, choice.options)}
-                          >
-                            {choice.label}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-red-500 hover:text-red-700"
-                      title="削除"
-                      disabled={busyFileId === file.id}
-                      onClick={() => handleRemove(file)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </>
+                          {choice.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {/* 削除は1枚ずつできる（束の一部だけ撮り直す場合があるため） */}
+                {canEdit && canOpen && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-red-500 hover:text-red-700"
+                    title="削除"
+                    disabled={busyFileId === file.id}
+                    onClick={() => handleRemove(file, groupFiles.length)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
                 )}
               </div>
             </div>

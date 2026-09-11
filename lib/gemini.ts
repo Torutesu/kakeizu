@@ -4,6 +4,8 @@ export interface KosekiAnalysisResult {
   success: boolean
   data?: FamilyTreeData
   error?: string
+  /** 解析の対象になったファイル。複数枚を1通としてまとめた場合は全枚数分が入る */
+  fileIds?: string[]
 }
 
 export interface AnalyzeOptions {
@@ -14,15 +16,15 @@ export interface AnalyzeOptions {
 }
 
 /** 解析結果の人物・戸籍に、読み取り元のファイルidを付ける */
-function stampSourceFile(data: FamilyTreeData, fileId: string): FamilyTreeData {
+function stampSourceFiles(data: FamilyTreeData, fileIds: string[]): FamilyTreeData {
   return {
     ...data,
-    people: data.people.map(person => ({ ...person, source_file_ids: [fileId] })),
+    people: data.people.map(person => ({ ...person, source_file_ids: fileIds })),
     ...(data.registries
       ? {
           registries: data.registries.map(registry => ({
             ...registry,
-            source_file_ids: [fileId],
+            source_file_ids: fileIds,
           })),
         }
       : {}),
@@ -57,7 +59,8 @@ export async function analyzeStoredKoseki(
     // どの書類から読み取ったかを記録する。相続実務では記載の根拠に遡れることが要る。
     // AIは自分がどのファイルを読んでいるかを知らないため、ここで付ける
     if (result.success && result.data) {
-      result.data = stampSourceFile(result.data, fileId)
+      // 複数枚を1通としてまとめた場合、出典は束の全ファイルになる
+      result.data = stampSourceFiles(result.data, result.fileIds ?? [fileId])
     }
     return result
   } catch (error) {

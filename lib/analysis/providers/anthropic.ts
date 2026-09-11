@@ -27,24 +27,27 @@ export const anthropicProvider: AnalysisProvider = {
 
     const client = new Anthropic({ apiKey })
 
-    // PDFはdocumentブロック、画像はimageブロックとして渡す
-    const mediaBlock: Anthropic.ContentBlockParam = isImageMediaType(input.mimeType)
-      ? {
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: input.mimeType,
-            data: input.base64Data,
-          },
-        }
-      : {
-          type: 'document',
-          source: {
-            type: 'base64',
-            media_type: 'application/pdf',
-            data: input.base64Data,
-          },
-        }
+    // PDFはdocumentブロック、画像はimageブロックとして渡す。
+    // 複数枚はページ順に並べる（1通の戸籍として読ませる）
+    const mediaBlocks: Anthropic.ContentBlockParam[] = input.parts.map(part =>
+      isImageMediaType(part.mimeType)
+        ? {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: part.mimeType,
+              data: part.base64Data,
+            },
+          }
+        : {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: part.base64Data,
+            },
+          }
+    )
 
     const response = await client.messages.parse({
       model,
@@ -64,7 +67,7 @@ export const anthropicProvider: AnalysisProvider = {
       messages: [
         {
           role: 'user',
-          content: [mediaBlock, { type: 'text', text: KOSEKI_TASK_PROMPT }],
+          content: [...mediaBlocks, { type: 'text', text: KOSEKI_TASK_PROMPT }],
         },
       ],
       output_config: {

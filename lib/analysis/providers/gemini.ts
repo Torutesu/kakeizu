@@ -23,7 +23,10 @@ export const geminiProvider: AnalysisProvider = {
           role: 'user',
           parts: [
             { text: KOSEKI_TASK_PROMPT },
-            { inlineData: { mimeType: input.mimeType, data: input.base64Data } },
+            // 複数枚はページ順に並べて渡す（1通の戸籍として読ませる）
+            ...input.parts.map(part => ({
+              inlineData: { mimeType: part.mimeType, data: part.base64Data },
+            })),
           ],
         },
       ],

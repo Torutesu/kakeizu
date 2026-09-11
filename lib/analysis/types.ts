@@ -2,9 +2,22 @@ import { FamilyTreeData } from '../../utils/familyDataProcessor'
 
 export type AnalysisProviderName = 'gemini' | 'anthropic' | 'openai'
 
-export interface AnalysisInput {
+/** 解析に渡す書類の1枚分（PDF1件、または画像1枚） */
+export interface AnalysisPart {
   base64Data: string
   mimeType: string
+}
+
+/**
+ * 1回の解析に渡す入力。
+ *
+ * 1通の戸籍が複数枚の画像に分かれている場合（スマホ撮影など）は、
+ * **まとめて1回の解析に渡す**。1枚ずつ解析して後から名寄せするより、
+ * ページをまたぐ続柄・改製の関係をモデルが直接読めるぶん精度が上がる。
+ * parts はページ順に並んでいること。
+ */
+export interface AnalysisInput {
+  parts: AnalysisPart[]
 }
 
 /**

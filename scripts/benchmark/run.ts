@@ -195,7 +195,10 @@ async function main() {
       const startedAt = Date.now()
 
       try {
-        const { raw, usage } = await PROVIDERS[candidate.provider].analyze({ base64Data, mimeType }, candidate.model)
+        const { raw, usage } = await PROVIDERS[candidate.provider].analyze(
+          { parts: [{ base64Data, mimeType }] },
+          candidate.model
+        )
         const parsed = kosekiResultSchema.safeParse(raw)
         if (!parsed.success) {
           throw new Error(`スキーマ不一致: ${parsed.error.issues[0]?.message ?? ''}`)

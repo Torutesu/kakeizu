@@ -31,6 +31,10 @@ export interface KosekiFile {
   personCount: number | null
   familyCount: number | null
   createdAt: string
+  /** 1通の戸籍としてまとめられている束のid。既定では1ファイルが1通 */
+  documentGroupId: string
+  /** 束の中でのページ順 */
+  pageNumber: number
 }
 
 /**
@@ -66,6 +70,8 @@ interface KosekiFileRow {
   person_count: number | null
   family_count: number | null
   created_at: string
+  document_group_id: string
+  page_number: number
 }
 
 function toKosekiFile(row: KosekiFileRow): KosekiFile {
@@ -83,11 +89,13 @@ function toKosekiFile(row: KosekiFileRow): KosekiFile {
     personCount: row.person_count,
     familyCount: row.family_count,
     createdAt: row.created_at,
+    documentGroupId: row.document_group_id,
+    pageNumber: row.page_number,
   }
 }
 
 const SELECT_COLUMNS =
-  'id, project_id, storage_path, file_name, file_size, mime_type, analysis_status, analysis_error, analysis_model, analyzed_at, person_count, family_count, created_at'
+  'id, project_id, storage_path, file_name, file_size, mime_type, analysis_status, analysis_error, analysis_model, analyzed_at, person_count, family_count, created_at, document_group_id, page_number'
 
 export async function fetchKosekiFiles(projectId: string): Promise<KosekiFile[]> {
   const supabase = getSupabaseBrowserClient()
@@ -95,7 +103,10 @@ export async function fetchKosekiFiles(projectId: string): Promise<KosekiFile[]>
     .from('koseki_files')
     .select(SELECT_COLUMNS)
     .eq('project_id', projectId)
+    // 束（1通の戸籍）が一覧でばらけないよう、束ごとにページ順で並べる
     .order('created_at', { ascending: false })
+    .order('document_group_id', { ascending: true })
+    .order('page_number', { ascending: true })
   if (error) throw new Error(`戸籍ファイル一覧の取得に失敗しました: ${error.message}`)
   return (data as KosekiFileRow[]).map(toKosekiFile)
 }
@@ -105,10 +116,23 @@ export async function fetchKosekiFiles(projectId: string): Promise<KosekiFile[]>
  * ストレージ・テーブルの双方にRLSが効いているため、編集権限がなければ失敗する。
  * テーブル登録に失敗した場合は、孤立ファイルが残らないようアップロード済みの実体を消す。
  */
+export interface DocumentGroupPosition {
+  /** 同じ束のファイルに同じidを渡す。省略時は1ファイルが1通になる */
+  documentGroupId: string
+  /** 束の中でのページ順（1始まり） */
+  pageNumber: number
+}
+
+/** 複数枚を1通の戸籍としてまとめるときの束のidを作る */
+export function newDocumentGroupId(): string {
+  return crypto.randomUUID()
+}
+
 export async function uploadKosekiFile(
   orgId: string,
   projectId: string,
-  file: File
+  file: File,
+  group?: DocumentGroupPosition
 ): Promise<KosekiFile> {
   if (!isAllowedKosekiMimeType(file.type)) {
     throw new Error('PDFまたは画像（JPEG/PNG/WebP）のみアップロードできます')
@@ -140,6 +164,10 @@ export async function uploadKosekiFile(
       file_size: file.size,
       mime_type: mimeType,
       uploaded_by: user?.id ?? null,
+      // 束を指定しない場合はDBの既定値（このファイルだけの束）が入る
+      ...(group
+        ? { document_group_id: group.documentGroupId, page_number: group.pageNumber }
+        : {}),
     })
     .select(SELECT_COLUMNS)
     .single()

@@ -21,18 +21,20 @@ export const openaiProvider: AnalysisProvider = {
 
     const client = new OpenAI({ apiKey })
 
-    const mediaPart =
-      input.mimeType === 'application/pdf'
+    // 複数枚はページ順に並べる（1通の戸籍として読ませる）
+    const mediaParts = input.parts.map((part, index) =>
+      part.mimeType === 'application/pdf'
         ? {
             type: 'input_file' as const,
-            filename: 'koseki.pdf',
-            file_data: `data:application/pdf;base64,${input.base64Data}`,
+            filename: `koseki-${index + 1}.pdf`,
+            file_data: `data:application/pdf;base64,${part.base64Data}`,
           }
         : {
             type: 'input_image' as const,
-            image_url: `data:${input.mimeType};base64,${input.base64Data}`,
+            image_url: `data:${part.mimeType};base64,${part.base64Data}`,
             detail: 'high' as const,
           }
+    )
 
     const response = await client.responses.parse({
       model,
@@ -40,7 +42,7 @@ export const openaiProvider: AnalysisProvider = {
       input: [
         {
           role: 'user',
-          content: [mediaPart, { type: 'input_text', text: KOSEKI_TASK_PROMPT }],
+          content: [...mediaParts, { type: 'input_text', text: KOSEKI_TASK_PROMPT }],
         },
       ],
       text: {
