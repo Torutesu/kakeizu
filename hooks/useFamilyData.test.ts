@@ -11,13 +11,19 @@ vi.mock('../lib/db/trees', () => ({
 vi.mock('../lib/db/projects', () => ({
   fetchCanEditProject: vi.fn(),
 }))
+// リアルタイム購読はSupabaseへの接続を伴うため、購読解除だけを返すダミーにする
+vi.mock('../lib/db/treeRealtime', () => ({
+  subscribeTreeRevision: vi.fn(() => () => {}),
+}))
 
 import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
 import { fetchCanEditProject } from '../lib/db/projects'
+import { subscribeTreeRevision } from '../lib/db/treeRealtime'
 
 const mockedLoad = vi.mocked(loadTreeRevision)
 const mockedSave = vi.mocked(saveTreeRevision)
 const mockedCanEdit = vi.mocked(fetchCanEditProject)
+const mockedSubscribe = vi.mocked(subscribeTreeRevision)
 
 const emptyData: FamilyTreeData = { people: [], families: [] }
 const PROJECT_ID = 'project-1'
@@ -31,7 +37,12 @@ async function setupHook() {
 beforeEach(() => {
   vi.clearAllMocks()
   mockedLoad.mockResolvedValue({ data: emptyData, version: 0 })
-  mockedSave.mockResolvedValue({ ok: true, version: 1 })
+  mockedSave.mockResolvedValue({
+    ok: true,
+    version: 1,
+    data: emptyData,
+    mergedRemoteChanges: false,
+  })
   mockedCanEdit.mockResolvedValue(true)
 })
 
@@ -109,27 +120,59 @@ describe('useFamilyData', () => {
     act(() => { result.current.addPerson({ id: 'p1' }) })
 
     await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
-    const [projectId, tree, expectedVersion] = mockedSave.mock.calls[0]
+    const [projectId, tree, baseline, expectedVersion] = mockedSave.mock.calls[0]
     expect(projectId).toBe(PROJECT_ID)
     expect((tree as FamilyTreeData).people).toHaveLength(1)
+    // 自分が触った範囲を判定するため、最後に同期した内容も渡す
+    expect((baseline as FamilyTreeData).people).toHaveLength(0)
     expect(expectedVersion).toBe(0)
 
     await waitFor(() => expect(result.current.saveStatus).toBe('saved'))
   })
 
-  it('保存が競合するとconflict状態になり、以降の自動保存が止まる', async () => {
-    mockedSave.mockResolvedValue({ ok: false, reason: 'conflict' })
+  it('保存に失敗してもエラー状態のまま編集を続けられる（要件v1.1 4.5）', async () => {
+    mockedSave.mockResolvedValue({ ok: false, reason: 'failed', message: 'x' })
     const result = await setupHook()
 
     act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(result.current.saveStatus).toBe('error'), { timeout: 3000 })
 
-    await waitFor(() => expect(result.current.saveStatus).toBe('conflict'), { timeout: 3000 })
-    const callsAfterConflict = mockedSave.mock.calls.length
-
-    // conflict後の変更では保存が呼ばれない
+    // 競合で保存を止める仕様は無くなったため、続く変更でも保存を試みる
+    const callsAfterError = mockedSave.mock.calls.length
     act(() => { result.current.addPerson({ id: 'p2' }) })
-    await new Promise(resolve => setTimeout(resolve, 1200))
-    expect(mockedSave.mock.calls.length).toBe(callsAfterConflict)
+    await waitFor(() => expect(mockedSave.mock.calls.length).toBeGreaterThan(callsAfterError), {
+      timeout: 3000,
+    })
+  })
+
+  it('他の利用者の保存を受け取ると、自分の未保存の変更を残したまま反映する', async () => {
+    const result = await setupHook()
+
+    // 自分はp1を追加（まだ保存されていない状態で相手の保存が届く）
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+
+    const onRemoteSave = mockedSubscribe.mock.calls[0][1]
+    act(() => {
+      onRemoteSave({
+        data: {
+          people: [
+            {
+              id: 'other',
+              generation: 1,
+              sex: null,
+              name: { surname: '相手', given_name: 'が追加' },
+              birth: { original_date: null, date: null, place: null },
+              death: { original_date: null, date: null, place: null },
+            },
+          ],
+          families: [],
+        },
+        version: 5,
+      })
+    })
+
+    const ids = result.current.persons.map(p => p.id).sort()
+    expect(ids).toEqual(['other', 'p1'])
   })
 
   it('編集権限がない場合は自動保存しない', async () => {
@@ -195,9 +238,9 @@ describe('useFamilyData', () => {
     expect(result.current.persons[0].x).toBe(7)
     expect(result.current.persons[0].manualPosition).toBe(true)
 
-    // 楽観ロック: 保存はサーバーのバージョン(5)を前提に行われる
+    // 保存はサーバーのバージョン(5)を前提に行われる（引数は projectId, tree, baseline, version）
     act(() => { result.current.addPerson({ id: 'p1' }) })
     await waitFor(() => expect(mockedSave).toHaveBeenCalled(), { timeout: 3000 })
-    expect(mockedSave.mock.calls[0][2]).toBe(5)
+    expect(mockedSave.mock.calls[0][3]).toBe(5)
   })
 })

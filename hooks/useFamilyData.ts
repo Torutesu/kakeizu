@@ -13,10 +13,13 @@ import { mergeFamilyTreeData } from '../utils/mergeFamilyData'
 import { ConsistencyIssue } from '../utils/consistency'
 import type { RegistryData } from '../utils/familyDataProcessor'
 import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
+import { subscribeTreeRevision } from '../lib/db/treeRealtime'
 import { fetchCanEditProject } from '../lib/db/projects'
+import { mergeTreeChanges, hasNoChanges } from '../utils/mergeTreeChanges'
 
-// 保存の状態。conflictは他ユーザーが先に保存した状態で、再読み込みするまで自動保存を止める
-export type SaveStatus = 'saved' | 'saving' | 'conflict' | 'error'
+// 保存の状態。要件v1.1 4.5で「最新の保存を正とする」となったため、
+// 競合で保存を止める状態は無くなった（同じ箇所は後から保存した側が勝つ）
+export type SaveStatus = 'saved' | 'saving' | 'error'
 
 const AUTOSAVE_DEBOUNCE_MS = 800
 
@@ -91,8 +94,11 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved')
   const [canEdit, setCanEdit] = useState(false)
 
-  // サーバー上のバージョン（楽観ロック用）。保存成功のたびに進める
+  // サーバー上のバージョン。保存成功・他の人の保存の受信のたびに進める
   const versionRef = useRef(0)
+  // 最後にサーバーと同期した内容。自分が触った範囲を判定するための基準にする。
+  // これが無いと、保存時に「自分の変更」と「相手の変更」を区別できない
+  const baselineRef = useRef<FamilyTreeData>({ people: [], families: [] })
   const saveStatusRef = useRef<SaveStatus>('saved')
   saveStatusRef.current = saveStatus
 
@@ -129,6 +135,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       const processed = processFamilyData(revision.data)
 
       versionRef.current = revision.version
+      baselineRef.current = revision.data
       setCanEdit(editable)
       setSaveStatus('saved')
       // 読み込んだ状態をアンドゥ履歴の起点にする（空の状態までアンドゥで戻れないようにする）
@@ -155,7 +162,63 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     loadData()
   }, [loadData])
 
-  // 自動保存（デバウンス付き）。conflict状態では再読み込みまで保存を止める
+  // サーバー側の内容で画面を置き換える。アンドゥ履歴には1件として積む
+  // （履歴を消すと、取り込み直前の状態へ戻れなくなる）
+  const applyServerData = useCallback((data: FamilyTreeData, label: string) => {
+    const processed = processFamilyData(data)
+    pushState(
+      {
+        persons: processed.persons,
+        families: processed.families,
+        issues: processed.issues,
+        crossCheckIssues: data.crossCheckIssues,
+        registries: data.registries,
+      },
+      label
+    )
+  }, [pushState])
+
+  // 保存。保存中に加えた変更を取りこぼさないよう、実行時点の最新stateから組み立てる
+  const persistRef = useRef<() => Promise<void>>(async () => {})
+  persistRef.current = async () => {
+    const state = currentStateRef.current
+    const local = toFamilyTreeData(
+      state.persons,
+      state.families,
+      state.crossCheckIssues,
+      state.registries
+    )
+    if (hasNoChanges(baselineRef.current, local)) {
+      setSaveStatus('saved')
+      return
+    }
+
+    setSaveStatus('saving')
+    try {
+      const result = await saveTreeRevision(
+        projectId,
+        local,
+        baselineRef.current,
+        versionRef.current
+      )
+      if (result.ok) {
+        versionRef.current = result.version
+        baselineRef.current = result.data
+        setSaveStatus('saved')
+        // 保存の直前に他の人の変更が入っていた場合、実際に保存された内容は
+        // 手元と違う。画面を合わせないと、消えたはずの人物が残って見える
+        if (result.mergedRemoteChanges) applyServerData(result.data, '他の利用者の変更を取り込み')
+      } else {
+        console.error('保存に失敗:', result.message)
+        setSaveStatus('error')
+      }
+    } catch (err) {
+      console.error('保存に失敗:', err)
+      setSaveStatus('error')
+    }
+  }
+
+  // 自動保存（デバウンス付き）
   const isFirstRenderRef = useRef(true)
   useEffect(() => {
     if (isLoading) return
@@ -164,51 +227,41 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       return
     }
     if (!canEdit) return
-    if (saveStatusRef.current === 'conflict') return
 
-    const timeoutId = setTimeout(async () => {
-      setSaveStatus('saving')
-      try {
-        const result = await saveTreeRevision(
-          projectId,
-          toFamilyTreeData(persons, families, crossCheckIssues, registries),
-          versionRef.current
-        )
-        if (result.ok) {
-          versionRef.current = result.version
-          setSaveStatus('saved')
-        } else {
-          setSaveStatus('conflict')
-        }
-      } catch (err) {
-        console.error('自動保存に失敗:', err)
-        setSaveStatus('error')
-      }
-    }, AUTOSAVE_DEBOUNCE_MS)
+    const timeoutId = setTimeout(() => { persistRef.current() }, AUTOSAVE_DEBOUNCE_MS)
     return () => clearTimeout(timeoutId)
-  }, [persons, families, isLoading, canEdit, projectId])
+  }, [persons, families, registries, crossCheckIssues, isLoading, canEdit])
 
   // 明示的な保存（保存ボタン用）
   const saveNow = useCallback(async () => {
-    if (!canEdit || saveStatusRef.current === 'conflict') return
-    setSaveStatus('saving')
-    try {
-      const result = await saveTreeRevision(
-        projectId,
-        toFamilyTreeData(persons, families, crossCheckIssues, registries),
-        versionRef.current
+    if (!canEdit) return
+    await persistRef.current()
+  }, [canEdit])
+
+  // 他の利用者の保存を受け取って画面へ反映する（要件v1.1 4.5）
+  useEffect(() => {
+    if (isLoading) return
+
+    return subscribeTreeRevision(projectId, remote => {
+      // 自分の保存が返ってきた場合は何もしない（版数が進んでいないもの）
+      if (remote.version <= versionRef.current) return
+
+      const state = currentStateRef.current
+      const local = toFamilyTreeData(
+        state.persons,
+        state.families,
+        state.crossCheckIssues,
+        state.registries
       )
-      if (result.ok) {
-        versionRef.current = result.version
-        setSaveStatus('saved')
-      } else {
-        setSaveStatus('conflict')
-      }
-    } catch (err) {
-      console.error('保存に失敗:', err)
-      setSaveStatus('error')
-    }
-  }, [canEdit, projectId, persons, families])
+      // 相手の内容に、自分のまだ保存されていない変更を重ねる。
+      // 相手の保存で自分の編集中の内容が消えないようにするため
+      const merged = mergeTreeChanges(baselineRef.current, local, remote.data)
+
+      baselineRef.current = remote.data
+      versionRef.current = remote.version
+      applyServerData(merged, '他の利用者の変更を反映')
+    })
+  }, [projectId, isLoading, applyServerData])
 
   // 人物追加
   const addPerson = useCallback((personData: Partial<ProcessedPerson>) => {
@@ -392,7 +445,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     return families.find(family => family.id === id)
   }, [families])
 
-  // データ再読み込み（conflict時の復帰にも使用）
+  // データ再読み込み（保存に失敗したときの復帰にも使用）
   const refreshData = useCallback(async () => {
     await loadData()
   }, [loadData])

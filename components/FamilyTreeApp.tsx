@@ -39,6 +39,7 @@ import { useFamilyData, SaveStatus } from "../hooks/useFamilyData"
 import { useZoomSettings } from "../hooks/useZoomSettings"
 import { useKosekiFiles } from "../hooks/useKosekiFiles"
 import { fetchOrgContext, OrgContext } from "../lib/db/org"
+import { useProjectPresence } from "../hooks/useProjectPresence"
 import { useConfirm } from "../hooks/useConfirm"
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog"
 import { IssuesPanel } from "./IssuesPanel"
@@ -60,7 +61,6 @@ import { UI_CONFIG } from "../constants/config"
 const SAVE_STATUS_LABELS: Record<SaveStatus, string> = {
   saved: '保存済み',
   saving: '保存中...',
-  conflict: '競合が発生しました',
   error: '保存エラー',
 }
 
@@ -135,17 +135,30 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     remove: removeKosekiFile,
   } = useKosekiFiles(projectId, project?.orgId ?? '')
 
-  // 競合発生時は一度だけ通知する
-  const conflictNotifiedRef = useRef(false)
+  // 保存できなかったときだけ一度通知する。
+  // 同時編集そのものは通知しない（毎回出ると作業の邪魔になる）
+  const saveErrorNotifiedRef = useRef(false)
   useEffect(() => {
-    if (saveStatus === 'conflict' && !conflictNotifiedRef.current) {
-      conflictNotifiedRef.current = true
-      toast.error('他のユーザーが先に保存しました。「再読み込み」で最新の状態を取得してください。')
+    if (saveStatus === 'error' && !saveErrorNotifiedRef.current) {
+      saveErrorNotifiedRef.current = true
+      toast.error('保存に失敗しました。通信の状態をご確認のうえ、もう一度編集してください。')
     }
-    if (saveStatus !== 'conflict') {
-      conflictNotifiedRef.current = false
+    if (saveStatus !== 'error') {
+      saveErrorNotifiedRef.current = false
     }
   }, [saveStatus])
+
+  // いま同じ案件を開いている利用者（要件v1.1 4.5）
+  const otherEditors = useProjectPresence(
+    projectId,
+    orgContext
+      ? {
+          userId: orgContext.userId,
+          label: orgContext.email.split('@')[0] || orgContext.email,
+          canEdit,
+        }
+      : null
+  )
 
   // ズーム・ピンチ感度の設定
   const {
@@ -480,7 +493,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             {canEdit ? (
               <span
                 className={`text-sm whitespace-nowrap ${
-                  saveStatus === 'conflict' || saveStatus === 'error'
+                  saveStatus === 'error'
                     ? 'text-red-600 font-medium'
                     : 'text-gray-400'
                 }`}
@@ -493,11 +506,24 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                 閲覧のみ
               </span>
             )}
-            {saveStatus === 'conflict' && (
+            {saveStatus === 'error' && (
               <Button variant="outline" size="sm" onClick={refreshData}>
                 <RefreshCw className="w-4 h-4 mr-1" />
                 再読み込み
               </Button>
+            )}
+            {otherEditors.length > 0 && (
+              <span
+                className="flex items-center gap-1 text-sm text-gray-500 whitespace-nowrap"
+                title={otherEditors
+                  .map(editor => `${editor.label}（${editor.canEdit ? '編集中' : '閲覧のみ'}）`)
+                  .join('\n')}
+              >
+                <Users className="w-4 h-4 text-blue-500" />
+                {otherEditors.length === 1
+                  ? `${otherEditors[0].label}さんも開いています`
+                  : `他${otherEditors.length}人が開いています`}
+              </span>
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -663,6 +689,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             <div className="space-y-3 text-sm text-gray-600">
               <p>・上の「戸籍PDFをアップロード」から戸籍謄本PDFを解析して家系図に取り込めます。</p>
               <p>・編集内容は自動的にサーバーへ保存されます（「保存」ボタンで即時保存も可能）。</p>
+              <p>・同じ案件を複数人で同時に編集できます。他の方の変更は自動で画面に反映され、同じ箇所を直した場合はあとの保存が残ります。</p>
               <p>・「書き出し」で家系図をJSONファイルとしてダウンロードし、「読み込み」で再度読み込めます。</p>
               <p>・図の上でドラッグして配置を調整、右側のパネルで人物情報や関係を編集できます。</p>
             </div>
