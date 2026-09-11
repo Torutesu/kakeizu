@@ -10,8 +10,6 @@ import {
 } from './ui/dialog'
 import { Button } from './ui/button'
 import { Alert, AlertDescription } from './ui/alert'
-import { Switch } from './ui/switch'
-import { Label } from './ui/label'
 import {
   FileUp,
   Upload,
@@ -28,11 +26,15 @@ import { analyzeStoredKoseki } from '../lib/gemini'
 import { uploadKosekiFile, newDocumentGroupId } from '../lib/db/kosekiFiles'
 import { isAllowedKosekiMimeType } from '../lib/security/fileValidation'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
+import { planDocuments, describeDocuments, PlannedFile } from '../utils/uploadPlan'
+
+/** 束ね方の判定に使うのはサイズと形式だけ */
+function toPlannedFile(item: QueuedFile): PlannedFile {
+  return { size: item.file.size, mimeType: item.file.type }
+}
 
 // 20MB。ストレージのバケット設定・APIルート側と揃えること
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
-// まとめて1通として送るときの合計上限。APIルート側と揃えること
-const MAX_TOTAL_SIZE_BYTES = 20 * 1024 * 1024
 
 type FileStatus = 'waiting' | 'uploading' | 'analyzing' | 'success' | 'failed'
 
@@ -41,6 +43,10 @@ interface QueuedFile {
   status: FileStatus
   error?: string
   personCount?: number
+  /** アップロード済みのファイルid。再試行でアップロードをやり直さないために持つ */
+  uploadedFileId?: string
+  /** 保存時に割り当てた束のid。再試行でも同じ束に入れる */
+  documentGroupId?: string
 }
 
 const STATUS_LABELS: Record<FileStatus, string> = {
@@ -77,8 +83,6 @@ export function KosekiUploadDialog({
   const [queue, setQueue] = useState<QueuedFile[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [isDone, setIsDone] = useState(false)
-  // 1通の戸籍が複数枚に分かれている場合（スマホ撮影など）にまとめて読み取る
-  const [asSingleDocument, setAsSingleDocument] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const addFiles = useCallback((files: FileList | File[]) => {
@@ -111,6 +115,16 @@ export function KosekiUploadDialog({
     if (event.dataTransfer.files) addFiles(event.dataTransfer.files)
   }, [addFiles, isProcessing])
 
+  // スクリーンショットや写真をそのまま貼り付けられるようにする。
+  // ファイルとして保存してから選び直す手間を省く
+  const handlePaste = useCallback((event: React.ClipboardEvent) => {
+    if (isProcessing) return
+    const files = Array.from(event.clipboardData?.files ?? [])
+    if (files.length === 0) return
+    event.preventDefault()
+    addFiles(files)
+  }, [addFiles, isProcessing])
+
   const removeFromQueue = useCallback((index: number) => {
     setQueue(prev => prev.filter((_, i) => i !== index))
   }, [])
@@ -130,25 +144,34 @@ export function KosekiUploadDialog({
     setQueue(prev => prev.map((item, i) => (i === index ? { ...item, ...updates } : item)))
   }
 
-  /**
-   * 選択したファイルを1通の戸籍としてまとめて解析する。
-   * 1枚ずつ解析して後から名寄せすると、ページをまたぐ続柄・改製の関係が読めず、
-   * 同一人物が分裂する。まとめて渡すことでモデルが通しで読める。
-   */
-  const processAsSingleDocument = useCallback(async () => {
-    const documentGroupId = newDocumentGroupId()
-    const indexes = queue.map((_, i) => i).filter(i => queue[i].status !== 'success')
-    if (indexes.length === 0) return
-
+  /** 1通分（PDF1件、または続いた画像）をアップロードして解析する */
+  const processDocument = useCallback(async (indexes: number[], queueSnapshot: QueuedFile[]) => {
+    // 一部だけアップロード済みの場合は、その束に続きを入れる（束が割れないようにする）
+    const documentGroupId =
+      indexes.map(index => queueSnapshot[index].documentGroupId).find(Boolean) ??
+      newDocumentGroupId()
     let firstFileId: string | null = null
+
     try {
       for (let page = 0; page < indexes.length; page++) {
         const index = indexes[page]
+        // 解析だけが失敗した場合の再試行で、同じファイルを二重に保存しない
+        const already = queueSnapshot[index].uploadedFileId
+        if (already) {
+          if (firstFileId === null) firstFileId = already
+          continue
+        }
         updateQueueItem(index, { status: 'uploading', error: undefined })
-        const uploaded = await uploadKosekiFile(orgId, projectId, queue[index].file, {
+        const uploaded = await uploadKosekiFile(orgId, projectId, queueSnapshot[index].file, {
           documentGroupId,
           pageNumber: page + 1,
         })
+        updateQueueItem(index, { uploadedFileId: uploaded.id, documentGroupId })
+        queueSnapshot[index] = {
+          ...queueSnapshot[index],
+          uploadedFileId: uploaded.id,
+          documentGroupId,
+        }
         if (firstFileId === null) firstFileId = uploaded.id
       }
       onFilesChanged()
@@ -159,6 +182,7 @@ export function KosekiUploadDialog({
       onFilesChanged()
 
       if (result.success && result.data) {
+        // 1通ごとにマージすることで、後続の書類の重複人物が名寄せされる
         onDataExtracted(result.data)
         const personCount = result.data.people.length
         indexes.forEach(index => updateQueueItem(index, { status: 'success', personCount }))
@@ -170,74 +194,48 @@ export function KosekiUploadDialog({
       const message = error instanceof Error ? error.message : '処理中にエラーが発生しました'
       indexes.forEach(index => updateQueueItem(index, { status: 'failed', error: message }))
     }
-  }, [queue, orgId, projectId, onDataExtracted, onFilesChanged])
+  }, [orgId, projectId, onDataExtracted, onFilesChanged])
 
-  // キューのファイルを順に アップロード → 解析 → マージ する
+  // 並べた順のまま1通ずつ アップロード → 解析 → マージ する
   const handleProcess = useCallback(async () => {
     setIsProcessing(true)
 
-    if (asSingleDocument && queue.length > 1) {
-      await processAsSingleDocument()
-      setIsProcessing(false)
-      setIsDone(true)
-      return
-    }
-
-    for (let i = 0; i < queue.length; i++) {
-      if (queue[i].status === 'success') continue
-
-      try {
-        updateQueueItem(i, { status: 'uploading', error: undefined })
-        const uploaded = await uploadKosekiFile(orgId, projectId, queue[i].file)
-        onFilesChanged()
-
-        updateQueueItem(i, { status: 'analyzing' })
-        const result = await analyzeStoredKoseki(projectId, uploaded.id)
-        onFilesChanged()
-
-        if (result.success && result.data) {
-          // 1ファイルごとにマージすることで、後続ファイルの重複人物が名寄せされる
-          onDataExtracted(result.data)
-          updateQueueItem(i, { status: 'success', personCount: result.data.people.length })
-        } else {
-          updateQueueItem(i, { status: 'failed', error: result.error ?? '解析に失敗しました' })
-        }
-      } catch (error) {
-        updateQueueItem(i, {
-          status: 'failed',
-          error: error instanceof Error ? error.message : '処理中にエラーが発生しました',
-        })
-      }
+    // 進行中に書き換えるため、stateの配列そのものではなく複製を使う
+    const snapshot = queue.map(item => ({ ...item }))
+    for (const indexes of planDocuments(snapshot.map(toPlannedFile))) {
+      const pending = indexes.filter(index => snapshot[index].status !== 'success')
+      if (pending.length === 0) continue
+      await processDocument(pending, snapshot)
     }
 
     setIsProcessing(false)
     setIsDone(true)
-  }, [queue, orgId, projectId, onDataExtracted, onFilesChanged, asSingleDocument, processAsSingleDocument])
+  }, [queue, processDocument])
 
   const handleClose = useCallback(() => {
     if (isProcessing) return
     setQueue([])
     setIsDone(false)
-    setAsSingleDocument(false)
     onClose()
   }, [isProcessing, onClose])
 
-  const totalSize = queue.reduce((sum, item) => sum + item.file.size, 0)
+  const positions = describeDocuments(queue.map(toPlannedFile))
+  const documentCount = positions.length > 0 ? positions[positions.length - 1].documentIndex + 1 : 0
   const successCount = queue.filter(q => q.status === 'success').length
   const failedCount = queue.filter(q => q.status === 'failed').length
 
   return (
     <Dialog open={isOpen} onOpenChange={open => !open && handleClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" onPaste={handlePaste}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileUp className="h-5 w-5" />
             戸籍書類の解析
           </DialogTitle>
           <DialogDescription>
-            戸籍謄本のPDF・画像（複数可）をアップロードして家系図データを自動抽出します。
+            戸籍謄本のPDF・画像をまとめて取り込み、家系図データを自動抽出します。
+            続けて並んだ画像は1通の戸籍として通しで読み取り、PDFは1件ずつ読み取ります。
             複数の書類に登場する同一人物は自動的に1人に統合されます。
-            1通の戸籍を複数枚に分けて撮影した場合は、まとめて1通として読み取れます。
             ファイルは案件に紐づけて保存され、解析のためGoogle Gemini APIに送信されます。
           </DialogDescription>
         </DialogHeader>
@@ -252,10 +250,10 @@ export function KosekiUploadDialog({
           >
             <Upload className="w-8 h-8 mx-auto text-gray-400 mb-2" />
             <p className="text-sm font-medium text-gray-900">
-              クリックして選択、またはドラッグ＆ドロップ
+              クリックして選択、ドラッグ＆ドロップ、または貼り付け（Ctrl/⌘+V）
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              PDF / JPEG / PNG / WebP（各20MBまで・複数選択可）
+              PDF / JPEG / PNG / WebP（各20MBまで・複数可）
             </p>
             <input
               ref={fileInputRef}
@@ -268,40 +266,22 @@ export function KosekiUploadDialog({
             />
           </div>
 
-          {/* 1通の戸籍としてまとめるか */}
+          {/* どう束ねて読み取るかを先に見せる。押してから分かる形にしない */}
           {queue.length > 1 && (
-            <div className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
-              <Switch
-                id="as-single-document"
-                checked={asSingleDocument}
-                onCheckedChange={setAsSingleDocument}
-                disabled={isProcessing}
-              />
-              <div className="min-w-0">
-                <Label htmlFor="as-single-document" className="text-sm font-medium text-gray-900">
-                  選択した{queue.length}件を1通の戸籍としてまとめて読み取る
-                </Label>
-                <p className="text-xs text-gray-600 mt-0.5">
-                  1通の戸籍を複数枚に分けて撮影した場合に使います。
-                  まとめると、ページをまたぐ続柄や改製の記載も通しで読み取れます。
-                  <span className="text-gray-500">
-                    　※ 並び順がそのままページ順になります（合計20MBまで）
-                  </span>
-                </p>
-                {totalSize > MAX_TOTAL_SIZE_BYTES && asSingleDocument && (
-                  <p className="text-xs text-red-600 mt-1">
-                    合計{Math.round(totalSize / 1024 / 1024)}MBで上限（20MB）を超えています。
-                    枚数を減らすか、解像度を下げてください。
-                  </p>
-                )}
-              </div>
-            </div>
+            <p className="text-xs text-gray-600">
+              {documentCount === 1
+                ? `${queue.length}枚を1通の戸籍として通しで読み取ります。`
+                : `${documentCount}通として読み取ります（続けて並んだ画像は1通、PDFは1件ずつ）。`}
+              　並び順がそのままページ順になります。
+            </p>
           )}
 
           {/* ファイルキュー */}
           {queue.length > 0 && (
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {queue.map((item, index) => (
+              {queue.map((item, index) => {
+                const position = positions[index]
+                return (
                 <div
                   key={`${item.file.name}-${index}`}
                   className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg"
@@ -309,8 +289,11 @@ export function KosekiUploadDialog({
                   <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-gray-900 truncate">
-                      {asSingleDocument && (
-                        <span className="text-xs text-blue-600 mr-1">{index + 1}枚目</span>
+                      {position && position.pages > 1 && (
+                        <span className="text-xs text-blue-600 mr-1">
+                          {documentCount > 1 && `${position.documentIndex + 1}通目・`}
+                          {position.pageNumber}/{position.pages}枚目
+                        </span>
                       )}
                       {item.file.name}
                     </p>
@@ -337,7 +320,8 @@ export function KosekiUploadDialog({
                     <span className="text-xs text-gray-500 w-24 text-right">
                       {STATUS_LABELS[item.status]}
                     </span>
-                    {!isProcessing && asSingleDocument && (
+                    {/* 並び順がそのままページ順になるため、入れ替えられるようにする */}
+                    {!isProcessing && queue.length > 1 && (
                       <>
                         <Button
                           size="sm"
@@ -373,7 +357,8 @@ export function KosekiUploadDialog({
                     )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
@@ -381,7 +366,7 @@ export function KosekiUploadDialog({
             <Alert className="border-blue-200 bg-blue-50">
               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
               <AlertDescription className="text-blue-800 text-sm">
-                順番に処理しています。ページ数によっては1ファイルあたり1〜2分かかることがあります。
+                順番に処理しています。枚数によっては1通あたり1〜2分かかることがあります。
               </AlertDescription>
             </Alert>
           )}
@@ -410,9 +395,7 @@ export function KosekiUploadDialog({
               disabled={
                 queue.length === 0 ||
                 isProcessing ||
-                queue.every(q => q.status === 'success') ||
-                // まとめて送る場合だけ合計の上限が効く（1件ずつなら各20MBで足りる）
-                (asSingleDocument && totalSize > MAX_TOTAL_SIZE_BYTES)
+                queue.every(q => q.status === 'success')
               }
             >
               <Upload className="h-4 w-4 mr-2" />
