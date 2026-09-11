@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 import { adoptSessionFromUrl } from '@/lib/auth/adoptSession'
-import { buildAuthCallbackUrl, safeNextPath, SET_PASSWORD_PATH } from '@/lib/auth/authLinks'
+import { buildAuthCallbackUrl, parseAuthLinkError, safeNextPath, SET_PASSWORD_PATH } from '@/lib/auth/authLinks'
 import { AuthShell } from '@/components/auth/AuthShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,9 +66,12 @@ function LoginForm() {
   }
 
   // メール確認リンクの戻り先がログイン画面になった場合（フラグメント方式）でも、
-  // URLに含まれるセッションを取り込んでそのまま入れるようにする
+  // URLに含まれるセッションを取り込んでそのまま入れる。期限切れなどのエラーも
+  // フラグメントで届くため、同じ経路で理由を表示する
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.location.hash.includes('access_token=')) return
+    if (typeof window === 'undefined') return
+    const { search, hash } = window.location
+    if (!hash.includes('access_token=') && !parseAuthLinkError(search, hash)) return
     let cancelled = false
     ;(async () => {
       try {

@@ -28,7 +28,7 @@ export const anthropicProvider: AnalysisProvider = {
     // timeout を明示しないと、SDK は max_tokens から「10分を超えうる」と判断して
     // 非ストリーミング呼び出しを例外で拒否する（Claude が一度も呼ばれない）。
     // Vercel の上限内に収まる時間を明示して、この判定を通す。
-    const client = new Anthropic({ apiKey, timeout: PROVIDER_TIMEOUT_MS, maxRetries: 1 })
+    const client = new Anthropic({ apiKey, timeout: PROVIDER_TIMEOUT_MS, maxRetries: 0 })
 
     // PDFはdocumentブロック、画像はimageブロックとして渡す
     const mediaBlock: Anthropic.ContentBlockParam = isImageMediaType(input.mimeType)

@@ -189,6 +189,29 @@ describe('useFamilyData', () => {
     expect((mockedSave.mock.calls[1][1] as FamilyTreeData).people).toHaveLength(2)
   })
 
+  it('保存中にアンドゥで保存済みの状態へ戻しても、サーバーに古い変更が残らない', async () => {
+    let releaseFirst: (() => void) | null = null
+    mockedSave.mockImplementationOnce(
+      () => new Promise(resolve => { releaseFirst = () => resolve({ ok: true, version: 1 }) })
+    )
+    mockedSave.mockImplementationOnce(async () => ({ ok: true, version: 2 }))
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
+
+    // 1回目（人物あり）の保存が返る前にアンドゥで読み込み時の状態に戻す
+    act(() => { result.current.undo() })
+    expect(result.current.persons).toHaveLength(0)
+
+    act(() => { releaseFirst?.() })
+    // 戻した状態（人物なし）が続けて保存される
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    expect((mockedSave.mock.calls[1][1] as FamilyTreeData).people).toHaveLength(0)
+    expect(mockedSave.mock.calls[1][2]).toBe(1)
+    await waitFor(() => expect(result.current.saveStatus).toBe('saved'))
+  })
+
   it('再読み込みしただけでは保存しない（他の編集者に競合を起こさない）', async () => {
     const result = await setupHook()
     await act(async () => { await result.current.refreshData() })

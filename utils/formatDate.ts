@@ -21,10 +21,16 @@ export function formatRelativeDateTime(iso: string, now: Date = new Date()): str
   if (diff < DAY && isSameDay(date, now)) return `${Math.floor(diff / HOUR)}時間前`
 
   const time = date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-  if (isSameDay(date, yesterday)) return `昨日 ${time}`
-  return `${Math.floor(diff / DAY)}日前 ${time}`
+  // 「N日前」は経過時間ではなく暦日の差で数える（一昨日の夜が「1日前」にならないように）
+  const days = calendarDaysBetween(date, now)
+  if (days === 1) return `昨日 ${time}`
+  return `${days}日前 ${time}`
+}
+
+function calendarDaysBetween(from: Date, to: Date): number {
+  const start = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+  const end = new Date(to.getFullYear(), to.getMonth(), to.getDate())
+  return Math.round((end.getTime() - start.getTime()) / DAY)
 }
 
 export function formatAbsoluteDateTime(date: Date): string {

@@ -89,6 +89,14 @@ export async function updateProject(
 export async function deleteProject(project: ProjectSummary): Promise<void> {
   const supabase = getSupabaseBrowserClient()
 
+  // 実体を先に消す以上、行の削除が RLS で黙って0件になる（権限が無い）状態で
+  // 実体だけ消してはならない。先に削除権限（管理者）を確かめる
+  const { data: isAdmin, error: adminError } = await supabase.rpc('is_org_admin', {
+    p_org: project.orgId,
+  })
+  if (adminError) throw new Error(`案件の削除に失敗しました: ${adminError.message}`)
+  if (isAdmin !== true) throw new Error('案件を削除できるのは管理者だけです')
+
   const { data: files, error: listError } = await supabase
     .from('koseki_files')
     .select('storage_path')
@@ -97,14 +105,28 @@ export async function deleteProject(project: ProjectSummary): Promise<void> {
 
   const paths = (files ?? []).map(f => f.storage_path as string)
   if (paths.length > 0) {
-    const { error: storageError } = await supabase.storage.from('koseki').remove(paths)
+    const { data: removed, error: storageError } = await supabase.storage
+      .from('koseki')
+      .remove(paths)
     if (storageError) {
       throw new Error(`戸籍ファイルの削除に失敗したため、案件を削除しませんでした: ${storageError.message}`)
     }
+    // ポリシーで拒否された分はエラーにならず黙って残るため、件数で確かめる
+    if ((removed?.length ?? 0) < paths.length) {
+      throw new Error('戸籍ファイルの一部を削除できなかったため、案件を削除しませんでした')
+    }
   }
 
-  const { error } = await supabase.from('projects').delete().eq('id', project.id)
+  // 0件の削除はエラーにならないため、消えた行を返させて確かめる
+  const { data: deleted, error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', project.id)
+    .select('id')
   if (error) throw new Error(`案件の削除に失敗しました: ${error.message}`)
+  if (!deleted || deleted.length === 0) {
+    throw new Error('案件を削除できませんでした。すでに削除されているか、権限がありません')
+  }
 }
 
 /** この案件を現在のユーザーが編集できるか（RLSと同じ判定をRPCで問い合わせる） */

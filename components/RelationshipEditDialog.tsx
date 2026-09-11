@@ -49,6 +49,13 @@ function coupleLabel(family: FamilyGroup): string {
   return family.parents.map(p => p.displayName).join(' と ')
 }
 
+/** 同じ親の組が複数（血縁と養子縁組）ある場合は、関係の種類を添えて区別できるようにする */
+function familyOptionLabel(family: FamilyGroup, all: FamilyGroup[]): string {
+  const label = coupleLabel(family)
+  const duplicates = all.filter(f => coupleLabel(f) === label).length > 1
+  return duplicates ? `${label}（${RELATION_LABELS[family.relationType]}）` : label
+}
+
 /**
  * 選択中の人物の家族関係（配偶者・子・親）を編集するダイアログ。
  * 子や親を追加するときは、既存の夫婦関係へ結びつける（同じ親の組に対して
@@ -69,11 +76,13 @@ export function RelationshipEditDialog({
   const [marriageDateError, setMarriageDateError] = useState('')
 
   const [newChild, setNewChild] = useState('')
-  const [childFamilyId, setChildFamilyId] = useState<string>(SINGLE_PARENT)
+  // null は「利用者が選んでいない」＝既定（最初の夫婦関係）。利用者が選んだ値は
+  // 家族関係が増減しても保持する（追加のたびに先頭へ戻さない）
+  const [childFamilyChoice, setChildFamilyChoice] = useState<string | null>(null)
   const [childRelationType, setChildRelationType] = useState<RelationType>('blood')
 
   const [newParent, setNewParent] = useState('')
-  const [parentFamilyId, setParentFamilyId] = useState<string>(SINGLE_PARENT)
+  const [parentFamilyChoice, setParentFamilyChoice] = useState<string | null>(null)
   const [parentRelationType, setParentRelationType] = useState<RelationType>('blood')
 
   const { confirm, confirmDialog } = useConfirm()
@@ -85,10 +94,10 @@ export function RelationshipEditDialog({
     setMarriageDate('')
     setMarriageDateError('')
     setNewChild('')
-    setChildFamilyId(SINGLE_PARENT)
+    setChildFamilyChoice(null)
     setChildRelationType('blood')
     setNewParent('')
-    setParentFamilyId(SINGLE_PARENT)
+    setParentFamilyChoice(null)
     setParentRelationType('blood')
   }, [isOpen, person?.id])
 
@@ -115,11 +124,11 @@ export function RelationshipEditDialog({
     [personFamilies, personId]
   )
 
-  // 夫婦関係があれば、既定でその最初の関係に子を足す
-  useEffect(() => {
-    if (!isOpen) return
-    setChildFamilyId(couples[0]?.id ?? SINGLE_PARENT)
-  }, [isOpen, couples])
+  // 夫婦関係があれば、既定でその最初の関係に子を足す（利用者が選んでいればそれを優先）
+  const childFamilyId =
+    childFamilyChoice && (childFamilyChoice === SINGLE_PARENT || couples.some(f => f.id === childFamilyChoice))
+      ? childFamilyChoice
+      : couples[0]?.id ?? SINGLE_PARENT
 
   // 配偶者として追加可能な人物（同世代で、まだ本人の配偶者でない人）
   const availableSpouses = availablePersons.filter(
@@ -156,9 +165,11 @@ export function RelationshipEditDialog({
     [families, newParent]
   )
 
-  useEffect(() => {
-    setParentFamilyId(parentCouples[0]?.id ?? SINGLE_PARENT)
-  }, [parentCouples])
+  const parentFamilyId =
+    parentFamilyChoice &&
+    (parentFamilyChoice === SINGLE_PARENT || parentCouples.some(f => f.id === parentFamilyChoice))
+      ? parentFamilyChoice
+      : parentCouples[0]?.id ?? SINGLE_PARENT
 
   const handleAddSpouse = () => {
     if (!person || !newSpouse) return
@@ -221,7 +232,7 @@ export function RelationshipEditDialog({
     const confirmed = await confirm({
       title: 'この家族関係を削除しますか？',
       description:
-        `${coupleLabel(family)} の関係（子${family.children.length}人）を削除します。` +
+        `${familyOptionLabel(family, personFamilies)} の関係（子${family.children.length}人）を削除します。` +
         '人物そのものは残り、つながりだけが削除されます。「元に戻す」で取り消せます。',
       confirmLabel: '削除する',
       destructive: true,
@@ -381,13 +392,13 @@ export function RelationshipEditDialog({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="rel-child-family">どの関係の子か</Label>
-                <Select value={childFamilyId} onValueChange={setChildFamilyId}>
+                <Select value={childFamilyId} onValueChange={setChildFamilyChoice}>
                   <SelectTrigger id="rel-child-family" aria-label="子を結びつける関係">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {couples.map(family => (
-                      <SelectItem key={family.id} value={family.id}>{coupleLabel(family)}</SelectItem>
+                      <SelectItem key={family.id} value={family.id}>{familyOptionLabel(family, couples)}</SelectItem>
                     ))}
                     <SelectItem value={SINGLE_PARENT}>{person.displayName} のみ（単親）</SelectItem>
                   </SelectContent>
@@ -419,7 +430,13 @@ export function RelationshipEditDialog({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="rel-parent">親</Label>
-                <Select value={newParent} onValueChange={setNewParent}>
+                <Select
+                  value={newParent}
+                  onValueChange={value => {
+                    setNewParent(value)
+                    setParentFamilyChoice(null)
+                  }}
+                >
                   <SelectTrigger id="rel-parent" aria-label="親を選択">
                     <SelectValue placeholder={availableParents.length ? '親を選択' : '前の世代に候補がいません'} />
                   </SelectTrigger>
@@ -434,7 +451,7 @@ export function RelationshipEditDialog({
                 <Label htmlFor="rel-parent-family">どの夫婦の子として</Label>
                 <Select
                   value={parentFamilyId}
-                  onValueChange={setParentFamilyId}
+                  onValueChange={setParentFamilyChoice}
                   disabled={!newParent}
                 >
                   <SelectTrigger id="rel-parent-family" aria-label="本人を結びつける夫婦">
@@ -442,7 +459,7 @@ export function RelationshipEditDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {parentCouples.map(family => (
-                      <SelectItem key={family.id} value={family.id}>{coupleLabel(family)}</SelectItem>
+                      <SelectItem key={family.id} value={family.id}>{familyOptionLabel(family, parentCouples)}</SelectItem>
                     ))}
                     <SelectItem value={SINGLE_PARENT}>
                       {newParent

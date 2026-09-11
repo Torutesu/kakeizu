@@ -19,7 +19,7 @@ export const openaiProvider: AnalysisProvider = {
       throw new Error('OPENAI_API_KEY が設定されていません')
     }
 
-    const client = new OpenAI({ apiKey, timeout: PROVIDER_TIMEOUT_MS, maxRetries: 1 })
+    const client = new OpenAI({ apiKey, timeout: PROVIDER_TIMEOUT_MS, maxRetries: 0 })
 
     const mediaPart =
       input.mimeType === 'application/pdf'

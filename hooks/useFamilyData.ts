@@ -163,6 +163,8 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   // バージョンを前提にするため、後から返ってきたほうが「他人が先に保存した」と
   // 誤判定され（自分の変更同士の競合）、以後の自動保存が止まってしまう。
   const saveChainRef = useRef<Promise<void>>(Promise.resolve())
+  // performSave から自身の後続を予約するための参照（相互参照を避ける）
+  const enqueueSaveRef = useRef<() => Promise<void>>(() => Promise.resolve())
 
   const performSave = useCallback(async () => {
     const snapshot = currentStateRef.current
@@ -179,6 +181,11 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
         versionRef.current = result.version
         lastSavedStateRef.current = snapshot
         setSaveStatus('saved')
+        // 保存中に状態が変わっていれば（アンドゥで保存済みの状態に戻った場合を含む）、
+        // 続けて保存する。そうしないとサーバーだけが古い変更を持ったまま「保存済み」になる
+        if (currentStateRef.current !== snapshot) {
+          setTimeout(() => { void enqueueSaveRef.current() }, 0)
+        }
       } else {
         setSaveStatus('conflict')
       }
@@ -193,6 +200,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     saveChainRef.current = next.catch(() => undefined)
     return next
   }, [performSave])
+  enqueueSaveRef.current = enqueueSave
 
   // 自動保存（デバウンス付き）。conflict状態では再読み込みまで保存を止める
   useEffect(() => {
