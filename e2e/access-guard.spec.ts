@@ -83,3 +83,56 @@ test.describe('ログイン画面', () => {
     await expect(page.getByLabel('パスワード')).toHaveAttribute('type', 'password')
   })
 })
+
+// ============================================================================
+// 招待・パスワード再設定のリンクを受ける画面。
+// リンク切れや直接アクセスでも行き止まりにならず、次の行動（再設定メールを
+// 受け取る・ログインへ戻る）へ進めることを確認する。
+// ============================================================================
+
+test.describe('パスワード設定画面', () => {
+  test('リンク無しで開くと、再設定メールを受け取る導線が出る', async ({ page }) => {
+    await page.goto('/auth/set-password')
+    await expect(page.getByRole('heading', { name: 'リンクを確認できませんでした' })).toBeVisible()
+    const reset = page.getByRole('link', { name: 'パスワード再設定メールを受け取る' })
+    await expect(reset).toBeVisible()
+    await reset.click()
+    await expect(page).toHaveURL(/\/login\?mode=reset/)
+    await expect(page.getByRole('heading', { name: 'パスワードの再設定' })).toBeVisible()
+  })
+
+  test('期限切れのリンクは理由を示す', async ({ page }) => {
+    await page.goto('/auth/set-password?error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired')
+    await expect(page.getByTestId('set-password-error')).toContainText('有効期限が切れています')
+    // 再読み込みでエラーを繰り返さないよう、URLからは取り除かれる
+    await expect(page).toHaveURL(/\/auth\/set-password$/)
+  })
+
+  test('コールバックは期限切れをパスワード設定画面へ理由付きで送る', async ({ page }) => {
+    await page.goto('/auth/callback?error=access_denied&error_code=otp_expired')
+    await expect(page).toHaveURL(/\/auth\/set-password/)
+    await expect(page.getByTestId('set-password-error')).toContainText('有効期限が切れています')
+  })
+
+  test('コールバックの next に外部URLを渡しても外へは飛ばない', async ({ page }) => {
+    await page.goto('/auth/callback?next=https://evil.example/phish')
+    // セッションが無いので最終的に自サイトのログイン画面に着く
+    await expect(page).toHaveURL(/\/login/)
+    expect(page.url()).not.toContain('evil.example')
+    expect(new URL(page.url()).searchParams.get('next')).toBe('/projects')
+  })
+})
+
+test.describe('パスワード再設定', () => {
+  test('ログイン画面から再設定モードへ切り替えられる', async ({ page }) => {
+    await page.goto('/login')
+    await page.getByRole('button', { name: 'パスワードをお忘れですか？' }).click()
+    await expect(page.getByRole('heading', { name: 'パスワードの再設定' })).toBeVisible()
+    await expect(page.getByLabel('メールアドレス')).toBeVisible()
+    // 再設定ではパスワード欄は出ない
+    await expect(page.getByLabel('パスワード', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '再設定メールを送信' })).toBeVisible()
+    await page.getByRole('button', { name: 'ログイン画面に戻る' }).click()
+    await expect(page.getByRole('button', { name: 'ログイン' })).toBeVisible()
+  })
+})

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Loader2, Trash2, UserPlus, X } from 'lucide-react'
+import { useConfirm } from '@/hooks/useConfirm'
 import { fetchOrgContext, updateWorkerAccessMode, OrgContext } from '@/lib/db/org'
 import {
   fetchOrgMembers,
@@ -48,6 +49,7 @@ export default function MembersSettingsPage() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<OrgRole>('worker')
   const [isInviting, setIsInviting] = useState(false)
+  const { confirm, confirmDialog } = useConfirm()
 
   const load = useCallback(async () => {
     try {
@@ -126,7 +128,13 @@ export default function MembersSettingsPage() {
       toast.error('最後の管理者は削除できません')
       return
     }
-    if (!confirm(`${member.email} を組織から削除してもよろしいですか？`)) return
+    const confirmed = await confirm({
+      title: `${member.displayName || member.email} を組織から削除しますか？`,
+      description: '削除すると、この人はすべての案件にアクセスできなくなります。再度参加させるには招待し直してください。',
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (!confirmed) return
     try {
       await removeMember(ctx.orgId, member.userId)
       setMembers(prev => prev.filter(m => m.userId !== member.userId))
@@ -154,8 +162,9 @@ export default function MembersSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50" role="status" aria-live="polite">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="sr-only">読み込み中</span>
       </div>
     )
   }
@@ -175,8 +184,13 @@ export default function MembersSettingsPage() {
     <div className="min-h-screen bg-gray-50">
       <AppHeader ctx={ctx} />
 
-      <main className="max-w-3xl mx-auto px-6 py-8 space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">メンバー管理</h1>
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">メンバー管理</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            事務所のメンバーの招待・権限の変更と、案件へのアクセス範囲を設定します。
+          </p>
+        </div>
 
         {/* アクセスモード設定 */}
         <Card>
@@ -199,6 +213,7 @@ export default function MembersSettingsPage() {
               <Switch
                 checked={ctx.workerAccessMode === 'assigned_only'}
                 onCheckedChange={handleAccessModeChange}
+                aria-label="担当案件のみに制限する"
               />
             </div>
           </CardContent>
@@ -209,12 +224,13 @@ export default function MembersSettingsPage() {
           <CardHeader>
             <CardTitle className="text-lg">メンバーを招待</CardTitle>
             <CardDescription>
-              招待した相手が同じメールアドレスでログイン（Googleまたはメール/パスワードで新規登録）すると、自動的にメンバーになります。
+              招待メールが届き、リンクからパスワードを設定するとすぐに参加できます。
+              すでにアカウントがある方は、次にログインした時点で自動的にメンバーになります。
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleInvite} className="flex items-end gap-3">
-              <div className="flex-1 space-y-2">
+            <form onSubmit={handleInvite} className="flex flex-wrap sm:flex-nowrap items-end gap-3">
+              <div className="flex-1 min-w-[200px] space-y-2">
                 <Label htmlFor="invite-email">メールアドレス</Label>
                 <Input
                   id="invite-email"
@@ -226,9 +242,9 @@ export default function MembersSettingsPage() {
                 />
               </div>
               <div className="w-32 space-y-2">
-                <Label>ロール</Label>
+                <Label htmlFor="invite-role">ロール</Label>
                 <Select value={inviteRole} onValueChange={v => setInviteRole(v as OrgRole)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="invite-role" aria-label="招待するロール">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -272,6 +288,7 @@ export default function MembersSettingsPage() {
                     size="sm"
                     variant="ghost"
                     title="招待を取り消す"
+                    aria-label={`${invitation.email} への招待を取り消す`}
                     onClick={async () => {
                       try {
                         await revokeInvitation(ctx.orgId, invitation.id)
@@ -315,7 +332,7 @@ export default function MembersSettingsPage() {
                     value={member.role}
                     onValueChange={v => handleRoleChange(member, v as OrgRole)}
                   >
-                    <SelectTrigger className="w-28">
+                    <SelectTrigger className="w-28" aria-label={`${member.email} のロール`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -330,6 +347,7 @@ export default function MembersSettingsPage() {
                     size="sm"
                     variant="ghost"
                     title="組織から削除"
+                    aria-label={`${member.email} を組織から削除`}
                     className="text-red-500 hover:text-red-700"
                     onClick={() => handleRemove(member)}
                   >
@@ -341,6 +359,8 @@ export default function MembersSettingsPage() {
           </CardContent>
         </Card>
       </main>
+
+      {confirmDialog}
     </div>
   )
 }

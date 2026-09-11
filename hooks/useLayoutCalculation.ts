@@ -74,29 +74,24 @@ export function useLayoutCalculation(
     return LAYOUT_CONFIG.initialY + (generation - 1) * LAYOUT_CONFIG.generationSpacing
   }, [])
 
-  // Y座標から世代を判定（スナップ範囲を考慮）
+  // Y座標から世代を判定する。常に最も近い世代を返す
+  // （以前は一定距離より遠いと第1世代に落ちていたため、世代の中間で離すと
+  //   カードが一番上の行へ飛んでいた）
   const getGenerationFromY = useCallback((y: number) => {
-    const snapThreshold = LAYOUT_CONFIG.generationSpacing * 0.4 // 40%の範囲でスナップ
-
-    // 最も近い世代を見つける
-    let closestGeneration = 1
-    let minDistance = Infinity
-
-    // 現在存在する世代の範囲を確認（上下に1世代分の余地を持たせる）
+    // 現在存在する世代の範囲（上下に1世代分の余地を持たせる）
     const existingGenerations = persons.map(p => p.generation)
     const minGen = (existingGenerations.length > 0 ? Math.min(...existingGenerations) : 1) - 1
     const maxGen = (existingGenerations.length > 0 ? Math.max(...existingGenerations) : 1) + 1
 
+    let closestGeneration = Math.max(minGen, 1)
+    let minDistance = Infinity
     for (let gen = minGen; gen <= maxGen; gen++) {
-      const genY = getGenerationY(gen)
-      const distance = Math.abs(y - genY)
-
-      if (distance < minDistance && distance <= snapThreshold) {
+      const distance = Math.abs(y - getGenerationY(gen))
+      if (distance < minDistance) {
         minDistance = distance
         closestGeneration = gen
       }
     }
-
     return closestGeneration
   }, [persons, getGenerationY])
 

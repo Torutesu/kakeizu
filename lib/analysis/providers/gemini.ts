@@ -1,7 +1,7 @@
 import '../../server-guard'
 import { GoogleGenAI } from '@google/genai'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT, KOSEKI_RESPONSE_SCHEMA } from '../../koseki-prompt'
-import { AnalysisInput, AnalysisProvider, ProviderResult } from '../types'
+import { AnalysisInput, AnalysisProvider, ProviderResult, PROVIDER_TIMEOUT_MS } from '../types'
 
 /**
  * Google Gemini プロバイダ。
@@ -15,7 +15,7 @@ export const geminiProvider: AnalysisProvider = {
       throw new Error('GEMINI_API_KEY が設定されていません')
     }
 
-    const ai = new GoogleGenAI({ apiKey })
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: PROVIDER_TIMEOUT_MS } })
     const response = await ai.models.generateContent({
       model,
       contents: [

@@ -128,7 +128,12 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   useEffect(() => {
     if (saveStatus === 'conflict' && !conflictNotifiedRef.current) {
       conflictNotifiedRef.current = true
-      toast.error('他のユーザーが先に保存しました。「再読み込み」で最新の状態を取得してください。')
+      toast.error(
+        '他のユーザーが先に保存したため、この画面の変更は保存されていません。' +
+          '「再読み込み」で最新の状態を取得してください（再読み込みすると未保存の変更は失われます。' +
+          '残したい場合は先に「書き出し → JSON」で控えを取ってください）。',
+        { duration: 15000 }
+      )
     }
     if (saveStatus !== 'conflict') {
       conflictNotifiedRef.current = false
@@ -415,8 +420,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">家系図データを読み込み中...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" aria-hidden="true"></div>
+          <p className="text-gray-600" role="status">家系図データを読み込み中...</p>
         </div>
       </div>
     )
@@ -603,36 +608,44 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
           </div>
           {canEdit && (
             <div className="p-6 border-b border-gray-200">
-              <div
-                className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
+              <button
+                type="button"
+                className="w-full border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary/60 hover:bg-primary/[0.03] transition-colors cursor-pointer"
                 onClick={() => setIsKosekiUploadOpen(true)}
               >
-                <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-lg font-medium text-gray-900 mb-2">戸籍PDFをアップロード</p>
-                <p className="text-sm text-gray-500">
-                  戸籍謄本PDFをAIで解析
+                <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" aria-hidden="true" />
+                <span className="block text-lg font-medium text-gray-900 mb-2">戸籍書類を取り込む</span>
+                <span className="block text-sm text-gray-500">
+                  PDF・画像をAIで読み取り、家系図に反映します
                   <br />
                   クリックして開始
-                </p>
-              </div>
+                </span>
+              </button>
             </div>
           )}
 
           <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium text-gray-900">データ状況</span>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-2">
-              <div className="flex items-center gap-2 text-sm text-green-800">
-                <Users className="w-4 h-4 text-green-600" />
-                <span>{persons.length}人の人物</span>
+            <h3 className="text-sm font-medium text-gray-900 mb-3">この家系図</h3>
+            <dl className="grid grid-cols-2 gap-2">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <dt className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <Users className="w-3.5 h-3.5" aria-hidden="true" />
+                  人物
+                </dt>
+                <dd className="text-xl font-semibold text-gray-900 mt-0.5">
+                  {persons.length}<span className="text-xs font-normal text-gray-500 ml-0.5">人</span>
+                </dd>
               </div>
-              <div className="flex items-center gap-2 text-sm text-green-800">
-                <GitBranch className="w-4 h-4 text-green-600" />
-                <span>{families.length}件の家族関係</span>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <dt className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <GitBranch className="w-3.5 h-3.5" aria-hidden="true" />
+                  家族関係
+                </dt>
+                <dd className="text-xl font-semibold text-gray-900 mt-0.5">
+                  {families.length}<span className="text-xs font-normal text-gray-500 ml-0.5">件</span>
+                </dd>
               </div>
-            </div>
+            </dl>
           </div>
 
           <KosekiFilesPanel
@@ -647,12 +660,13 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
           <div className="p-6">
             <h3 className="text-sm font-medium text-gray-900 mb-3">使い方</h3>
-            <div className="space-y-3 text-sm text-gray-600">
-              <p>・上の「戸籍PDFをアップロード」から戸籍謄本PDFを解析して家系図に取り込めます。</p>
-              <p>・編集内容は自動的にサーバーへ保存されます（「保存」ボタンで即時保存も可能）。</p>
-              <p>・「書き出し」で家系図をJSONファイルとしてダウンロードし、「読み込み」で再度読み込めます。</p>
-              <p>・図の上でドラッグして配置を調整、右側のパネルで人物情報や関係を編集できます。</p>
-            </div>
+            <ul className="space-y-2 text-sm text-gray-600 list-disc pl-4">
+              <li>「戸籍書類を取り込む」からPDF・画像を読み取り、家系図に反映します。複数の書類に出てくる同じ人物は自動で1人にまとまります。</li>
+              <li>読み取り後は右側の「要確認」に出た箇所から順に、原本と突き合わせて確認してください。</li>
+              <li>編集内容は自動でサーバーへ保存されます。Cmd/Ctrl+Z で元に戻せます。</li>
+              <li>「書き出し」から PDF（印刷用）・Excel（一覧表）・JSON（控え）を出力できます。</li>
+              <li>キー操作の一覧は <kbd className="px-1 border rounded bg-gray-50 text-xs">?</kbd> で表示できます。</li>
+            </ul>
           </div>
         </aside>
 
@@ -712,7 +726,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 ref={searchInputRef}
-                placeholder="人物を検索... (Cmd+K)"
+                placeholder="人物を検索（Ctrl/Cmd+K）"
+                aria-label="人物を検索"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
@@ -895,8 +910,12 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         isOpen={isPersonEditOpen}
         onClose={() => setIsPersonEditOpen(false)}
         onSave={(personId, updates) => {
-          // selectedPersonはpersonsから導出しているため、更新すれば表示も自動で追従する
-          updatePerson(personId, updates)
+          // selectedPersonはpersonsから導出しているため、更新すれば表示も自動で追従する。
+          // 世代を変えた場合は手動配置を解除し、新しい世代の行へ自動で移す
+          // （手動位置のままだとカードが動かず、世代だけ変わって見える）
+          const generationChanged =
+            updates.generation !== undefined && updates.generation !== selectedPerson?.generation
+          updatePerson(personId, generationChanged ? { ...updates, manualPosition: false } : updates)
         }}
         availablePersons={persons}
       />

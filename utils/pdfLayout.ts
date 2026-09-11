@@ -151,5 +151,5 @@ export function describePlan(plan: PdfPagePlan): string {
   if (plan.pageCount === 1) {
     return `1ページ・${percent}の大きさ`
   }
-  return `${plan.pageCount}ページ（横${plan.columns} × 縦${plan.rows}）・${percent}の大きさ`
+  return `${plan.pageCount}ページ（縦${plan.rows} × 横${plan.columns}）・${percent}の大きさ`
 }

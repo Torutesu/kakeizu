@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
     const result = await runKosekiAnalysis({ base64Data, mimeType }, override)
 
     // 解析結果をファイルの状態として保存する（一覧で成否・抽出件数・使用モデルを確認できるようにする）
-    await supabase
+    const { error: statusError } = await supabase
       .from('koseki_files')
       .update({
         analysis_status: result.success ? 'success' : 'failed',
@@ -175,17 +175,22 @@ export async function POST(request: NextRequest) {
         analysis_model: result.success ? `${result.provider}/${result.model}` : null,
       })
       .eq('id', fileId)
+    if (statusError) {
+      // 結果自体は返せるため失敗にはしないが、一覧の表示が古いままになるのでログに残す
+      console.error('戸籍ファイルの解析状態を保存できませんでした', statusError.message)
+    }
 
     if (result.success) {
       return NextResponse.json({ success: true, data: result.data }, { status: 200 })
     }
     return NextResponse.json({ success: false, error: result.error }, { status: 422 })
   } catch (error) {
+    // SDK内部の文言や接続先はログにのみ残し、画面には次の行動が分かる文言だけを返す
     console.error('戸籍解析エラー:', error)
     return NextResponse.json(
       {
         success: false,
-        error: `解析処理中にエラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: '解析処理中にエラーが発生しました。しばらく待ってから再解析してください。続く場合は管理者にご連絡ください。',
       },
       { status: 500 }
     )

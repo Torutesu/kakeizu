@@ -3,7 +3,7 @@ import OpenAI from 'openai'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT } from '../../koseki-prompt'
 import { kosekiResultSchema } from '../schema'
-import { AnalysisInput, AnalysisProvider, ProviderResult } from '../types'
+import { AnalysisInput, AnalysisProvider, ProviderResult, PROVIDER_TIMEOUT_MS } from '../types'
 
 /**
  * OpenAI GPT プロバイダ。
@@ -19,7 +19,7 @@ export const openaiProvider: AnalysisProvider = {
       throw new Error('OPENAI_API_KEY が設定されていません')
     }
 
-    const client = new OpenAI({ apiKey })
+    const client = new OpenAI({ apiKey, timeout: PROVIDER_TIMEOUT_MS, maxRetries: 1 })
 
     const mediaPart =
       input.mimeType === 'application/pdf'

@@ -93,6 +93,9 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
 
   // サーバー上のバージョン（楽観ロック用）。保存成功のたびに進める
   const versionRef = useRef(0)
+  // 直近に保存済みの状態（参照で比較）。読み込み直後やアンドゥで同じ内容に戻った
+  // ときに、無意味なバージョン更新で他の編集者に競合を起こさないようにする
+  const lastSavedStateRef = useRef<FamilyDataState | null>(null)
   const saveStatusRef = useRef<SaveStatus>('saved')
   saveStatusRef.current = saveStatus
 
@@ -132,16 +135,16 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       setCanEdit(editable)
       setSaveStatus('saved')
       // 読み込んだ状態をアンドゥ履歴の起点にする（空の状態までアンドゥで戻れないようにする）
-      resetHistory(
-        {
-          persons: processed.persons,
-          families: processed.families,
-          issues: processed.issues,
-          crossCheckIssues: revision.data.crossCheckIssues,
-          registries: revision.data.registries,
-        },
-        'データ読み込み'
-      )
+      const loadedState: FamilyDataState = {
+        persons: processed.persons,
+        families: processed.families,
+        issues: processed.issues,
+        crossCheckIssues: revision.data.crossCheckIssues,
+        registries: revision.data.registries,
+      }
+      // 読み込んだ直後の状態は保存済みとして扱う（再読み込みのたびに保存し直さない）
+      lastSavedStateRef.current = loadedState
+      resetHistory(loadedState, 'データ読み込み')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'データの読み込みに失敗しました')
       console.error('Failed to load family data:', err)
@@ -155,51 +158,26 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     loadData()
   }, [loadData])
 
-  // 自動保存（デバウンス付き）。conflict状態では再読み込みまで保存を止める
-  const isFirstRenderRef = useRef(true)
-  useEffect(() => {
-    if (isLoading) return
-    if (isFirstRenderRef.current) {
-      isFirstRenderRef.current = false
-      return
-    }
-    if (!canEdit) return
+  // ---- 保存 ----
+  // 保存は必ず直列に実行する。前の保存が終わる前に次を始めると、両方が同じ
+  // バージョンを前提にするため、後から返ってきたほうが「他人が先に保存した」と
+  // 誤判定され（自分の変更同士の競合）、以後の自動保存が止まってしまう。
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve())
+
+  const performSave = useCallback(async () => {
+    const snapshot = currentStateRef.current
+    if (snapshot === lastSavedStateRef.current) return
     if (saveStatusRef.current === 'conflict') return
-
-    const timeoutId = setTimeout(async () => {
-      setSaveStatus('saving')
-      try {
-        const result = await saveTreeRevision(
-          projectId,
-          toFamilyTreeData(persons, families, crossCheckIssues, registries),
-          versionRef.current
-        )
-        if (result.ok) {
-          versionRef.current = result.version
-          setSaveStatus('saved')
-        } else {
-          setSaveStatus('conflict')
-        }
-      } catch (err) {
-        console.error('自動保存に失敗:', err)
-        setSaveStatus('error')
-      }
-    }, AUTOSAVE_DEBOUNCE_MS)
-    return () => clearTimeout(timeoutId)
-  }, [persons, families, isLoading, canEdit, projectId])
-
-  // 明示的な保存（保存ボタン用）
-  const saveNow = useCallback(async () => {
-    if (!canEdit || saveStatusRef.current === 'conflict') return
     setSaveStatus('saving')
     try {
       const result = await saveTreeRevision(
         projectId,
-        toFamilyTreeData(persons, families, crossCheckIssues, registries),
+        toFamilyTreeData(snapshot.persons, snapshot.families, snapshot.crossCheckIssues, snapshot.registries),
         versionRef.current
       )
       if (result.ok) {
         versionRef.current = result.version
+        lastSavedStateRef.current = snapshot
         setSaveStatus('saved')
       } else {
         setSaveStatus('conflict')
@@ -208,7 +186,30 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       console.error('保存に失敗:', err)
       setSaveStatus('error')
     }
-  }, [canEdit, projectId, persons, families])
+  }, [projectId])
+
+  const enqueueSave = useCallback((): Promise<void> => {
+    const next = saveChainRef.current.then(performSave)
+    saveChainRef.current = next.catch(() => undefined)
+    return next
+  }, [performSave])
+
+  // 自動保存（デバウンス付き）。conflict状態では再読み込みまで保存を止める
+  useEffect(() => {
+    if (isLoading) return
+    if (!canEdit) return
+    if (saveStatusRef.current === 'conflict') return
+    if (currentState === lastSavedStateRef.current) return
+
+    const timeoutId = setTimeout(() => { void enqueueSave() }, AUTOSAVE_DEBOUNCE_MS)
+    return () => clearTimeout(timeoutId)
+  }, [currentState, isLoading, canEdit, enqueueSave])
+
+  // 明示的な保存（保存ボタン用）
+  const saveNow = useCallback(async () => {
+    if (!canEdit || saveStatusRef.current === 'conflict') return
+    await enqueueSave()
+  }, [canEdit, enqueueSave])
 
   // 人物追加
   const addPerson = useCallback((personData: Partial<ProcessedPerson>) => {
@@ -261,8 +262,21 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     })
 
     const updatedPerson = newPersons.find(p => p.id === id)
+    // 家族関係が持つ人物の写しも差し替える（関係編集の画面や取り消し履歴に旧氏名が残らないように）
+    const newFamilies = updatedPerson
+      ? families.map(family => {
+          const touches =
+            family.parents.some(p => p.id === id) || family.children.some(c => c.id === id)
+          if (!touches) return family
+          return {
+            ...family,
+            parents: family.parents.map(p => (p.id === id ? updatedPerson : p)),
+            children: family.children.map(c => (c.id === id ? updatedPerson : c)),
+          }
+        })
+      : families
     const actionName = updatedPerson ? `${updatedPerson.displayName}を更新` : '人物を更新'
-    pushState({ persons: newPersons, families }, actionName)
+    pushState({ persons: newPersons, families: newFamilies }, actionName)
   }, [persons, families, pushState])
 
   // 人物削除
@@ -270,11 +284,19 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     const personToDelete = persons.find(p => p.id === id)
     const newPersons = persons.filter(person => person.id !== id)
 
-    // 関連する家族関係も削除
-    const newFamilies = families.filter(family =>
-      !family.parents.some(p => p.id === id) &&
-      !family.children.some(c => c.id === id)
-    )
+    // 家族関係からはその人物だけを外す。家族ごと消すと、子を1人削除しただけで
+    // 親の婚姻線ときょうだいの親子線まで消えてしまう。
+    // 外した結果、親がいなくなった家族や、配偶者も子も残らない家族だけを削除する
+    const newFamilies = families.flatMap(family => {
+      const touches =
+        family.parents.some(p => p.id === id) || family.children.some(c => c.id === id)
+      if (!touches) return [family]
+      const parents = family.parents.filter(p => p.id !== id)
+      const children = family.children.filter(c => c.id !== id)
+      if (parents.length === 0) return []
+      if (parents.length < 2 && children.length === 0) return []
+      return [{ ...family, parents, children }]
+    })
 
     const actionName = personToDelete ? `${personToDelete.displayName}を削除` : '人物を削除'
     pushState({ persons: newPersons, families: newFamilies }, actionName)

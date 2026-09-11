@@ -8,14 +8,16 @@ import { FamilyTreeData, RegistryData } from '../../utils/familyDataProcessor'
  * （堅牢性を優先する方針は KOSEKI_SYSTEM_INSTRUCTION の原則4と同じ）。
  */
 export function sanitizeFamilyTreeData(data: FamilyTreeData): FamilyTreeData {
+  // 注意: ログに人物の内容（氏名・生没年）や、それらを含みうるidを出さない。
+  // サーバーログは戸籍の個人情報を置く場所ではないため、位置（何番目か）だけを記録する
   const seenIds = new Set<string>()
-  const people = data.people.filter(person => {
+  const people = data.people.filter((person, index) => {
     if (typeof person.id !== 'string' || person.id.trim() === '') {
-      console.warn('戸籍解析結果: idが空の人物を除外しました', person)
+      console.warn(`戸籍解析結果: idが空の人物（${index + 1}番目）を除外しました`)
       return false
     }
     if (seenIds.has(person.id)) {
-      console.warn(`戸籍解析結果: 重複したid "${person.id}" の人物を除外しました`)
+      console.warn(`戸籍解析結果: idが重複した人物（${index + 1}番目）を除外しました`)
       return false
     }
     seenIds.add(person.id)
@@ -23,22 +25,22 @@ export function sanitizeFamilyTreeData(data: FamilyTreeData): FamilyTreeData {
   })
 
   const families = data.families
-    .map(family => {
+    .map((family, index) => {
       const parents = family.parents.filter(id => {
         const exists = seenIds.has(id)
-        if (!exists) console.warn(`戸籍解析結果: 家族 "${family.id}" が未知の親id "${id}" を参照していたため除外しました`)
+        if (!exists) console.warn(`戸籍解析結果: 家族（${index + 1}番目）が未知の親idを参照していたため除外しました`)
         return exists
       })
       const children = family.children.filter(id => {
         const exists = seenIds.has(id)
-        if (!exists) console.warn(`戸籍解析結果: 家族 "${family.id}" が未知の子id "${id}" を参照していたため除外しました`)
+        if (!exists) console.warn(`戸籍解析結果: 家族（${index + 1}番目）が未知の子idを参照していたため除外しました`)
         return exists
       })
       return { ...family, parents, children }
     })
-    .filter(family => {
+    .filter((family, index) => {
       if (family.parents.length === 0) {
-        console.warn(`戸籍解析結果: 親が0人になった家族 "${family.id}" を除外しました`)
+        console.warn(`戸籍解析結果: 親が0人になった家族（${index + 1}番目）を除外しました`)
         return false
       }
       return true
@@ -48,24 +50,24 @@ export function sanitizeFamilyTreeData(data: FamilyTreeData): FamilyTreeData {
   // 情報として意味があるため、member_ids が空になっても戸籍自体は残す
   const seenRegistryIds = new Set<string>()
   const registries: RegistryData[] = (data.registries ?? [])
-    .filter(registry => {
+    .filter((registry, index) => {
       if (typeof registry.id !== 'string' || registry.id.trim() === '') {
-        console.warn('戸籍解析結果: idが空の戸籍を除外しました', registry)
+        console.warn(`戸籍解析結果: idが空の戸籍（${index + 1}番目）を除外しました`)
         return false
       }
       if (seenRegistryIds.has(registry.id)) {
-        console.warn(`戸籍解析結果: 重複したid "${registry.id}" の戸籍を除外しました`)
+        console.warn(`戸籍解析結果: idが重複した戸籍（${index + 1}番目）を除外しました`)
         return false
       }
       seenRegistryIds.add(registry.id)
       return true
     })
-    .map(registry => ({
+    .map((registry, index) => ({
       ...registry,
       member_ids: (registry.member_ids ?? []).filter(id => {
         const exists = seenIds.has(id)
         if (!exists) {
-          console.warn(`戸籍解析結果: 戸籍 "${registry.id}" が未知の人物id "${id}" を参照していたため除外しました`)
+          console.warn(`戸籍解析結果: 戸籍（${index + 1}番目）が未知の人物idを参照していたため除外しました`)
         }
         return exists
       }),

@@ -67,8 +67,42 @@ export async function createProject(
   return data as string
 }
 
+/** 案件名・顧客名の変更（編集権限があれば可。RLSの update ポリシーで強制される） */
+export async function updateProject(
+  projectId: string,
+  updates: { name: string; clientName: string | null }
+): Promise<void> {
+  const supabase = getSupabaseBrowserClient()
+  const { error } = await supabase
+    .from('projects')
+    .update({ name: updates.name, client_name: updates.clientName })
+    .eq('id', projectId)
+  if (error) throw new Error(`案件の更新に失敗しました: ${error.message}`)
+}
+
+/**
+ * 案件を削除する。DB上の家系図・ファイル情報は cascade で消えるが、
+ * ストレージの実体は自動では消えないため、**先に**実体を消してから行を消す。
+ * 行を先に消すと、ストレージのポリシー（案件の編集権限で判定）が二度と通らず、
+ * 戸籍の実体が誰にも消せない状態で残ってしまう。
+ */
 export async function deleteProject(project: ProjectSummary): Promise<void> {
   const supabase = getSupabaseBrowserClient()
+
+  const { data: files, error: listError } = await supabase
+    .from('koseki_files')
+    .select('storage_path')
+    .eq('project_id', project.id)
+  if (listError) throw new Error(`案件の削除に失敗しました: ${listError.message}`)
+
+  const paths = (files ?? []).map(f => f.storage_path as string)
+  if (paths.length > 0) {
+    const { error: storageError } = await supabase.storage.from('koseki').remove(paths)
+    if (storageError) {
+      throw new Error(`戸籍ファイルの削除に失敗したため、案件を削除しませんでした: ${storageError.message}`)
+    }
+  }
+
   const { error } = await supabase.from('projects').delete().eq('id', project.id)
   if (error) throw new Error(`案件の削除に失敗しました: ${error.message}`)
 }
