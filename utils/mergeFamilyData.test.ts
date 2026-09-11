@@ -356,3 +356,27 @@ describe('mergeFamilyTreeData: 戸籍の統合', () => {
     expect(mergeFamilyTreeData(withRegistry, empty).data.registries).toHaveLength(1)
   })
 })
+
+describe('読み取り失敗の引き継ぎ（要件v1.1 4.4）', () => {
+  it('片方の書類で読めていれば、読み取り失敗は解消する', () => {
+    const existing: FamilyTreeData = {
+      people: [makePerson({ id: 'p1', unreadable: ['birth_date', 'death_date'] })],
+      families: [],
+    }
+    const incoming: FamilyTreeData = {
+      people: [
+        makePerson({
+          id: 'p1',
+          birth: { original_date: '明治十四年', date: '1881-06-29', place: null },
+          unreadable: ['death_date'],
+        }),
+      ],
+      families: [],
+    }
+    const { data } = mergeFamilyTreeData(existing, incoming)
+    expect(data.people).toHaveLength(1)
+    // 生年は読めた書類の値が入り、失敗の記録も消える
+    expect(data.people[0].birth.date).toBe('1881-06-29')
+    expect(data.people[0].unreadable).toEqual(['death_date'])
+  })
+})

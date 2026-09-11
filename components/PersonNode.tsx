@@ -2,6 +2,7 @@ import { AlertCircle } from "lucide-react"
 import { ProcessedPerson } from '../utils/familyDataProcessor'
 import { formatDate } from '../utils/familyDataProcessor'
 import { formatKyonen } from '../utils/age'
+import { UNREADABLE_FIELD_LABELS } from '../utils/familyDataProcessor'
 import { COLORS, LAYOUT_CONFIG } from '../constants/config'
 import { useCallback, useMemo, useRef } from 'react'
 
@@ -50,6 +51,9 @@ export function PersonNode({
 
   const accentColor = ACCENT_COLORS[person.sex ?? 'unknown']
   const age = formatKyonen(person.birth?.date, person.death?.date)
+  // 記載はあるが読み取れなかった項目（要件v1.1 4.4）。空欄のままにせず赤字で示す
+  const unreadableLabels = (person.unreadable ?? [])
+    .map(key => UNREADABLE_FIELD_LABELS[key] ?? key)
 
   // ドラッグ開始処理（マウス・タッチ・ペン共通）
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -147,6 +151,14 @@ export function PersonNode({
               </div>
             )}
             {age && <div className="text-gray-500 truncate">{age}</div>}
+            {unreadableLabels.length > 0 && (
+              <div
+                className="text-red-600 font-medium truncate"
+                title={`読み取りに失敗しました: ${unreadableLabels.join('・')}\n原本を確認して入力してください`}
+              >
+                読み取り失敗: {unreadableLabels.join('・')}
+              </div>
+            )}
           </div>
         </div>
       </div>

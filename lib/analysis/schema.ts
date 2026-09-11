@@ -37,6 +37,27 @@ export const kosekiPersonSchema = z.object({
     surname: z.string().describe('姓'),
     given_name: z.string().describe('名'),
   }),
+  name_original: z
+    .string()
+    .nullable()
+    .describe(
+      '戸籍上の氏名の原文表記（旧字体・異体字をそのまま）。name を現代の字体に直した場合のみ設定し、同じなら null。'
+    ),
+  unreadable: z
+    .array(
+      z.enum([
+        'name',
+        'sex',
+        'birth_date',
+        'death_date',
+        'birth_place',
+        'death_place',
+        'relation_to_family_head',
+      ])
+    )
+    .describe(
+      '記載はあるが判読できなかった項目のキー。記載自体が無い項目は含めない（無いものを「失敗」と示さないため）。'
+    ),
   birth: personDateFieldSchema,
   death: personDateFieldSchema,
   relation_to_family_head: z

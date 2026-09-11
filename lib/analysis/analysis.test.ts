@@ -153,6 +153,8 @@ describe('kosekiResultSchema', () => {
     generation: 1,
     sex: 'male',
     name: { surname: '阿吹', given_name: '軍一' },
+    name_original: null,
+    unreadable: [],
     birth: { original_date: '明治十四年', date: '1881-06-29', place: null },
     death: { original_date: null, date: null, place: null },
     relation_to_family_head: '夫',
@@ -205,6 +207,31 @@ describe('kosekiResultSchema', () => {
       families: [],
     })
     expect(result.success).toBe(true)
+  })
+
+  it('読み取りに失敗した項目を受け取れる（要件v1.1 4.4）', () => {
+    const result = kosekiResultSchema.safeParse({
+      registries: [validRegistry],
+      people: [
+        {
+          ...validPerson,
+          name_original: '阿吹 軍一',
+          unreadable: ['birth_date', 'relation_to_family_head'],
+        },
+      ],
+      families: [],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('読み取り失敗のキーが想定外なら拒否する', () => {
+    expect(
+      kosekiResultSchema.safeParse({
+        registries: [validRegistry],
+        people: [{ ...validPerson, unreadable: ['本籍'] }],
+        families: [],
+      }).success
+    ).toBe(false)
   })
 
   it('戸籍の種別が想定外の値なら拒否する', () => {

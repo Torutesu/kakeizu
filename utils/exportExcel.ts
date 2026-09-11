@@ -1,5 +1,10 @@
 import * as XLSX from 'xlsx'
-import { ProcessedPerson, FamilyGroup, RegistryData } from './familyDataProcessor'
+import {
+  ProcessedPerson,
+  FamilyGroup,
+  RegistryData,
+  UNREADABLE_FIELD_LABELS,
+} from './familyDataProcessor'
 import { formatKyonen } from './age'
 
 // Excelエクスポート。
@@ -46,6 +51,7 @@ export function buildWorkbook(
 
   const peopleRows = sortedPersons.map(person => ({
     '氏名': person.displayName,
+    '氏名（原文）': person.name_original ?? '',
     '姓': person.name?.surname ?? '',
     '名': person.name?.given_name ?? '',
     '性別': person.sex ? (SEX_LABELS[person.sex] ?? '') : '不明',
@@ -59,6 +65,10 @@ export function buildWorkbook(
     '没地': person.death?.place ?? '',
     '享年': formatKyonen(person.birth?.date, person.death?.date) ?? '',
     '本籍': (domicilesByPersonId.get(person.id) ?? []).join(' / '),
+    // 読み取りに失敗した項目（要件v1.1 4.4）。空欄の理由が書き出し先でも分かるようにする
+    '読み取り失敗': (person.unreadable ?? [])
+      .map(key => UNREADABLE_FIELD_LABELS[key] ?? key)
+      .join('・'),
   }))
 
   const personName = (id: string) =>

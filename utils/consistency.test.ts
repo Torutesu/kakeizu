@@ -230,3 +230,23 @@ describe('buildUncertaintyMap', () => {
     expect(map.get('p2')).toEqual(['理由1'])
   })
 })
+
+describe('読み取り失敗の明示（要件v1.1 4.4）', () => {
+  it('unreadableに項目があれば、確認をうながす指摘を出す', () => {
+    const issues = checkConsistency({
+      people: [person({ id: 'p', unreadable: ['birth_date', 'name'] })],
+      families: [],
+    })
+    const issue = issues.find(i => i.code === 'unreadable_field')
+    expect(issue).toBeDefined()
+    expect(issue!.severity).toBe('warning')
+    expect(issue!.message).toContain('生年月日')
+    expect(issue!.message).toContain('氏名')
+    expect(issue!.personIds).toEqual(['p'])
+  })
+
+  it('記載が無いだけの人物には出さない（空欄と読み取り失敗は別）', () => {
+    const issues = checkConsistency({ people: [person({ id: 'p' })], families: [] })
+    expect(issues.some(i => i.code === 'unreadable_field')).toBe(false)
+  })
+})

@@ -1,4 +1,10 @@
-import { FamilyTreeData, PersonData, FamilyData, RegistryData } from './familyDataProcessor'
+import {
+  FamilyTreeData,
+  PersonData,
+  FamilyData,
+  RegistryData,
+  UnreadableField,
+} from './familyDataProcessor'
 import { extractYear } from './age'
 
 // ============================================================================
@@ -77,6 +83,14 @@ function findOnlyCandidateMatch(candidates: PersonData[], incoming: PersonData):
  * 2人分のデータを統合する。既存側の値を優先し、既存側がnull/未設定の
  * フィールドのみ新しいデータで補完する（手動編集やレイアウト位置を守るため）。
  */
+function mergeUnreadable(existing: PersonData, incoming: PersonData): UnreadableField[] {
+  const existingKeys = existing.unreadable ?? []
+  const incomingKeys = incoming.unreadable ?? []
+  // 双方で読めなかった項目だけが残る。片方の書類で読めていれば、その値が
+  // fillPersonで入るため「読み取り失敗」ではなくなる
+  return existingKeys.filter(key => incomingKeys.includes(key))
+}
+
 function fillPerson(existing: PersonData, incoming: PersonData): PersonData {
   return {
     ...existing,
@@ -94,6 +108,10 @@ function fillPerson(existing: PersonData, incoming: PersonData): PersonData {
     },
     relation_to_family_head:
       existing.relation_to_family_head ?? incoming.relation_to_family_head,
+    name_original: existing.name_original ?? incoming.name_original ?? null,
+    // 読み取り失敗は、片方でも読めていれば解消したものとして扱う。
+    // 改製・転籍で同じ人物が複数の書類に出るため、読めた書類の値が既に入っている
+    unreadable: mergeUnreadable(existing, incoming),
     // positionは既存（手動レイアウト）を維持する
   }
 }

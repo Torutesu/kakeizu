@@ -1,4 +1,4 @@
-import { FamilyTreeData, PersonData } from './familyDataProcessor'
+import { FamilyTreeData, PersonData, UNREADABLE_FIELD_LABELS } from './familyDataProcessor'
 
 // ============================================================================
 // 抽出結果の論理整合性チェック。
@@ -121,6 +121,19 @@ export function checkConsistency(data: FamilyTreeData, now: Date = new Date()): 
           personIds: [person.id],
         })
       }
+    }
+
+    // 読み取りに失敗した項目（要件v1.1 4.4）。記載が無いのではなく、記載はあるが読めなかったもの
+    if (person.unreadable && person.unreadable.length > 0) {
+      const labels = person.unreadable
+        .map(key => UNREADABLE_FIELD_LABELS[key] ?? key)
+        .join('・')
+      issues.push({
+        severity: 'warning',
+        code: 'unreadable_field',
+        message: `${name}の${labels}を読み取れませんでした。原本を確認して入力してください。`,
+        personIds: [person.id],
+      })
     }
 
     // 判読不能のまま残っている日付

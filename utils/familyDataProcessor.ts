@@ -2,6 +2,30 @@ import { DATA_CONFIG } from '../constants/config'
 import { checkConsistency, buildUncertaintyMap, ConsistencyIssue } from './consistency'
 
 // family-info-sep.jsonのデータ構造に対応する型定義
+/**
+ * 記載はあるが判読できなかった項目のキー（要件v1.1 4.4）。
+ * 「記載が無い」と「読めなかった」を区別するために持つ。両方を null のままにすると、
+ * 空欄の理由が分からず、読み取り失敗を画面に出せない。
+ */
+export type UnreadableField =
+  | 'name'
+  | 'sex'
+  | 'birth_date'
+  | 'death_date'
+  | 'birth_place'
+  | 'death_place'
+  | 'relation_to_family_head'
+
+export const UNREADABLE_FIELD_LABELS: Record<UnreadableField, string> = {
+  name: '氏名',
+  sex: '性別',
+  birth_date: '生年月日',
+  death_date: '没年月日',
+  birth_place: '出生地',
+  death_place: '死亡地',
+  relation_to_family_head: '続柄',
+}
+
 export interface PersonData {
   id: string
   generation: number | null
@@ -10,6 +34,10 @@ export interface PersonData {
     surname: string
     given_name: string
   }
+  // 戸籍上の氏名の原文表記（旧字体・異体字）。現代字体に直した場合のみ入る
+  name_original?: string | null
+  // 記載はあるが判読できなかった項目。v1形式のデータには無いため省略を許容する
+  unreadable?: UnreadableField[]
   birth: {
     original_date: string | null
     date: string | null
@@ -237,6 +265,11 @@ export function toFamilyTreeData(
     // 続柄・手動レイアウト位置も往復で失われないように保持する
     ...(person.relation_to_family_head != null
       ? { relation_to_family_head: person.relation_to_family_head }
+      : {}),
+    // 原文表記と読み取り失敗の記録は、手で編集しても失われないよう往復させる
+    ...(person.name_original != null ? { name_original: person.name_original } : {}),
+    ...(person.unreadable && person.unreadable.length > 0
+      ? { unreadable: person.unreadable }
       : {}),
     ...(person.manualPosition ? { position: { x: person.x, y: person.y } } : {}),
   }))
