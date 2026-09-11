@@ -4,6 +4,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT } from '../../koseki-prompt'
 import { kosekiResultSchema } from '../schema'
 import { AnalysisInput, AnalysisProvider, ProviderResult, PROVIDER_TIMEOUT_MS } from '../types'
+import { withTransientRetry } from '../retry'
 
 const IMAGE_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number]
@@ -28,6 +29,8 @@ export const anthropicProvider: AnalysisProvider = {
     // timeout を明示しないと、SDK は max_tokens から「10分を超えうる」と判断して
     // 非ストリーミング呼び出しを例外で拒否する（Claude が一度も呼ばれない）。
     // Vercel の上限内に収まる時間を明示して、この判定を通す。
+    // SDK の再試行はタイムアウトも対象にして上限を超えるため使わず、
+    // 混雑などの一時的な失敗だけを withTransientRetry でやり直す
     const client = new Anthropic({ apiKey, timeout: PROVIDER_TIMEOUT_MS, maxRetries: 0 })
 
     // PDFはdocumentブロック、画像はimageブロックとして渡す
@@ -49,7 +52,7 @@ export const anthropicProvider: AnalysisProvider = {
           },
         }
 
-    const response = await client.messages.parse({
+    const response = await withTransientRetry(() => client.messages.parse({
       model,
       // 大きな戸籍では出力が長くなるため余裕を持たせる（上限時間は client の timeout で明示している）
       max_tokens: 64000,
@@ -73,7 +76,7 @@ export const anthropicProvider: AnalysisProvider = {
       output_config: {
         format: zodOutputFormat(kosekiResultSchema),
       },
-    }, { timeout: PROVIDER_TIMEOUT_MS })
+    }, { timeout: PROVIDER_TIMEOUT_MS }))
 
     if (!response.parsed_output) {
       throw new Error('構造化出力の解析に失敗しました')

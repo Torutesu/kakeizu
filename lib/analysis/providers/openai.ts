@@ -4,6 +4,7 @@ import { zodTextFormat } from 'openai/helpers/zod'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT } from '../../koseki-prompt'
 import { kosekiResultSchema } from '../schema'
 import { AnalysisInput, AnalysisProvider, ProviderResult, PROVIDER_TIMEOUT_MS } from '../types'
+import { withTransientRetry } from '../retry'
 
 /**
  * OpenAI GPT プロバイダ。
@@ -34,7 +35,7 @@ export const openaiProvider: AnalysisProvider = {
             detail: 'high' as const,
           }
 
-    const response = await client.responses.parse({
+    const response = await withTransientRetry(() => client.responses.parse({
       model,
       instructions: KOSEKI_SYSTEM_INSTRUCTION,
       input: [
@@ -52,7 +53,7 @@ export const openaiProvider: AnalysisProvider = {
       prompt_cache_key: 'koseki-analysis-v1',
       // 応答をサーバー側に保存しない（機微情報の残留を避ける）
       store: false,
-    })
+    }))
 
     if (!response.output_parsed) {
       throw new Error('構造化出力の解析に失敗しました')

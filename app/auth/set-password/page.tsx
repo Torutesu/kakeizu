@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
-import { adoptSessionFromUrl } from '@/lib/auth/adoptSession'
-import { AuthLinkType } from '@/lib/auth/authLinks'
+import { adoptSessionFromUrl, stripAuthParamsFromUrl } from '@/lib/auth/adoptSession'
+import { AuthLinkType, authLinkErrorMessage, parseAuthLinkError } from '@/lib/auth/authLinks'
 import { AuthShell } from '@/components/auth/AuthShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,6 +38,15 @@ export default function SetPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
+    // 期限切れなどのエラーは同期的に確定させる（開発時の効果の二重実行で
+    // URLを掃除した後に文言を失わないため）
+    const linkError = parseAuthLinkError(window.location.search, window.location.hash)
+    if (linkError) {
+      setLinkError(authLinkErrorMessage(linkError))
+      stripAuthParamsFromUrl()
+      setPhase('no-session')
+      return
+    }
     let cancelled = false
     ;(async () => {
       try {

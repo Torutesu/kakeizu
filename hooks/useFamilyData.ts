@@ -183,8 +183,10 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
         setSaveStatus('saved')
         // 保存中に状態が変わっていれば（アンドゥで保存済みの状態に戻った場合を含む）、
         // 続けて保存する。そうしないとサーバーだけが古い変更を持ったまま「保存済み」になる
+        // 待ち行列の末尾に足すだけで、現在の保存の完了後に順番に走る
+        // （ここで await すると自分の完了を待つことになり止まるため、待たない）
         if (currentStateRef.current !== snapshot) {
-          setTimeout(() => { void enqueueSaveRef.current() }, 0)
+          void enqueueSaveRef.current()
         }
       } else {
         setSaveStatus('conflict')

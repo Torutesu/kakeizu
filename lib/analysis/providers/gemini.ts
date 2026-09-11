@@ -2,6 +2,7 @@ import '../../server-guard'
 import { GoogleGenAI } from '@google/genai'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT, KOSEKI_RESPONSE_SCHEMA } from '../../koseki-prompt'
 import { AnalysisInput, AnalysisProvider, ProviderResult, PROVIDER_TIMEOUT_MS } from '../types'
+import { withTransientRetry } from '../retry'
 
 /**
  * Google Gemini プロバイダ。
@@ -16,7 +17,7 @@ export const geminiProvider: AnalysisProvider = {
     }
 
     const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: PROVIDER_TIMEOUT_MS } })
-    const response = await ai.models.generateContent({
+    const response = await withTransientRetry(() => ai.models.generateContent({
       model,
       contents: [
         {
@@ -34,7 +35,7 @@ export const geminiProvider: AnalysisProvider = {
         responseMimeType: 'application/json',
         responseSchema: KOSEKI_RESPONSE_SCHEMA,
       },
-    })
+    }))
 
     const text = response.text ?? ''
 

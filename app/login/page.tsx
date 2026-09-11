@@ -3,8 +3,14 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
-import { adoptSessionFromUrl } from '@/lib/auth/adoptSession'
-import { buildAuthCallbackUrl, parseAuthLinkError, safeNextPath, SET_PASSWORD_PATH } from '@/lib/auth/authLinks'
+import { adoptSessionFromUrl, stripAuthParamsFromUrl } from '@/lib/auth/adoptSession'
+import {
+  authLinkErrorMessage,
+  buildAuthCallbackUrl,
+  parseAuthLinkError,
+  safeNextPath,
+  SET_PASSWORD_PATH,
+} from '@/lib/auth/authLinks'
 import { AuthShell } from '@/components/auth/AuthShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -71,7 +77,15 @@ function LoginForm() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const { search, hash } = window.location
-    if (!hash.includes('access_token=') && !parseAuthLinkError(search, hash)) return
+    // エラーは同期的に処理する。非同期にすると、開発時の効果の二重実行で
+    // 1回目がURLを掃除した後に2回目が何も見つけられず、文言が出ないことがある
+    const linkError = parseAuthLinkError(search, hash)
+    if (linkError) {
+      setError(authLinkErrorMessage(linkError))
+      stripAuthParamsFromUrl()
+      return
+    }
+    if (!hash.includes('access_token=')) return
     let cancelled = false
     ;(async () => {
       try {

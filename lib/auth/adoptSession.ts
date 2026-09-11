@@ -73,7 +73,7 @@ export async function adoptSessionFromUrl(supabase: SupabaseClient): Promise<Ado
 }
 
 /** トークンやエラーの付いたURLを、パスだけの状態に書き換える（リロードで再処理させない） */
-function stripAuthParamsFromUrl() {
+export function stripAuthParamsFromUrl() {
   const url = new URL(window.location.href)
   url.hash = ''
   for (const key of ['code', 'error', 'error_code', 'error_description', 'token_hash', 'type']) {

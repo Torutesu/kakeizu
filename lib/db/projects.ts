@@ -105,15 +105,21 @@ export async function deleteProject(project: ProjectSummary): Promise<void> {
 
   const paths = (files ?? []).map(f => f.storage_path as string)
   if (paths.length > 0) {
-    const { data: removed, error: storageError } = await supabase.storage
-      .from('koseki')
-      .remove(paths)
+    const { error: storageError } = await supabase.storage.from('koseki').remove(paths)
     if (storageError) {
       throw new Error(`戸籍ファイルの削除に失敗したため、案件を削除しませんでした: ${storageError.message}`)
     }
-    // ポリシーで拒否された分はエラーにならず黙って残るため、件数で確かめる
-    if ((removed?.length ?? 0) < paths.length) {
-      throw new Error('戸籍ファイルの一部を削除できなかったため、案件を削除しませんでした')
+    // ポリシーで拒否された分はエラーにならず黙って残る。削除件数で数えると
+    // 「実体だけ先に消えていて再試行した」場合に永久に削除できなくなるため、
+    // 残っている実体が無いことを直接確かめる
+    const { data: remaining, error: listError } = await supabase.storage
+      .from('koseki')
+      .list(project.id, { limit: 1 })
+    if (listError) {
+      throw new Error(`戸籍ファイルの確認に失敗したため、案件を削除しませんでした: ${listError.message}`)
+    }
+    if ((remaining?.length ?? 0) > 0) {
+      throw new Error('戸籍ファイルを削除できなかったため、案件を削除しませんでした')
     }
   }
 

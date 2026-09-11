@@ -56,6 +56,12 @@ function familyOptionLabel(family: FamilyGroup, all: FamilyGroup[]): string {
   return duplicates ? `${label}（${RELATION_LABELS[family.relationType]}）` : label
 }
 
+/** 利用者の選択がまだ有効ならそれを、無ければ最初の候補、候補も無ければ単親 */
+function resolveFamilyChoice(choice: string | null, options: FamilyGroup[]): string {
+  if (choice && (choice === SINGLE_PARENT || options.some(f => f.id === choice))) return choice
+  return options[0]?.id ?? SINGLE_PARENT
+}
+
 /**
  * 選択中の人物の家族関係（配偶者・子・親）を編集するダイアログ。
  * 子や親を追加するときは、既存の夫婦関係へ結びつける（同じ親の組に対して
@@ -125,10 +131,7 @@ export function RelationshipEditDialog({
   )
 
   // 夫婦関係があれば、既定でその最初の関係に子を足す（利用者が選んでいればそれを優先）
-  const childFamilyId =
-    childFamilyChoice && (childFamilyChoice === SINGLE_PARENT || couples.some(f => f.id === childFamilyChoice))
-      ? childFamilyChoice
-      : couples[0]?.id ?? SINGLE_PARENT
+  const childFamilyId = resolveFamilyChoice(childFamilyChoice, couples)
 
   // 配偶者として追加可能な人物（同世代で、まだ本人の配偶者でない人）
   const availableSpouses = availablePersons.filter(
@@ -165,11 +168,7 @@ export function RelationshipEditDialog({
     [families, newParent]
   )
 
-  const parentFamilyId =
-    parentFamilyChoice &&
-    (parentFamilyChoice === SINGLE_PARENT || parentCouples.some(f => f.id === parentFamilyChoice))
-      ? parentFamilyChoice
-      : parentCouples[0]?.id ?? SINGLE_PARENT
+  const parentFamilyId = resolveFamilyChoice(parentFamilyChoice, parentCouples)
 
   const handleAddSpouse = () => {
     if (!person || !newSpouse) return
@@ -286,7 +285,7 @@ export function RelationshipEditDialog({
                         variant="ghost"
                         size="sm"
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        aria-label={`${coupleLabel(family)} の関係を削除`}
+                        aria-label={`${familyOptionLabel(family, personFamilies)} の関係を削除`}
                         title="この関係を削除"
                         onClick={() => handleRemoveFamily(family)}
                       >
