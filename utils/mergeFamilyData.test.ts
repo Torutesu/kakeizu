@@ -380,3 +380,18 @@ describe('読み取り失敗の引き継ぎ（要件v1.1 4.4）', () => {
     expect(data.people[0].unreadable).toEqual(['death_date'])
   })
 })
+
+describe('出典の引き継ぎ', () => {
+  it('同一人物が複数の書類に登場する場合、出典は合算される', () => {
+    const existing: FamilyTreeData = {
+      people: [makePerson({ id: 'p1', source_file_ids: ['file-a'] })],
+      families: [],
+    }
+    const incoming: FamilyTreeData = {
+      people: [makePerson({ id: 'p1', source_file_ids: ['file-b'] })],
+      families: [],
+    }
+    const { data } = mergeFamilyTreeData(existing, incoming)
+    expect(data.people[0].source_file_ids).toEqual(['file-a', 'file-b'])
+  })
+})

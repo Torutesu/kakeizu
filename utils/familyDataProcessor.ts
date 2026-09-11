@@ -38,6 +38,8 @@ export interface PersonData {
   name_original?: string | null
   // 記載はあるが判読できなかった項目。v1形式のデータには無いため省略を許容する
   unreadable?: UnreadableField[]
+  // 読み取り元の戸籍ファイルのid。記載の根拠にあたるための手掛かり
+  source_file_ids?: string[]
   birth: {
     original_date: string | null
     date: string | null
@@ -85,6 +87,8 @@ export interface RegistryData {
   registry_type: 'current' | 'removed' | 'revised' | null
   /** この戸籍に記載されている人物のid */
   member_ids: string[]
+  /** 読み取り元の戸籍ファイルのid */
+  source_file_ids?: string[]
 }
 
 export interface FamilyTreeData {
@@ -270,6 +274,9 @@ export function toFamilyTreeData(
     ...(person.name_original != null ? { name_original: person.name_original } : {}),
     ...(person.unreadable && person.unreadable.length > 0
       ? { unreadable: person.unreadable }
+      : {}),
+    ...(person.source_file_ids && person.source_file_ids.length > 0
+      ? { source_file_ids: person.source_file_ids }
       : {}),
     ...(person.manualPosition ? { position: { x: person.x, y: person.y } } : {}),
   }))

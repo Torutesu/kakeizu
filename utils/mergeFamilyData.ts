@@ -83,6 +83,11 @@ function findOnlyCandidateMatch(candidates: PersonData[], incoming: PersonData):
  * 2人分のデータを統合する。既存側の値を優先し、既存側がnull/未設定の
  * フィールドのみ新しいデータで補完する（手動編集やレイアウト位置を守るため）。
  */
+function unionIds(a: string[] | undefined, b: string[] | undefined): string[] | undefined {
+  const merged = [...new Set([...(a ?? []), ...(b ?? [])])]
+  return merged.length > 0 ? merged : undefined
+}
+
 function mergeUnreadable(existing: PersonData, incoming: PersonData): UnreadableField[] {
   const existingKeys = existing.unreadable ?? []
   const incomingKeys = incoming.unreadable ?? []
@@ -109,6 +114,8 @@ function fillPerson(existing: PersonData, incoming: PersonData): PersonData {
     relation_to_family_head:
       existing.relation_to_family_head ?? incoming.relation_to_family_head,
     name_original: existing.name_original ?? incoming.name_original ?? null,
+    // 出典は合算する。同じ人物が複数の書類に登場するため、1つに絞ると根拠が欠ける
+    source_file_ids: unionIds(existing.source_file_ids, incoming.source_file_ids),
     // 読み取り失敗は、片方でも読めていれば解消したものとして扱う。
     // 改製・転籍で同じ人物が複数の書類に出るため、読めた書類の値が既に入っている
     unreadable: mergeUnreadable(existing, incoming),
@@ -262,6 +269,7 @@ export function mergeFamilyTreeData(
       target.registry_type = target.registry_type ?? incomingRegistry.registry_type
       target.registered_domicile = target.registered_domicile ?? incomingRegistry.registered_domicile
       target.head_of_family = target.head_of_family ?? incomingRegistry.head_of_family
+      target.source_file_ids = unionIds(target.source_file_ids, incomingRegistry.source_file_ids)
       return
     }
 

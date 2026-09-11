@@ -38,6 +38,7 @@ import { SettingsDialog } from "./SettingsDialog"
 import { useFamilyData, SaveStatus } from "../hooks/useFamilyData"
 import { useZoomSettings } from "../hooks/useZoomSettings"
 import { useKosekiFiles } from "../hooks/useKosekiFiles"
+import { KosekiFile, createKosekiFileUrl, canOpenKosekiFile } from "../lib/db/kosekiFiles"
 import { fetchOrgContext, OrgContext } from "../lib/db/org"
 import { useProjectPresence } from "../hooks/useProjectPresence"
 import { useConfirm } from "../hooks/useConfirm"
@@ -176,6 +177,23 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   const selectedPerson = selectedPersonId
     ? persons.find(p => p.id === selectedPersonId) ?? null
     : null
+
+  // 選択中の人物の出典（読み取り元の戸籍ファイル）
+  const selectedPersonSources = useMemo(() => {
+    const ids = selectedPerson?.source_file_ids ?? []
+    return ids
+      .map(id => kosekiFiles.find(file => file.id === id))
+      .filter((file): file is KosekiFile => file !== undefined)
+  }, [selectedPerson, kosekiFiles])
+
+  const handleOpenSource = useCallback(async (file: KosekiFile) => {
+    try {
+      const url = await createKosekiFileUrl(file)
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ファイルを開けませんでした')
+    }
+  }, [])
 
   const [searchQuery, setSearchQuery] = useState("")
   const [focusPerson, setFocusPerson] = useState<FocusPersonRequest | null>(null)
@@ -884,6 +902,41 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                         <label className="text-sm font-medium text-gray-700">享年</label>
                         <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
                           {formatKyonen(selectedPerson.birth?.date, selectedPerson.death?.date)}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedPerson.name_original && (
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">氏名（戸籍の原文）</label>
+                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                          {selectedPerson.name_original}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedPersonSources.length > 0 && (
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">出典（読み取り元の書類）</label>
+                        <div className="mt-1 space-y-1">
+                          {selectedPersonSources.map(file => (
+                            <button
+                              key={file.id}
+                              type="button"
+                              onClick={() => handleOpenSource(file)}
+                              disabled={!canOpenKosekiFile(file, isAdmin)}
+                              className="w-full text-left p-2 bg-gray-50 border border-gray-200 rounded text-sm
+                                         hover:bg-gray-100 disabled:opacity-60 disabled:hover:bg-gray-50
+                                         disabled:cursor-not-allowed truncate"
+                              title={
+                                canOpenKosekiFile(file, isAdmin)
+                                  ? `${file.fileName} を開く`
+                                  : '保管期間を過ぎているため開けません'
+                              }
+                            >
+                              {file.fileName}
+                            </button>
+                          ))}
                         </div>
                       </div>
                     )}

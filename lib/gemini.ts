@@ -13,6 +13,22 @@ export interface AnalyzeOptions {
   model?: string
 }
 
+/** 解析結果の人物・戸籍に、読み取り元のファイルidを付ける */
+function stampSourceFile(data: FamilyTreeData, fileId: string): FamilyTreeData {
+  return {
+    ...data,
+    people: data.people.map(person => ({ ...person, source_file_ids: [fileId] })),
+    ...(data.registries
+      ? {
+          registries: data.registries.map(registry => ({
+            ...registry,
+            source_file_ids: [fileId],
+          })),
+        }
+      : {}),
+  }
+}
+
 /**
  * クライアント側から呼び出す戸籍書類解析サービス。
  * 解析対象はストレージに保存済みのファイルで、AIプロバイダのAPIキーはブラウザに送られず
@@ -37,7 +53,13 @@ export async function analyzeStoredKoseki(
         error: 'ログインの有効期限が切れました。再度ログインしてから解析してください。',
       }
     }
-    return (await response.json()) as KosekiAnalysisResult
+    const result = (await response.json()) as KosekiAnalysisResult
+    // どの書類から読み取ったかを記録する。相続実務では記載の根拠に遡れることが要る。
+    // AIは自分がどのファイルを読んでいるかを知らないため、ここで付ける
+    if (result.success && result.data) {
+      result.data = stampSourceFile(result.data, fileId)
+    }
+    return result
   } catch (error) {
     console.error('戸籍解析エラー:', error)
     return {
