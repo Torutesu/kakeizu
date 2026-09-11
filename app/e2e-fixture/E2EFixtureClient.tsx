@@ -61,6 +61,8 @@ const FIXTURE: FamilyTreeData = {
       birth: { original_date: '大正九年', date: null, place: null },
       death: { original_date: null, date: null, place: null },
       relation_to_family_head: '二男',
+      // 記載はあるが判読できなかった項目（要件v1.1 4.4）。空欄との区別を画面で確かめる
+      unreadable: ['death_date'],
     },
   ],
   families: [

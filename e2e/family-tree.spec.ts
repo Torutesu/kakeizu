@@ -61,6 +61,21 @@ test.describe('要確認の指摘', () => {
     await expect(page.getByTestId('selected-person')).toContainText('阿吹 軍一')
   })
 
+  // 要件v1.1 4.4。読み取りに失敗した箇所は赤字で示す。
+  // 「記載が無い空欄」と見分けがつかなければ、担当者は原本にあたる起点を持てない
+  test('読み取りに失敗した項目が人物カードに赤字で出る', async ({ page }) => {
+    const marker = card(page, 'ko2').locator('text=読み取り失敗')
+    await expect(marker).toBeVisible()
+    await expect(marker).toContainText('没年月日')
+    await expect(marker).toHaveClass(/text-red-600/)
+  })
+
+  test('読み取りの失敗が指摘一覧にも出る', async ({ page }) => {
+    await expect(
+      page.locator('[data-issue]', { hasText: '読み取れませんでした' })
+    ).toContainText('阿吹 繁好')
+  })
+
   // G-02の回帰テスト。照合モデルだけが抽出した人物は採用側にidが無く、
   // 人物カードの印では表現できない。一覧に出ていなければ検出しても意味がない
   test('人物に紐づかない照合の指摘も一覧に表示される', async ({ page }) => {
