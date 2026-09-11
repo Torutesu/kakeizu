@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   processFamilyData,
   toFamilyTreeData,
@@ -16,6 +16,7 @@ import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
 import { subscribeTreeRevision } from '../lib/db/treeRealtime'
 import { fetchCanEditProject } from '../lib/db/projects'
 import { mergeTreeChanges, hasNoChanges } from '../utils/mergeTreeChanges'
+import { mergePersonsInState, findMergeCandidates, MergeCandidate } from '../utils/mergePersons'
 
 // 保存の状態。要件v1.1 4.5で「最新の保存を正とする」となったため、
 // 競合で保存を止める状態は無くなった（同じ箇所は後から保存した側が勝つ）
@@ -62,6 +63,10 @@ interface UseFamilyDataReturn {
   }) => void
   updateFamily: (id: string, updates: Partial<FamilyGroup>) => void
   deleteFamily: (id: string) => void
+  /** 2人を1人にまとめる（取り込み時に別人として残ったものを人の判断で統合する） */
+  mergePersons: (keepId: string, dropId: string) => void
+  /** 同一人物の可能性がある組。提示するだけで自動では統合しない */
+  mergeCandidates: MergeCandidate[]
 
   // 一括インポート・エクスポート（戻り値は名寄せの結果サマリー）
   importFamilyTreeData: (
@@ -333,6 +338,30 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     pushState({ persons: newPersons, families: newFamilies }, actionName)
   }, [persons, families, pushState])
 
+  // 人物の統合。取り込み時の名寄せは保守的に別人として残すため、
+  // 婚姻改姓などをあとから人の判断でまとめられるようにする
+  const mergePersons = useCallback((keepId: string, dropId: string) => {
+    const keep = persons.find(p => p.id === keepId)
+    const drop = persons.find(p => p.id === dropId)
+    if (!keep || !drop) return
+
+    const result = mergePersonsInState(persons, families, registries, keepId, dropId)
+    pushState(
+      {
+        persons: result.persons,
+        families: result.families,
+        crossCheckIssues,
+        registries: result.registries,
+      },
+      `${drop.displayName}を${keep.displayName}にまとめる`
+    )
+  }, [persons, families, registries, crossCheckIssues, pushState])
+
+  const mergeCandidates = useMemo(
+    () => findMergeCandidates(persons, families),
+    [persons, families]
+  )
+
   // 家族関係追加
   const addFamily = useCallback((familyData: {
     parentIds: string[]
@@ -474,6 +503,8 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     addFamily,
     updateFamily,
     deleteFamily,
+    mergePersons,
+    mergeCandidates,
     importFamilyTreeData,
     exportFamilyTreeData,
     saveNow,

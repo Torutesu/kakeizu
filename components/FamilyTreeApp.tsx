@@ -14,6 +14,7 @@ import {
   Edit3,
   Plus,
   Trash2,
+  Merge,
   Undo,
   Redo,
   Users,
@@ -34,6 +35,7 @@ import { RelationshipEditDialog } from "./RelationshipEditDialog"
 import { AddPersonDialog } from "./AddPersonDialog"
 import { KosekiUploadDialog } from "./KosekiUploadDialog"
 import { KosekiFilesPanel } from "./KosekiFilesPanel"
+import { MergePersonsDialog } from "./MergePersonsDialog"
 import { SettingsDialog } from "./SettingsDialog"
 import { useFamilyData, SaveStatus } from "../hooks/useFamilyData"
 import { useZoomSettings } from "../hooks/useZoomSettings"
@@ -95,6 +97,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     addFamily,
     updateFamily,
     deleteFamily,
+    mergePersons,
+    mergeCandidates,
     importFamilyTreeData,
     exportFamilyTreeData,
     saveNow,
@@ -208,6 +212,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false)
   const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false)
+  const [isMergePersonsOpen, setIsMergePersonsOpen] = useState(false)
 
   // 画面が狭いときのサイドバー開閉（広い画面では常時表示）
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false)
@@ -841,6 +846,20 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                       </Button>
                       <Button
                         size="sm"
+                        variant="outline"
+                        title="別人として残った同一人物を1人にまとめる"
+                        onClick={() => setIsMergePersonsOpen(true)}
+                      >
+                        <Merge className="w-4 h-4 mr-1" />
+                        統合
+                        {mergeCandidates.length > 0 && (
+                          <span className="ml-1 text-xs text-blue-600">
+                            {mergeCandidates.length}
+                          </span>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
                         variant="destructive"
                         title="削除 (Delete)"
                         onClick={handleDeleteSelectedPerson}
@@ -983,6 +1002,19 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
       </div>
 
       {/* 編集ダイアログ */}
+      <MergePersonsDialog
+        isOpen={isMergePersonsOpen}
+        onClose={() => setIsMergePersonsOpen(false)}
+        persons={persons}
+        candidates={mergeCandidates}
+        basePerson={selectedPerson ?? null}
+        onMerge={(keepId, dropId) => {
+          mergePersons(keepId, dropId)
+          setSelectedPersonId(keepId)
+          toast.success('2人を1人にまとめました')
+        }}
+      />
+
       <PersonEditDialog
         person={selectedPerson}
         isOpen={isPersonEditOpen}
