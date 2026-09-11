@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import { ProcessedPerson, FamilyGroup, RegistryData } from './familyDataProcessor'
-import { formatKazoeAge } from './age'
+import { formatKyonen } from './age'
 
 // Excelエクスポート。
 // 「人物一覧」「家族関係」「戸籍」の3シート構成で、行政書士業務等での
@@ -57,7 +57,7 @@ export function buildWorkbook(
     '没年月日': person.death?.date ?? '',
     '没年月日（原文）': person.death?.original_date ?? '',
     '没地': person.death?.place ?? '',
-    '数え年': formatKazoeAge(person.birth?.date, person.death?.date, now) ?? '',
+    '享年': formatKyonen(person.birth?.date, person.death?.date) ?? '',
     '本籍': (domicilesByPersonId.get(person.id) ?? []).join(' / '),
   }))
 

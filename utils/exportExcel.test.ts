@@ -45,13 +45,13 @@ describe('buildWorkbook', () => {
     expect(workbook.SheetNames).toEqual(['人物一覧', '家族関係'])
   })
 
-  it('人物一覧に氏名・生没年・数え年が入る', () => {
+  it('人物一覧に氏名・生没年・享年が入る', () => {
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets['人物一覧'])
     expect(rows).toHaveLength(2)
     const gunichi = rows.find(r => r['氏名'] === '阿吹 軍一')!
     expect(gunichi['生年月日']).toBe('1881-06-29')
     expect(gunichi['没年月日']).toBe('1968-01-15')
-    expect(gunichi['数え年']).toBe('享年88（数え）')
+    expect(gunichi['享年']).toBe('享年88')
     expect(gunichi['続柄（戸籍上）']).toBe('夫')
     expect(gunichi['性別']).toBe('男性')
   })

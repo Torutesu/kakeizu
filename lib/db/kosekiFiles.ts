@@ -8,6 +8,13 @@ import {
 const BUCKET = 'koseki'
 const SIGNED_URL_TTL_SECONDS = 60
 
+/**
+ * 原本を閲覧できる期間（要件v1.1 4.8）。DB側の koseki_retention_days() と同じ値にすること。
+ * 画面はこの値で表示を出し分けるだけで、実際の制限はRLSとストレージのポリシーが担う。
+ */
+export const KOSEKI_RETENTION_DAYS = 30
+const RETENTION_MS = KOSEKI_RETENTION_DAYS * 24 * 60 * 60 * 1000
+
 export type AnalysisStatus = 'pending' | 'success' | 'failed'
 
 export interface KosekiFile {
@@ -24,6 +31,25 @@ export interface KosekiFile {
   personCount: number | null
   familyCount: number | null
   createdAt: string
+}
+
+/**
+ * 取り込みから保持期間を過ぎているか。管理者は期間を過ぎても閲覧できるため、
+ * 「読めない」と断定せず、期間の経過だけを表す。
+ */
+export function isRetentionExpired(file: KosekiFile, now: Date = new Date()): boolean {
+  const createdAt = new Date(file.createdAt).getTime()
+  if (Number.isNaN(createdAt)) return false
+  return now.getTime() - createdAt > RETENTION_MS
+}
+
+/** 原本を開けるか。管理者は無期限、それ以外は保持期間内に限る */
+export function canOpenKosekiFile(
+  file: KosekiFile,
+  isAdmin: boolean,
+  now: Date = new Date()
+): boolean {
+  return isAdmin || !isRetentionExpired(file, now)
 }
 
 interface KosekiFileRow {
@@ -94,8 +120,9 @@ export async function uploadKosekiFile(
     data: { user },
   } = await supabase.auth.getUser()
 
-  // パスの先頭セグメントがproject_idであることをストレージのRLSポリシーが前提にしている
-  const storagePath = `${projectId}/${crypto.randomUUID()}.${MIME_EXTENSIONS[mimeType]}`
+  // パスは {事務所ID}/{案件ID}/{ファイルID} 。ストレージのINSERTポリシーがこの形を前提にしている
+  // （閲覧・削除の判定はパスの形ではなく koseki_files.storage_path との一致で行う）
+  const storagePath = `${orgId}/${projectId}/${crypto.randomUUID()}.${MIME_EXTENSIONS[mimeType]}`
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
@@ -149,6 +176,13 @@ export async function createKosekiFileUrl(file: KosekiFile): Promise<string> {
     .from(BUCKET)
     .createSignedUrl(file.storagePath, SIGNED_URL_TTL_SECONDS)
   if (error || !data) {
+    // 保持期間を過ぎた原本は、ストレージのポリシーで到達できなくなる。
+    // 「失敗しました」とだけ出すと不具合に見えるため、期間切れを先に説明する
+    if (isRetentionExpired(file)) {
+      throw new Error(
+        `保管期間（取り込みから${KOSEKI_RETENTION_DAYS}日）を過ぎているため、原本を開けません。管理者にお問い合わせください`
+      )
+    }
     throw new Error(`ファイルURLの取得に失敗しました: ${error?.message ?? 'unknown error'}`)
   }
   return data.signedUrl

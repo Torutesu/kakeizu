@@ -45,13 +45,18 @@ export function kazoeAge(
   return { age, isDeceased: false }
 }
 
-/** 表示用文字列（例: "享年84（数え）" / "数え45歳"）。計算できなければnull */
-export function formatKazoeAge(
+/**
+ * 享年の表示用文字列（例: "享年88"）。
+ *
+ * 要件v1.1 4.5は「享年を表示すること」であり、ご存命の方の年齢表示は要件から外れた。
+ * 没年の記載がない方はnullを返す（現在年を基準にした年齢は出さない）。
+ * 享年は慣行どおり数え年で数える（生まれた年を1歳とし、没年 - 生年 + 1）。
+ */
+export function formatKyonen(
   birthDate: string | null | undefined,
-  deathDate: string | null | undefined,
-  now: Date = new Date()
+  deathDate: string | null | undefined
 ): string | null {
-  const result = kazoeAge(birthDate, deathDate, now)
-  if (!result) return null
-  return result.isDeceased ? `享年${result.age}（数え）` : `数え${result.age}歳`
+  const result = kazoeAge(birthDate, deathDate)
+  if (!result || !result.isDeceased) return null
+  return `享年${result.age}`
 }

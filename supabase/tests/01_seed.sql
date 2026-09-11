@@ -13,6 +13,9 @@ grant all on all sequences in schema public to authenticated;
 grant execute on all functions in schema public to authenticated;
 grant usage on schema auth to authenticated;
 grant select on auth.users to authenticated;
+-- ストレージ（保管期間の検証で storage.objects を直接読むため）
+grant usage on schema storage to authenticated;
+grant all on storage.objects to authenticated;
 -- 2つの事務所と3人の利用者を用意
 insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111','admin-a@example.com'),
@@ -46,3 +49,22 @@ update public.tree_revisions
    'cccccccc-0000-0000-0000-000000000001',
    'cccccccc-0000-0000-0000-000000000002'
  );
+
+-- 保管期間（要件v1.1 4.8）の検証用。担当案件に、取り込み直後と40日前の2件を置く
+insert into public.koseki_files
+  (id, project_id, storage_path, file_name, file_size, mime_type, uploaded_by, created_at)
+values
+  ('dddddddd-0000-0000-0000-000000000001',
+   'cccccccc-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/new.pdf',
+   '取り込み直後.pdf', 1024, 'application/pdf',
+   '22222222-2222-2222-2222-222222222222', now()),
+  ('dddddddd-0000-0000-0000-000000000002',
+   'cccccccc-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/old.pdf',
+   '40日前.pdf', 1024, 'application/pdf',
+   '22222222-2222-2222-2222-222222222222', now() - interval '40 days');
+
+insert into storage.objects (bucket_id, name) values
+  ('koseki', 'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/new.pdf'),
+  ('koseki', 'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/old.pdf');

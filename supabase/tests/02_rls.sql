@@ -88,6 +88,46 @@ select 'レート制限のカウンタは直接読めない', count(*) = 0 from 
 
 reset role;
 
+-- ---- 11〜16) 戸籍の保管期間（要件v1.1 4.8） ----
+-- 原本の実体は storage.objects 側にあるため、テーブルとストレージの両方を確かめる
+
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+-- 一覧（メタデータ）は期間を過ぎても見える。見えなくすると再アップロードを誘発するため
+insert into rls_results
+select '作業者は期間を過ぎたファイルも一覧では見える', count(*) = 2
+  from koseki_files where project_id = 'cccccccc-0000-0000-0000-000000000001';
+
+-- 原本は期間内だけ読める
+insert into rls_results
+select '作業者は取り込み直後の原本を読める', count(*) = 1
+  from storage.objects
+ where name = 'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/new.pdf';
+
+insert into rls_results
+select '作業者は30日を過ぎた原本を読めない', count(*) = 0
+  from storage.objects
+ where name = 'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/old.pdf';
+
+-- 読めない期間は消すこともできない（読めないが消せる状態は不整合のため）
+insert into rls_results
+select '作業者は30日を過ぎたファイルを削除できない',
+       not public.can_modify_koseki_file('dddddddd-0000-0000-0000-000000000002');
+
+insert into rls_results
+select '作業者は期間内のファイルは削除できる',
+       public.can_modify_koseki_file('dddddddd-0000-0000-0000-000000000001');
+
+-- 管理者は無期限
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+insert into rls_results
+select '管理者は30日を過ぎた原本も読める', count(*) = 1
+  from storage.objects
+ where name = 'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/old.pdf';
+
+reset role;
+
 -- ---- 結果の出力 ----
 \echo ''
 \echo '=== RLS 検証結果 ==='
@@ -104,7 +144,7 @@ from rls_results;
 do $$
 declare
   -- 上の検証の数と一致させること。検証を増やしたらこの値も更新する
-  c_expected constant integer := 10;
+  c_expected constant integer := 16;
   v_failed integer;
   v_total integer;
 begin

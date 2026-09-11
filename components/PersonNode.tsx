@@ -1,7 +1,7 @@
 import { AlertCircle } from "lucide-react"
 import { ProcessedPerson } from '../utils/familyDataProcessor'
 import { formatDate } from '../utils/familyDataProcessor'
-import { formatKazoeAge } from '../utils/age'
+import { formatKyonen } from '../utils/age'
 import { COLORS, LAYOUT_CONFIG } from '../constants/config'
 import { useCallback, useMemo, useRef } from 'react'
 
@@ -49,7 +49,7 @@ export function PersonNode({
   }, [person.sex])
 
   const accentColor = ACCENT_COLORS[person.sex ?? 'unknown']
-  const age = formatKazoeAge(person.birth?.date, person.death?.date)
+  const age = formatKyonen(person.birth?.date, person.death?.date)
 
   // ドラッグ開始処理（マウス・タッチ・ペン共通）
   const handlePointerDown = useCallback((e: React.PointerEvent) => {

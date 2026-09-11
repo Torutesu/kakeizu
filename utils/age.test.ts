@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractYear, kazoeAge, formatKazoeAge } from './age'
+import { extractYear, kazoeAge, formatKyonen } from './age'
 
 const NOW = new Date('2026-08-22T00:00:00Z')
 
@@ -41,10 +41,21 @@ describe('kazoeAge', () => {
   })
 })
 
-describe('formatKazoeAge', () => {
-  it('故人と存命で表記を変える', () => {
-    expect(formatKazoeAge('1881-06-29', '1968-01-15', NOW)).toBe('享年88（数え）')
-    expect(formatKazoeAge('2000-05-05', null, NOW)).toBe('数え27歳')
-    expect(formatKazoeAge(null, null, NOW)).toBeNull()
+describe('formatKyonen', () => {
+  it('没年がある場合だけ享年を返す（要件v1.1 4.5）', () => {
+    expect(formatKyonen('1881-06-29', '1968-01-15')).toBe('享年88')
+    // 同年内に生没 → 享年1
+    expect(formatKyonen('1900-01-01', '1900-12-31')).toBe('享年1')
+  })
+
+  it('没年の記載がなければ表示しない（存命の方の年齢は要件から外れた）', () => {
+    expect(formatKyonen('2000-05-05', null)).toBeNull()
+    expect(formatKyonen('1881-06-29', undefined)).toBeNull()
+  })
+
+  it('生年が不明、または没年が生年より前なら表示しない', () => {
+    expect(formatKyonen(null, '1968-01-15')).toBeNull()
+    expect(formatKyonen('1970-01-01', '1960-01-01')).toBeNull()
+    expect(formatKyonen(null, null)).toBeNull()
   })
 })

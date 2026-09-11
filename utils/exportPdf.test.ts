@@ -46,9 +46,9 @@ describe('buildTreeSvg', () => {
     expect(height).toBeGreaterThan(0)
   })
 
-  it('人物名・数え年・案件名が含まれる', () => {
+  it('人物名・享年・案件名が含まれる', () => {
     expect(svg).toContain('阿吹 軍一')
-    expect(svg).toContain('享年88（数え）')
+    expect(svg).toContain('享年88')
     expect(svg).toContain('テスト案件')
   })
 

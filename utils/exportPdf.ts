@@ -1,7 +1,7 @@
 import { ProcessedPerson, FamilyGroup } from './familyDataProcessor'
 import { calculateTreeLayout, Point } from './treeLayout'
 import { LAYOUT_CONFIG } from '../constants/config'
-import { formatKazoeAge } from './age'
+import { formatKyonen } from './age'
 import { planPdfPages, PdfExportOptions, DEFAULT_PDF_OPTIONS } from './pdfLayout'
 
 // Canvasの1辺の上限。これを超えるとブラウザによっては描画が失敗する
@@ -106,7 +106,7 @@ export function buildTreeSvg(
 
     const fill = person.sex === 'male' ? '#eff6ff' : person.sex === 'female' ? '#fdf2f8' : '#ffffff'
     const accent = person.sex === 'male' ? '#3b82f6' : person.sex === 'female' ? '#ec4899' : '#9ca3af'
-    const age = formatKazoeAge(person.birth?.date, person.death?.date, now)
+    const age = formatKyonen(person.birth?.date, person.death?.date)
 
     parts.push(
       `<rect x="${left}" y="${top}" width="${CARD_W}" height="${CARD_H}" rx="8" fill="${fill}" stroke="#d1d5db"/>`,

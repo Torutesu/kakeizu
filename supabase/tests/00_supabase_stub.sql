@@ -35,6 +35,10 @@ create table if not exists storage.objects (
   owner uuid
 );
 
+-- 本番のSupabaseでは storage.objects のRLSが既定で有効。検証でも同じ状態にする
+-- （有効にしないとポリシーが素通りし、保管期間の検証が常に成功してしまう）
+alter table storage.objects enable row level security;
+
 -- 現在のユーザーをセッション変数で差し替えられるようにする（RLSの検証に使う）
 create or replace function auth.uid() returns uuid
 language sql stable as $$

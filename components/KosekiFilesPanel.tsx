@@ -14,7 +14,13 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { useConfirm } from '../hooks/useConfirm'
-import { KosekiFile, createKosekiFileUrl } from '../lib/db/kosekiFiles'
+import {
+  KosekiFile,
+  createKosekiFileUrl,
+  isRetentionExpired,
+  canOpenKosekiFile,
+  KOSEKI_RETENTION_DAYS,
+} from '../lib/db/kosekiFiles'
 import { analyzeStoredKoseki, AnalyzeOptions } from '../lib/gemini'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
 
@@ -32,6 +38,8 @@ interface KosekiFilesPanelProps {
   files: KosekiFile[]
   isLoading: boolean
   canEdit: boolean
+  /** 管理者は保管期間を過ぎた原本も扱える（要件v1.1 4.8） */
+  isAdmin: boolean
   onRemove: (file: KosekiFile) => Promise<void>
   onRefresh: () => Promise<void>
   onDataExtracted: (data: FamilyTreeData) => void
@@ -51,6 +59,7 @@ export function KosekiFilesPanel({
   files,
   isLoading,
   canEdit,
+  isAdmin,
   onRemove,
   onRefresh,
   onDataExtracted,
@@ -124,7 +133,10 @@ export function KosekiFilesPanel({
         </p>
       ) : (
         <div className="space-y-2">
-          {files.map(file => (
+          {files.map(file => {
+            const expired = isRetentionExpired(file)
+            const canOpen = canOpenKosekiFile(file, isAdmin)
+            return (
             <div key={file.id} className="border border-gray-200 rounded-lg p-3">
               <div className="flex items-start gap-2">
                 <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
@@ -149,9 +161,24 @@ export function KosekiFilesPanel({
                     {file.analysisStatus === 'pending' && (
                       <Badge variant="outline" className="text-xs">未解析</Badge>
                     )}
+                    {expired && (
+                      <Badge
+                        variant="outline"
+                        className="text-xs border-amber-300 text-amber-700"
+                        title={`取り込みから${KOSEKI_RETENTION_DAYS}日を過ぎています`}
+                      >
+                        保管期間切れ
+                      </Badge>
+                    )}
                   </div>
                   {file.analysisStatus === 'failed' && file.analysisError && (
                     <p className="text-xs text-red-600 mt-1 line-clamp-2">{file.analysisError}</p>
+                  )}
+                  {expired && !canOpen && (
+                    <p className="text-xs text-amber-700 mt-1">
+                      保管期間（取り込みから{KOSEKI_RETENTION_DAYS}日）を過ぎたため、原本を開けません。
+                      取り込み済みの家系図データは引き続き編集できます。
+                    </p>
                   )}
                 </div>
               </div>
@@ -161,13 +188,13 @@ export function KosekiFilesPanel({
                   size="sm"
                   variant="ghost"
                   className="h-7 px-2"
-                  title="ダウンロード"
-                  disabled={busyFileId === file.id}
+                  title={canOpen ? 'ダウンロード' : `保管期間（${KOSEKI_RETENTION_DAYS}日）を過ぎているため開けません`}
+                  disabled={busyFileId === file.id || !canOpen}
                   onClick={() => handleDownload(file)}
                 >
                   <Download className="w-3.5 h-3.5" />
                 </Button>
-                {canEdit && (
+                {canEdit && canOpen && (
                   <>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -212,7 +239,8 @@ export function KosekiFilesPanel({
                 )}
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

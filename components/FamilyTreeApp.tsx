@@ -38,6 +38,7 @@ import { SettingsDialog } from "./SettingsDialog"
 import { useFamilyData, SaveStatus } from "../hooks/useFamilyData"
 import { useZoomSettings } from "../hooks/useZoomSettings"
 import { useKosekiFiles } from "../hooks/useKosekiFiles"
+import { fetchOrgContext, OrgContext } from "../lib/db/org"
 import { useConfirm } from "../hooks/useConfirm"
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog"
 import { IssuesPanel } from "./IssuesPanel"
@@ -47,7 +48,7 @@ import { PdfExportOptions } from "../utils/pdfLayout"
 import { LAYOUT_CONFIG } from "../constants/config"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
-import { formatKazoeAge } from "../utils/age"
+import { formatKyonen } from "../utils/age"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -102,6 +103,17 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     redo,
     refreshData
   } = useFamilyData(projectId)
+
+  // ログイン中の利用者と役割（保管期間の判定・同時編集の表示に使う）
+  const [orgContext, setOrgContext] = useState<OrgContext | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchOrgContext()
+      .then(ctx => { if (!cancelled) setOrgContext(ctx) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+  const isAdmin = orgContext?.role === 'admin'
 
   // 案件情報（表示名と、メンバー操作に必要な組織ID）
   const [project, setProject] = useState<ProjectSummary | null>(null)
@@ -640,6 +652,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             files={kosekiFiles}
             isLoading={isLoadingKosekiFiles}
             canEdit={canEdit}
+            isAdmin={isAdmin}
             onRemove={removeKosekiFile}
             onRefresh={refreshKosekiFiles}
             onDataExtracted={handleKosekiDataExtracted}
@@ -839,11 +852,11 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                       </div>
                     </div>
 
-                    {formatKazoeAge(selectedPerson.birth?.date, selectedPerson.death?.date) && (
+                    {formatKyonen(selectedPerson.birth?.date, selectedPerson.death?.date) && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700">年齢（数え）</label>
+                        <label className="text-sm font-medium text-gray-700">享年</label>
                         <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
-                          {formatKazoeAge(selectedPerson.birth?.date, selectedPerson.death?.date)}
+                          {formatKyonen(selectedPerson.birth?.date, selectedPerson.death?.date)}
                         </div>
                       </div>
                     )}
