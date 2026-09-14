@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runKosekiAnalysis } from '@/lib/analysis'
+import { preprocessParts, resolvePreprocessMode } from '@/lib/analysis/preprocess'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { validateFileContent, isAllowedKosekiMimeType } from '@/lib/security/fileValidation'
 import { checkAnalysisRateLimit } from '@/lib/security/rateLimit'
@@ -206,7 +207,21 @@ export async function POST(request: NextRequest) {
       parts.push({ base64Data: fileBuffer.toString('base64'), mimeType })
     }
 
-    const result = await runKosekiAnalysis({ parts }, override)
+    // 読み取り前の画像処理（要件6章）。向きの正規化と縮小を既定で行う。
+    // 失敗しても元の画像で続行するため、ここで解析が止まることはない
+    const preprocessMode = resolvePreprocessMode(process.env.KOSEKI_IMAGE_PREPROCESS)
+    const processed = await preprocessParts(parts, preprocessMode)
+    const appliedSummary = processed
+      .map((part, index) => (part.applied.length > 0 ? `${index + 1}枚目=${part.applied.join('+')}` : null))
+      .filter(Boolean)
+    if (appliedSummary.length > 0) {
+      console.info(`戸籍解析の前処理（${preprocessMode}）: ${appliedSummary.join(' / ')}`)
+    }
+
+    const result = await runKosekiAnalysis(
+      { parts: processed.map(({ base64Data, mimeType }) => ({ base64Data, mimeType })) },
+      override
+    )
 
     // 解析結果をファイルの状態として保存する（一覧で成否・抽出件数・使用モデルを確認できるようにする）。
     // 束の全ファイルが1回の解析の対象なので、状態は束の全員に付ける

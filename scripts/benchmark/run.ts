@@ -6,6 +6,8 @@
 //   pnpm benchmark                              # testdata/ を全設定済みプロバイダで
 //   pnpm benchmark -- --dir testdata/basic      # 対象ディレクトリ指定
 //   pnpm benchmark -- --candidates gemini:gemini-3.1-pro,anthropic:claude-opus-5
+//   pnpm benchmark -- --preprocess off        # 読み取り前の画像処理を切り替えて比較
+//                                             #（off / basic / enhanced。既定は basic）
 //
 // テストデータ（機微情報）はリポジトリにコミットされない（.gitignore対象）。
 // ============================================================================
@@ -24,6 +26,7 @@ import {
   ProviderCandidate,
   TokenUsage,
 } from '../../lib/analysis/types'
+import { preprocessPart, resolvePreprocessMode, PreprocessMode } from '../../lib/analysis/preprocess'
 import { FamilyTreeData, isValidFamilyTreeData } from '../../utils/familyDataProcessor'
 import { scoreResult, matchPeople, formatPercent, BenchmarkScore } from './metrics'
 
@@ -101,13 +104,19 @@ function loadEnvLocal() {
   }
 }
 
-function parseArgs(argv: string[]): { dir: string; candidates: ProviderCandidate[] } {
+function parseArgs(argv: string[]): {
+  dir: string
+  candidates: ProviderCandidate[]
+  preprocess: PreprocessMode
+} {
   let dir = 'testdata'
   let candidatesArg: string | null = null
+  let preprocessArg: string | undefined
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--dir' && argv[i + 1]) dir = argv[++i]
     else if (argv[i] === '--candidates' && argv[i + 1]) candidatesArg = argv[++i]
+    else if (argv[i] === '--preprocess' && argv[i + 1]) preprocessArg = argv[++i]
   }
 
   let candidates: ProviderCandidate[]
@@ -136,7 +145,7 @@ function parseArgs(argv: string[]): { dir: string; candidates: ProviderCandidate
     return true
   })
 
-  return { dir, candidates }
+  return { dir, candidates, preprocess: resolvePreprocessMode(preprocessArg) }
 }
 
 function loadExpected(filePath: string): FamilyTreeData | null {
@@ -156,7 +165,7 @@ function displayName(p: { name: { surname: string; given_name: string } }): stri
 
 async function main() {
   loadEnvLocal()
-  const { dir, candidates } = parseArgs(process.argv.slice(2))
+  const { dir, candidates, preprocess } = parseArgs(process.argv.slice(2))
 
   if (candidates.length === 0) {
     console.error('実行できる候補がありません。GEMINI_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY のいずれかを .env.local に設定してください。')
@@ -180,13 +189,19 @@ async function main() {
   }
 
   console.log(`対象ファイル: ${files.length}件 / 候補モデル: ${candidates.map(c => `${c.provider}:${c.model}`).join(', ')}`)
+  console.log(`読み取り前の画像処理: ${preprocess}`)
   console.log('')
 
   const results: FileResult[] = []
 
   for (const file of files) {
     const mimeType = MIME_BY_EXT[path.extname(file).toLowerCase()]
-    const base64Data = fs.readFileSync(file).toString('base64')
+    const rawBase64 = fs.readFileSync(file).toString('base64')
+    // 本番と同じ前処理を通す。off / basic / enhanced を切り替えて効果を実測する
+    const part = await preprocessPart({ base64Data: rawBase64, mimeType }, preprocess)
+    if (part.applied.length > 0) {
+      console.log(`  前処理 ${path.basename(file)}: ${part.applied.join(' + ')}`)
+    }
     const expected = loadExpected(file)
 
     for (const candidate of candidates) {
@@ -196,7 +211,7 @@ async function main() {
 
       try {
         const { raw, usage } = await PROVIDERS[candidate.provider].analyze(
-          { parts: [{ base64Data, mimeType }] },
+          { parts: [{ base64Data: part.base64Data, mimeType: part.mimeType }] },
           candidate.model
         )
         const parsed = kosekiResultSchema.safeParse(raw)
@@ -255,6 +270,7 @@ async function main() {
   lines.push(`- 実行日時: ${new Date().toLocaleString('ja-JP')}`)
   lines.push(`- 対象: ${dir}（${files.length}ファイル）`)
   lines.push(`- 候補: ${candidates.map(c => `${c.provider}:${c.model}`).join(', ')}`)
+  lines.push(`- 読み取り前の画像処理: ${preprocess}`)
   lines.push('')
 
   lines.push('## ファイル別の結果')

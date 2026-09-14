@@ -3,6 +3,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // 読み取り前の画像処理に使うネイティブモジュール。バンドルせず実行時に読み込む
+  serverExternalPackages: ['sharp'],
   // 戸籍という機微情報を扱うため、防御的なセキュリティヘッダーを全レスポンスに付与する
   async headers() {
     return [
