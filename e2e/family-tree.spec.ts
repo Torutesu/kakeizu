@@ -199,3 +199,37 @@ test.describe('PDF書き出しの設定', () => {
     await expect(page.getByTestId('exported-options')).toHaveText('a3/portrait/tile')
   })
 })
+
+// 要件v1.1 4.5。他の利用者の「保存前の編集」がその場で見えること。
+// 表示の層でしか確かめられないため、E2Eで押さえる
+test.describe('同時編集の見え方', () => {
+  test('他の利用者が編集中の人物に、名前と色枠が出る', async ({ page }) => {
+    await expect(card(page, 'ko1').locator('text=さんが編集中')).toHaveCount(0)
+
+    await page.getByTestId('start-live-edit').click()
+
+    const mark = card(page, 'ko1').locator('text=花子さんが編集中')
+    await expect(mark).toBeVisible()
+    // 誰のものか分かるよう、利用者ごとの色で示す
+    await expect(mark).toHaveAttribute('style', /background-color/)
+  })
+
+  test('保存前でも、入力中の値がカードに反映される', async ({ page }) => {
+    await page.getByTestId('start-live-edit').click()
+
+    // 入力中の名前と生年が、保存を待たずに見える
+    await expect(card(page, 'ko1')).toContainText('阿吹 入力中')
+    await expect(card(page, 'ko1')).toContainText('1930')
+  })
+
+  test('編集が終わると、元の内容に戻る', async ({ page }) => {
+    await page.getByTestId('start-live-edit').click()
+    await expect(card(page, 'ko1')).toContainText('阿吹 入力中')
+
+    await page.getByTestId('end-live-edit').click()
+
+    // 下書きは保存されない。終われば元の値に戻る
+    await expect(card(page, 'ko1')).toContainText('阿吹 美則')
+    await expect(card(page, 'ko1').locator('text=さんが編集中')).toHaveCount(0)
+  })
+})

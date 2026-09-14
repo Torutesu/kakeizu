@@ -7,6 +7,7 @@ import { RegistriesPanel } from '@/components/RegistriesPanel'
 import { PdfExportDialog } from '@/components/PdfExportDialog'
 import { Button } from '@/components/ui/button'
 import { processFamilyData, FamilyTreeData, ProcessedPerson } from '@/utils/familyDataProcessor'
+import { LiveEdit } from '@/utils/liveEdits'
 
 // E2Eの固定データ。実際の戸籍解析で起きうる状況を意図的に含める:
 // - 正常な三世代（描画・関係線の基本）
@@ -100,6 +101,26 @@ export function E2EFixtureClient() {
   const [isReady, setIsReady] = useState(false)
   useEffect(() => setIsReady(true), [])
 
+  // 他の利用者の「保存前の編集」。実際はRealtimeで届くが、E2Eでは手元で起こして
+  // 表示の側だけを検証する（検出できていても画面に出ない、という不具合はここでしか防げない）
+  const [liveEdits, setLiveEdits] = useState<Map<string, LiveEdit>>(new Map())
+  const startLiveEdit = () =>
+    setLiveEdits(
+      new Map([
+        [
+          'ko1',
+          {
+            personId: 'ko1',
+            userId: 'other-user',
+            label: '花子',
+            draft: { givenName: '入力中', birthDate: '1930-03-03' },
+            position: { x: 1200, y: 700 },
+            at: Date.now(),
+          },
+        ],
+      ])
+    )
+
   return (
     <div className="w-screen h-screen flex" data-hydrated={isReady ? 'true' : undefined}>
       <div className="flex-1 relative">
@@ -109,6 +130,7 @@ export function E2EFixtureClient() {
           selectedPerson={selected}
           onPersonSelect={setSelected}
           focusPerson={focus}
+          liveEdits={liveEdits}
         />
       </div>
       <aside className="w-80 border-l border-gray-200 bg-white overflow-y-auto" data-testid="sidebar">
@@ -127,9 +149,20 @@ export function E2EFixtureClient() {
             setFocus({ id: person.id, requestId: next })
           }}
         />
-        <div className="px-6 py-3">
+        <div className="px-6 py-3 flex flex-wrap gap-2">
           <Button size="sm" onClick={() => setIsPdfOpen(true)}>
             PDF書き出し
+          </Button>
+          <Button size="sm" variant="outline" data-testid="start-live-edit" onClick={startLiveEdit}>
+            他の利用者の編集を開始
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="end-live-edit"
+            onClick={() => setLiveEdits(new Map())}
+          >
+            他の利用者の編集を終了
           </Button>
         </div>
         <div className="px-6 pb-3 text-xs text-gray-500" data-testid="exported-options">
