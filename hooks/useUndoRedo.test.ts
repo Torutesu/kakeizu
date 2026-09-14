@@ -71,3 +71,25 @@ describe('useUndoRedo', () => {
     expect(result.current.canUndo).toBe(false)
   })
 })
+
+describe('rebaseHistory', () => {
+  it('履歴上のすべての地点に同じ変換をかける', () => {
+    const { result } = renderHook(() => useUndoRedo({ value: 0, shared: '' }))
+
+    act(() => { result.current.pushState({ value: 1, shared: '' }, '1へ') })
+    act(() => { result.current.pushState({ value: 2, shared: '' }, '2へ') })
+
+    // 他の利用者の変更（shared）を、過去の地点にも重ねる
+    act(() => {
+      result.current.rebaseHistory(state => ({ ...state, shared: '相手の変更' }))
+    })
+
+    expect(result.current.currentState).toEqual({ value: 2, shared: '相手の変更' })
+
+    // アンドゥで戻るのは自分の操作（value）だけで、相手の変更は残る
+    act(() => { result.current.undo() })
+    expect(result.current.currentState).toEqual({ value: 1, shared: '相手の変更' })
+    act(() => { result.current.undo() })
+    expect(result.current.currentState).toEqual({ value: 0, shared: '相手の変更' })
+  })
+})

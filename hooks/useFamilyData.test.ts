@@ -175,6 +175,36 @@ describe('useFamilyData', () => {
     expect(ids).toEqual(['other', 'p1'])
   })
 
+  it('他の利用者の変更を取り込んだあとにアンドゥしても、相手の変更は消えない', async () => {
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+
+    const onRemoteSave = mockedSubscribe.mock.calls[0][1]
+    act(() => {
+      onRemoteSave({
+        data: {
+          people: [
+            {
+              id: 'other',
+              generation: 1,
+              sex: null,
+              name: { surname: '相手', given_name: 'が追加' },
+              birth: { original_date: null, date: null, place: null },
+              death: { original_date: null, date: null, place: null },
+            },
+          ],
+          families: [],
+        },
+        version: 5,
+      })
+    })
+
+    // アンドゥで戻るのは自分の操作だけ。相手が追加した人物は残る
+    act(() => { result.current.undo() })
+    expect(result.current.persons.map(p => p.id)).toEqual(['other'])
+  })
+
   it('編集権限がない場合は自動保存しない', async () => {
     mockedCanEdit.mockResolvedValue(false)
     const result = await setupHook()

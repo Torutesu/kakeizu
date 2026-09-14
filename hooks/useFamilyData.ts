@@ -114,6 +114,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     canRedo,
     pushState,
     resetHistory,
+    rebaseHistory,
     undo: undoState,
     redo: redoState,
   } = useUndoRedo<FamilyDataState>({ persons: [], families: [] })
@@ -167,21 +168,44 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     loadData()
   }, [loadData])
 
+  /** FamilyTreeData を画面の状態へ変換する */
+  const toState = useCallback((data: FamilyTreeData): FamilyDataState => {
+    const processed = processFamilyData(data)
+    return {
+      persons: processed.persons,
+      families: processed.families,
+      issues: processed.issues,
+      crossCheckIssues: data.crossCheckIssues,
+      registries: data.registries,
+    }
+  }, [])
+
+  /** 画面の状態を FamilyTreeData に戻す */
+  const fromState = useCallback((state: FamilyDataState): FamilyTreeData => {
+    return toFamilyTreeData(
+      state.persons,
+      state.families,
+      state.crossCheckIssues,
+      state.registries
+    )
+  }, [])
+
   // サーバー側の内容で画面を置き換える。アンドゥ履歴には1件として積む
   // （履歴を消すと、取り込み直前の状態へ戻れなくなる）
   const applyServerData = useCallback((data: FamilyTreeData, label: string) => {
-    const processed = processFamilyData(data)
-    pushState(
-      {
-        persons: processed.persons,
-        families: processed.families,
-        issues: processed.issues,
-        crossCheckIssues: data.crossCheckIssues,
-        registries: data.registries,
-      },
-      label
-    )
-  }, [pushState])
+    pushState(toState(data), label)
+  }, [pushState, toState])
+
+  /**
+   * 他の利用者の変更を取り込む。
+   *
+   * **現在の状態だけでなく、アンドゥ履歴のすべての地点にも重ねる。**
+   * 現在の状態にしか反映しないと、アンドゥしたときに相手の変更まで巻き戻り、
+   * それがそのまま保存されてしまう（相手の作業を消すことになる）。
+   */
+  const applyRemoteChange = useCallback((remote: FamilyTreeData, baseline: FamilyTreeData) => {
+    rebaseHistory(state => toState(mergeTreeChanges(baseline, fromState(state), remote)))
+  }, [rebaseHistory, toState, fromState])
 
   // 保存。保存中に加えた変更を取りこぼさないよう、実行時点の最新stateから組み立てる
   const persistRef = useRef<() => Promise<void>>(async () => {})
@@ -251,22 +275,14 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       // 自分の保存が返ってきた場合は何もしない（版数が進んでいないもの）
       if (remote.version <= versionRef.current) return
 
-      const state = currentStateRef.current
-      const local = toFamilyTreeData(
-        state.persons,
-        state.families,
-        state.crossCheckIssues,
-        state.registries
-      )
       // 相手の内容に、自分のまだ保存されていない変更を重ねる。
       // 相手の保存で自分の編集中の内容が消えないようにするため
-      const merged = mergeTreeChanges(baselineRef.current, local, remote.data)
-
+      const baseline = baselineRef.current
       baselineRef.current = remote.data
       versionRef.current = remote.version
-      applyServerData(merged, '他の利用者の変更を反映')
+      applyRemoteChange(remote.data, baseline)
     })
-  }, [projectId, isLoading, applyServerData])
+  }, [projectId, isLoading, applyRemoteChange])
 
   // 人物追加
   const addPerson = useCallback((personData: Partial<ProcessedPerson>) => {

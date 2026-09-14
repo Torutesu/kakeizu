@@ -58,7 +58,9 @@ export function PersonEditDialog({
     generation: 1,
   })
 
-  // 人物データが変更されたらフォームを更新
+  // 別の人物を開いたとき、または開き直したときだけフォームを作り直す。
+  // person オブジェクトの入れ替わり（他の利用者の保存を取り込んだ場合など）で
+  // 作り直すと、**入力中の内容が消える**
   useEffect(() => {
     if (person) {
       setFormData({
@@ -72,7 +74,8 @@ export function PersonEditDialog({
         generation: person.generation || 1,
       })
     }
-  }, [person])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [person?.id, isOpen])
 
   const handleSave = () => {
     if (!person) return

@@ -13,6 +13,8 @@ interface UseUndoRedoReturn<T> {
   pushState: (state: T, action: string) => void
   // 履歴を破棄して新しい起点状態に置き換える（初期データ読み込み用。この状態より前へはアンドゥできない）
   resetHistory: (state: T, action?: string) => void
+  // 履歴のすべての地点に同じ変換をかける（他の利用者の変更を取り込むときに使う）
+  rebaseHistory: (transform: (state: T) => T) => void
   undo: () => T | null
   redo: () => T | null
 }
@@ -87,6 +89,20 @@ export function useUndoRedo<T>(
     return history[currentIndex + 1]?.data ?? null
   }, [canRedo, currentIndex, history])
 
+  /**
+   * 履歴上のすべての地点に同じ変換をかける。
+   *
+   * 他の利用者の変更を受け取ったとき、現在の状態にだけ反映して履歴を放っておくと、
+   * **アンドゥで相手の変更まで巻き戻ってしまう**（そしてそれが保存される）。
+   * 過去の各地点にも同じ変更を重ねておけば、アンドゥは自分の操作だけを戻す。
+   */
+  const rebaseHistory = useCallback((transform: (state: T) => T) => {
+    setUndoRedoState(prev => ({
+      ...prev,
+      history: prev.history.map(entry => ({ ...entry, data: transform(entry.data) })),
+    }))
+  }, [])
+
   const resetHistory = useCallback((state: T, action: string = 'reset') => {
     setUndoRedoState({
       history: [{ data: state, action, timestamp: Date.now() }],
@@ -100,6 +116,7 @@ export function useUndoRedo<T>(
     canRedo,
     pushState,
     resetHistory,
+    rebaseHistory,
     undo,
     redo
   }
