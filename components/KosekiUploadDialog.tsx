@@ -234,7 +234,7 @@ export function KosekiUploadDialog({
           </DialogTitle>
           <DialogDescription>
             戸籍謄本のPDF・画像をまとめて取り込み、家系図データを自動抽出します。
-            続けて並んだ画像は1通の戸籍として通しで読み取り、PDFは1件ずつ読み取ります。
+            続けて並んだ画像はまとめて通しで読み取り、PDFは1件ずつ読み取ります。
             複数の書類に登場する同一人物は自動的に1人に統合されます。
             ファイルは案件に紐づけて保存され、解析のためGoogle Gemini APIに送信されます。
           </DialogDescription>
@@ -270,8 +270,8 @@ export function KosekiUploadDialog({
           {queue.length > 1 && (
             <p className="text-xs text-gray-600">
               {documentCount === 1
-                ? `${queue.length}枚を1通の戸籍として通しで読み取ります。`
-                : `${documentCount}通として読み取ります（続けて並んだ画像は1通、PDFは1件ずつ）。`}
+                ? `${queue.length}枚をまとめて通しで読み取ります。`
+                : `${documentCount}回に分けて読み取ります（続けて並んだ画像はまとめて、PDFは1件ずつ）。`}
               　並び順がそのままページ順になります。
             </p>
           )}
