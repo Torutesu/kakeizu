@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "benchmark": "tsx scripts/benchmark/run.ts",
+    "qa:fixtures": "node scripts/qa-fixtures.mjs",
     "db:bundle": "bash scripts/bundle-sql.sh",
     "provision": "node scripts/provision.mjs",
     "e2e": "playwright test",

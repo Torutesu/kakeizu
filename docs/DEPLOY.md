@@ -118,10 +118,11 @@ service_roleキーはSupabase APIから自動取得してVercelに設定しま�
 - [ ] Authentication → Providers で Google が無効であることを確認
 - [ ] 作業者アカウントで、担当外の案件が一覧に出ないことを確認
       （既定は `assigned_only`。全案件を共有する場合のみ設定で明示的に変更する）
-- [ ] 2つのブラウザで同じ案件を開き、片方の編集がもう片方に反映されること、
-      ヘッダーに相手が表示されることを確認（Realtimeの設定確認を兼ねる）
-- [ ] 戸籍の保管期間（作業者は取り込みから30日）で原本が開けなくなること。
-      日数は `koseki_retention_days()` の1か所で変えられる
+- [ ] `/api/health` の `realtimeEnabled` が true（同時編集の配信。
+      無効でも保存は動くため気づきにくい）
+- [ ] **[docs/QA_CHECKLIST.md](./QA_CHECKLIST.md) を通しで実施**（同時編集・オフライン・
+      保管期間など、動かさないと確認できない項目。40〜60分）。
+      保管期間は `pnpm qa:fixtures expire <ファイルid>` で30日待たずに再現できる
 
 ## ブランチ運用について
 

@@ -5,6 +5,9 @@
 
 **確認日:** 2026-09-14　**対象:** ブランチ `claude/charming-dijkstra-rdoe0o`
 
+**動かさないと確認できない項目は [docs/QA_CHECKLIST.md](./QA_CHECKLIST.md)。**
+同時編集・オフライン・戸籍の保管期間など、実機で1つずつ確かめる手順を並べてある。
+
 **自動で確認できる範囲:** `pnpm typecheck` / `pnpm lint` / `pnpm test`（239件）/
 `pnpm verify:db`（RLS 16件）/ `pnpm e2e`（34件）/ `pnpm build`。CIで同じものが走る。
 

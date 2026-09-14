@@ -70,6 +70,15 @@ pnpm lint        # ESLint
 
 GitHub Actions（`.github/workflows/ci.yml`）でも同じチェックがPR/pushごとに実行されます。
 
+動かさないと確認できない項目（同時編集・オフライン・戸籍の保管期間）は
+**[docs/QA_CHECKLIST.md](./docs/QA_CHECKLIST.md)** の手順で実機確認します。
+保管期間は30日待たずに再現できます。
+
+```bash
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... pnpm qa:fixtures list
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... pnpm qa:fixtures expire <ファイルid>
+```
+
 ### 6. 解析モデルのベンチマーク（実データでの精度比較）
 
 ```bash
