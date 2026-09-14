@@ -42,7 +42,7 @@ import { useZoomSettings } from "../hooks/useZoomSettings"
 import { useKosekiFiles } from "../hooks/useKosekiFiles"
 import { KosekiFile, createKosekiFileUrl, canOpenKosekiFile } from "../lib/db/kosekiFiles"
 import { fetchOrgContext, OrgContext } from "../lib/db/org"
-import { useProjectPresence } from "../hooks/useProjectPresence"
+import { useProjectCollaboration } from "../hooks/useProjectCollaboration"
 import { useConfirm } from "../hooks/useConfirm"
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog"
 import { IssuesPanel } from "./IssuesPanel"
@@ -64,6 +64,7 @@ import { UI_CONFIG } from "../constants/config"
 const SAVE_STATUS_LABELS: Record<SaveStatus, string> = {
   saved: '保存済み',
   saving: '保存中...',
+  offline: 'オフライン（未送信）',
   error: '保存エラー',
 }
 
@@ -153,17 +154,35 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     }
   }, [saveStatus])
 
-  // いま同じ案件を開いている利用者（要件v1.1 4.5）
-  const otherEditors = useProjectPresence(
-    projectId,
-    orgContext
-      ? {
-          userId: orgContext.userId,
-          label: orgContext.email.split('@')[0] || orgContext.email,
-          canEdit,
-        }
-      : null
+  // いま同じ案件を開いている利用者と、保存前の編集のやり取り（要件v1.1 4.5）
+  const collaborator = useMemo(
+    () =>
+      orgContext
+        ? {
+            userId: orgContext.userId,
+            label: orgContext.email.split('@')[0] || orgContext.email,
+            canEdit,
+          }
+        : null,
+    [orgContext, canEdit]
   )
+  const {
+    editors: otherEditors,
+    liveEdits,
+    publishLiveEdit,
+    finishLiveEdit,
+    setEditingPersonId,
+  } = useProjectCollaboration(projectId, collaborator)
+
+  // ドラッグ中の位置を流す（離したら消す）
+  const handleLiveMove = useCallback(
+    (personId: string, position: { x: number; y: number } | null) => {
+      if (position) publishLiveEdit(personId, { position })
+      else finishLiveEdit(personId)
+    },
+    [publishLiveEdit, finishLiveEdit]
+  )
+
 
   // ズーム・ピンチ感度の設定
   const {
@@ -211,6 +230,16 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   const [isKosekiUploadOpen, setIsKosekiUploadOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false)
+
+  // 編集ダイアログの開閉を、他の利用者へ知らせる
+  useEffect(() => {
+    if (!isPersonEditOpen || !selectedPersonId) {
+      setEditingPersonId(null)
+      return
+    }
+    setEditingPersonId(selectedPersonId)
+    return () => setEditingPersonId(null)
+  }, [isPersonEditOpen, selectedPersonId, setEditingPersonId])
   const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false)
   const [isMergePersonsOpen, setIsMergePersonsOpen] = useState(false)
 
@@ -535,11 +564,22 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                 再読み込み
               </Button>
             )}
+            {saveStatus === 'offline' && (
+              <span className="text-sm text-amber-700 whitespace-nowrap" title="通信が戻ると自動で送信します">
+                未保存の変更を端末に保持しています
+              </span>
+            )}
             {otherEditors.length > 0 && (
               <span
                 className="flex items-center gap-1 text-sm text-gray-500 whitespace-nowrap"
                 title={otherEditors
-                  .map(editor => `${editor.label}（${editor.canEdit ? '編集中' : '閲覧のみ'}）`)
+                  .map(editor => {
+                    const target = editor.editingPersonId
+                      ? persons.find(person => person.id === editor.editingPersonId)?.displayName
+                      : null
+                    if (target) return `${editor.label}（${target} を編集中）`
+                    return `${editor.label}（${editor.canEdit ? '編集できます' : '閲覧のみ'}）`
+                  })
                   .join('\n')}
               >
                 <Users className="w-4 h-4 text-blue-500" />
@@ -727,6 +767,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             selectedPerson={selectedPerson}
             onPersonSelect={handlePersonSelect}
             onPersonEdit={canEdit ? handlePersonEdit : undefined}
+            liveEdits={liveEdits}
+            onLiveMove={canEdit ? handleLiveMove : undefined}
             onPersonPositionUpdate={handlePersonPositionUpdate}
             focusPerson={focusPerson}
             zoomSettings={zoomSettings}
@@ -1016,12 +1058,21 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
       />
 
       <PersonEditDialog
+        onLiveDraft={canEdit ? (personId, draft) => publishLiveEdit(personId, { draft }) : undefined}
+        editingBy={
+          otherEditors.find(editor => editor.editingPersonId === selectedPersonId)?.label ?? null
+        }
         person={selectedPerson}
         isOpen={isPersonEditOpen}
-        onClose={() => setIsPersonEditOpen(false)}
+        onClose={() => {
+          // 開いたまま流していた下書きを消す（閉じたのに相手の画面に残らないように）
+          if (selectedPersonId) finishLiveEdit(selectedPersonId)
+          setIsPersonEditOpen(false)
+        }}
         onSave={(personId, updates) => {
           // selectedPersonはpersonsから導出しているため、更新すれば表示も自動で追従する
           updatePerson(personId, updates)
+          finishLiveEdit(personId)
         }}
         availablePersons={persons}
       />

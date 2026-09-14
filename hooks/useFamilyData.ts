@@ -12,15 +12,28 @@ import { useUndoRedo } from './useUndoRedo'
 import { mergeFamilyTreeData } from '../utils/mergeFamilyData'
 import { ConsistencyIssue } from '../utils/consistency'
 import type { RegistryData } from '../utils/familyDataProcessor'
+import { getSupabaseBrowserClient } from '../lib/supabase/client'
 import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
 import { subscribeTreeRevision } from '../lib/db/treeRealtime'
 import { fetchCanEditProject } from '../lib/db/projects'
-import { mergeTreeChanges, hasNoChanges } from '../utils/mergeTreeChanges'
+import {
+  mergeTreeChanges,
+  hasNoChanges,
+  computeTreeDelta,
+  applyTreeDelta,
+  hasDelta,
+} from '../utils/mergeTreeChanges'
+import {
+  loadOfflineDraft,
+  saveOfflineDraft,
+  clearOfflineDraft,
+} from '../lib/offlineDraft'
 import { mergePersonsInState, findMergeCandidates, MergeCandidate } from '../utils/mergePersons'
 
 // 保存の状態。要件v1.1 4.5で「最新の保存を正とする」となったため、
-// 競合で保存を止める状態は無くなった（同じ箇所は後から保存した側が勝つ）
-export type SaveStatus = 'saved' | 'saving' | 'error'
+// 競合で保存を止める状態は無くなった（同じ箇所は後から保存した側が勝つ）。
+// offline は「送れていないが、変更は端末に持ち越してある」状態
+export type SaveStatus = 'saved' | 'saving' | 'offline' | 'error'
 
 const AUTOSAVE_DEBOUNCE_MS = 800
 
@@ -49,6 +62,8 @@ interface UseFamilyDataReturn {
   error: string | null
   saveStatus: SaveStatus
   canEdit: boolean
+  /** 端末に持ち越した未保存の変更を復元したか（画面で知らせるために使う） */
+  restoredOfflineDraft: boolean
 
   // 操作
   addPerson: (personData: Partial<ProcessedPerson>) => void
@@ -98,6 +113,9 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   const [error, setError] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved')
   const [canEdit, setCanEdit] = useState(false)
+  const [restoredOfflineDraft, setRestoredOfflineDraft] = useState(false)
+  // 持ち越しの保存先を利用者ごとに分ける（共用PCで他人の未保存分を拾わないため）
+  const userIdRef = useRef<string | null>(null)
 
   // サーバー上のバージョン。保存成功・他の人の保存の受信のたびに進める
   const versionRef = useRef(0)
@@ -134,24 +152,41 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       setIsLoading(true)
       setError(null)
 
-      const [revision, editable] = await Promise.all([
+      const supabase = getSupabaseBrowserClient()
+      const [revision, editable, auth] = await Promise.all([
         loadTreeRevision(projectId),
         fetchCanEditProject(projectId),
+        supabase.auth.getUser(),
       ])
-      const processed = processFamilyData(revision.data)
-
+      const userId = auth.data.user?.id ?? null
+      userIdRef.current = userId
       versionRef.current = revision.version
       baselineRef.current = revision.data
       setCanEdit(editable)
-      setSaveStatus('saved')
+
+      // オフライン中に加えた変更が端末に残っていれば、いまのサーバーの内容へ重ね直す。
+      // まるごとではなく「何を変えたか」だけを持ち越しているため、
+      // その間に他の人が入れた変更は失われない
+      let restored = revision.data
+      let hasPending = false
+      const draft = userId ? loadOfflineDraft(projectId, userId) : null
+      if (draft && hasDelta(draft.delta)) {
+        restored = applyTreeDelta(revision.data, draft.delta)
+        hasPending = true
+      }
+
+      setSaveStatus(hasPending ? 'offline' : 'saved')
+      setRestoredOfflineDraft(hasPending)
+
+      const processed = processFamilyData(restored)
       // 読み込んだ状態をアンドゥ履歴の起点にする（空の状態までアンドゥで戻れないようにする）
       resetHistory(
         {
           persons: processed.persons,
           families: processed.families,
           issues: processed.issues,
-          crossCheckIssues: revision.data.crossCheckIssues,
-          registries: revision.data.registries,
+          crossCheckIssues: restored.crossCheckIssues,
+          registries: restored.registries,
         },
         'データ読み込み'
       )
@@ -217,8 +252,27 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       state.crossCheckIssues,
       state.registries
     )
+    const userId = userIdRef.current
     if (hasNoChanges(baselineRef.current, local)) {
+      if (userId) clearOfflineDraft(projectId, userId)
       setSaveStatus('saved')
+      setRestoredOfflineDraft(false)
+      return
+    }
+
+    // 送る前に端末へ持ち越す。送信中にタブを閉じても・通信が切れても変更が残る
+    const delta = computeTreeDelta(baselineRef.current, local)
+    if (userId) {
+      saveOfflineDraft(projectId, userId, {
+        baselineVersion: versionRef.current,
+        delta,
+        savedAt: new Date().toISOString(),
+      })
+    }
+
+    // つながっていないと分かっているなら、送らずに持ち越しだけで済ませる
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setSaveStatus('offline')
       return
     }
 
@@ -233,7 +287,9 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       if (result.ok) {
         versionRef.current = result.version
         baselineRef.current = result.data
+        if (userId) clearOfflineDraft(projectId, userId)
         setSaveStatus('saved')
+        setRestoredOfflineDraft(false)
         // 保存の直前に他の人の変更が入っていた場合、実際に保存された内容は
         // 手元と違う。画面を合わせないと、消えたはずの人物が残って見える
         if (result.mergedRemoteChanges) applyServerData(result.data, '他の利用者の変更を取り込み')
@@ -242,10 +298,20 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
         setSaveStatus('error')
       }
     } catch (err) {
-      console.error('保存に失敗:', err)
-      setSaveStatus('error')
+      // 通信が切れている場合は異常ではない。持ち越して、つながったら送る
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      if (!offline) console.error('保存に失敗:', err)
+      setSaveStatus(offline ? 'offline' : 'error')
     }
   }
+
+  // つながったら、持ち越していた変更を送る
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleOnline = () => { void persistRef.current() }
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [])
 
   // 自動保存（デバウンス付き）
   const isFirstRenderRef = useRef(true)
@@ -513,6 +579,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     error,
     saveStatus,
     canEdit,
+    restoredOfflineDraft,
     addPerson,
     updatePerson,
     deletePerson,

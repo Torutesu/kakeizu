@@ -15,6 +15,12 @@ vi.mock('../lib/db/projects', () => ({
 vi.mock('../lib/db/treeRealtime', () => ({
   subscribeTreeRevision: vi.fn(() => () => {}),
 }))
+// 未保存分の持ち越しを利用者ごとに分けるため、フックはログイン中のidを見る
+vi.mock('../lib/supabase/client', () => ({
+  getSupabaseBrowserClient: () => ({
+    auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
+  }),
+}))
 
 import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
 import { fetchCanEditProject } from '../lib/db/projects'
@@ -36,6 +42,9 @@ async function setupHook() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // 未保存分の持ち越しは端末に残るため、テスト間で引き継がないよう消す
+  // （消さないと、前のテストで加えた人物が次のテストで復元される）
+  localStorage.clear()
   mockedLoad.mockResolvedValue({ data: emptyData, version: 0 })
   mockedSave.mockResolvedValue({
     ok: true,
@@ -173,6 +182,40 @@ describe('useFamilyData', () => {
 
     const ids = result.current.persons.map(p => p.id).sort()
     expect(ids).toEqual(['other', 'p1'])
+  })
+
+  it('オフラインでは送らずに端末へ持ち越し、つながったら送る', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get')
+    onLine.mockReturnValue(false)
+
+    const result = await setupHook()
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+
+    await waitFor(() => expect(result.current.saveStatus).toBe('offline'), { timeout: 3000 })
+    expect(mockedSave).not.toHaveBeenCalled()
+
+    // 通信が戻ったら、持ち越していた変更を送る
+    onLine.mockReturnValue(true)
+    act(() => { window.dispatchEvent(new Event('online')) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
+
+    onLine.mockRestore()
+  })
+
+  it('オフラインで加えた変更は、開き直しても復元される', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get')
+    onLine.mockReturnValue(false)
+
+    const first = await setupHook()
+    act(() => { first.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(first.current.saveStatus).toBe('offline'), { timeout: 3000 })
+
+    // 同じ案件を開き直す（サーバーの内容は空のまま）
+    const second = await setupHook()
+    expect(second.current.persons.map(p => p.id)).toEqual(['p1'])
+    expect(second.current.restoredOfflineDraft).toBe(true)
+
+    onLine.mockRestore()
   })
 
   it('他の利用者の変更を取り込んだあとにアンドゥしても、相手の変更は消えない', async () => {

@@ -1,5 +1,6 @@
 import { getSupabaseBrowserClient } from '../supabase/client'
 import { OrgRole, WorkerAccessMode } from '../auth/permissions'
+import { clearAllOfflineDrafts } from '../offlineDraft'
 
 export interface OrgContext {
   userId: string
@@ -64,5 +65,7 @@ export async function updateWorkerAccessMode(
 
 export async function signOut(): Promise<void> {
   const supabase = getSupabaseBrowserClient()
+  // 未送信の変更を端末に残したままにしない（戸籍の個人情報を必要のない間置かない）
+  clearAllOfflineDrafts()
   await supabase.auth.signOut()
 }

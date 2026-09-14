@@ -9,6 +9,7 @@ import {
   UnreadableField,
   UNREADABLE_FIELD_LABELS,
 } from '../utils/familyDataProcessor'
+import { LiveEditDraft } from '../utils/liveEdits'
 
 /**
  * 戸籍の原文表記と、読み取りに失敗した旨を項目の下に添える（要件v1.1 4.4）。
@@ -38,6 +39,10 @@ interface PersonEditDialogProps {
   onClose: () => void
   onSave: (personId: string, updates: Partial<ProcessedPerson>) => void
   availablePersons: ProcessedPerson[]
+  /** 入力中の値をその場で他の利用者へ流す（保存はしない） */
+  onLiveDraft?: (personId: string, draft: LiveEditDraft) => void
+  /** いま他の利用者がこの人物を編集中なら、その名前 */
+  editingBy?: string | null
 }
 
 export function PersonEditDialog({
@@ -45,7 +50,9 @@ export function PersonEditDialog({
   isOpen,
   onClose,
   onSave,
-  availablePersons
+  availablePersons,
+  onLiveDraft,
+  editingBy
 }: PersonEditDialogProps) {
   const [formData, setFormData] = useState({
     surname: '',
@@ -76,6 +83,23 @@ export function PersonEditDialog({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [person?.id, isOpen])
+
+  // 入力のたびに下書きを流す。表計算ソフトのように、相手の画面でその場で変わる
+  const update = (changes: Partial<typeof formData>) => {
+    setFormData(prev => {
+      const next = { ...prev, ...changes }
+      if (person) {
+        onLiveDraft?.(person.id, {
+          surname: next.surname,
+          givenName: next.givenName,
+          sex: next.sex,
+          birthDate: next.birthDate || null,
+          deathDate: next.deathDate || null,
+        })
+      }
+      return next
+    })
+  }
 
   const handleSave = () => {
     if (!person) return
@@ -131,6 +155,15 @@ export function PersonEditDialog({
         </DialogHeader>
 
         <div className="space-y-6 py-4">
+          {editingBy && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-sm text-amber-800">
+                いま <strong>{editingBy}さん</strong> も同じ人物を開いています。
+                同じ項目を直した場合は、あとから保存したほうが残ります。
+              </p>
+            </div>
+          )}
+
           {person.unreadable && person.unreadable.length > 0 && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
               <p className="text-sm text-red-700 font-medium">
@@ -153,7 +186,7 @@ export function PersonEditDialog({
                 <Input
                   id="surname"
                   value={formData.surname}
-                  onChange={(e) => setFormData(prev => ({ ...prev, surname: e.target.value }))}
+                  onChange={(e) => update({ surname: e.target.value })}
                   placeholder="田中"
                 />
               </div>
@@ -162,7 +195,7 @@ export function PersonEditDialog({
                 <Input
                   id="givenName"
                   value={formData.givenName}
-                  onChange={(e) => setFormData(prev => ({ ...prev, givenName: e.target.value }))}
+                  onChange={(e) => update({ givenName: e.target.value })}
                   placeholder="太郎"
                 />
               </div>
@@ -177,7 +210,7 @@ export function PersonEditDialog({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="sex">性別</Label>
-                <Select value={formData.sex} onValueChange={(value: 'male' | 'female') => setFormData(prev => ({ ...prev, sex: value }))}>
+                <Select value={formData.sex} onValueChange={(value: 'male' | 'female') => update({ sex: value })}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -212,7 +245,7 @@ export function PersonEditDialog({
                   id="birthDate"
                   type="text"
                   value={formData.birthDate}
-                  onChange={(e) => setFormData(prev => ({ ...prev, birthDate: e.target.value }))}
+                  onChange={(e) => update({ birthDate: e.target.value })}
                   placeholder="1990-05-17"
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -228,7 +261,7 @@ export function PersonEditDialog({
                 <Input
                   id="birthPlace"
                   value={formData.birthPlace}
-                  onChange={(e) => setFormData(prev => ({ ...prev, birthPlace: e.target.value }))}
+                  onChange={(e) => update({ birthPlace: e.target.value })}
                   placeholder="東京都"
                 />
                 <FieldNote unreadable={person?.unreadable?.includes('birth_place')} />
@@ -247,7 +280,7 @@ export function PersonEditDialog({
                   id="deathDate"
                   type="text"
                   value={formData.deathDate}
-                  onChange={(e) => setFormData(prev => ({ ...prev, deathDate: e.target.value }))}
+                  onChange={(e) => update({ deathDate: e.target.value })}
                   placeholder="2020-12-03"
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -263,7 +296,7 @@ export function PersonEditDialog({
                 <Input
                   id="deathPlace"
                   value={formData.deathPlace}
-                  onChange={(e) => setFormData(prev => ({ ...prev, deathPlace: e.target.value }))}
+                  onChange={(e) => update({ deathPlace: e.target.value })}
                   placeholder="東京都"
                 />
                 <FieldNote unreadable={person?.unreadable?.includes('death_place')} />

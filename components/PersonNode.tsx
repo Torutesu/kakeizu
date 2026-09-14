@@ -9,8 +9,16 @@ import { useCallback, useMemo, useRef } from 'react'
 /** 選択中の人物との関係。無関係な人物を控えめに表示するために使う */
 export type RelationEmphasis = 'selected' | 'related' | 'unrelated' | 'none'
 
+/** いまこの人物を編集している他の利用者 */
+export interface PersonEditorMark {
+  label: string
+  color: string
+}
+
 interface PersonNodeProps {
   person: ProcessedPerson
+  /** 他の利用者が編集中なら、その人の色と名前を出す */
+  editor?: PersonEditorMark
   isSelected?: boolean
   isDragging?: boolean
   /** 選択中の人物との関係（noneなら強調も減光もしない） */
@@ -29,6 +37,7 @@ const ACCENT_COLORS: Record<string, string> = {
 
 export function PersonNode({
   person,
+  editor,
   isSelected = false,
   isDragging = false,
   emphasis = 'none',
@@ -90,6 +99,15 @@ export function PersonNode({
       data-person-card
       data-person-id={person.id}
     >
+      {/* 他の利用者が編集中であることを、その人の色で示す */}
+      {editor && (
+        <div
+          className="absolute -top-5 left-0 text-[10px] leading-none px-1.5 py-1 rounded whitespace-nowrap text-white z-10"
+          style={{ backgroundColor: editor.color }}
+        >
+          {editor.label}さんが編集中
+        </div>
+      )}
       <div
         className={`relative rounded-lg border bg-white overflow-hidden transition-shadow duration-150 ${
           person.isUncertain
@@ -107,6 +125,8 @@ export function PersonNode({
         style={{
           width: LAYOUT_CONFIG.cardWidth,
           height: LAYOUT_CONFIG.cardHeight,
+          // 編集中の人の色で縁取る（誰が触っているか一目で分かるように）
+          ...(editor ? { boxShadow: `0 0 0 2px ${editor.color}` } : {}),
         }}
       >
         {/* 性別アクセントバー */}

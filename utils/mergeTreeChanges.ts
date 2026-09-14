@@ -83,33 +83,79 @@ export function mergeTreeChanges(
   local: FamilyTreeData,
   remote: FamilyTreeData
 ): FamilyTreeData {
+  return applyTreeDelta(remote, computeTreeDelta(baseline, local))
+}
+
+// ============================================================================
+// 変更そのものを取り出す（オフラインでの持ち越しに使う）。
+//
+// 手元の内容をまるごと保存しておくと、復帰したときにサーバーがどこまで進んだか
+// 分からず、自分が触っていない箇所まで古い値で上書きしてしまう。
+// **「自分が何を変えたか」だけを持ち越せば**、復帰時にその時点のサーバーへ
+// 重ね直せる。保存する量も小さくなる（機微情報を端末に残す量を減らせる）。
+// ============================================================================
+
+export interface TreeDelta {
+  people: { changed: PersonData[]; deletedIds: string[] }
+  families: { changed: FamilyData[]; deletedIds: string[] }
+  registries: { changed: RegistryData[]; deletedIds: string[] }
+  crossCheckIssues?: ConsistencyIssue[] | null
+}
+
+/** baseline から local への変更を取り出す */
+export function computeTreeDelta(baseline: FamilyTreeData, local: FamilyTreeData): TreeDelta {
   const people = diff<PersonData>(baseline.people ?? [], local.people ?? [])
   const families = diff<FamilyData>(baseline.families ?? [], local.families ?? [])
   const registries = diff<RegistryData>(baseline.registries ?? [], local.registries ?? [])
 
+  const issuesChanged =
+    JSON.stringify(local.crossCheckIssues ?? null) !==
+    JSON.stringify(baseline.crossCheckIssues ?? null)
+
+  return {
+    people: { changed: people.changed, deletedIds: [...people.deletedIds] },
+    families: { changed: families.changed, deletedIds: [...families.deletedIds] },
+    registries: { changed: registries.changed, deletedIds: [...registries.deletedIds] },
+    ...(issuesChanged ? { crossCheckIssues: local.crossCheckIssues ?? null } : {}),
+  }
+}
+
+/** 取り出した変更を、いまのサーバーの内容へ重ねる */
+export function applyTreeDelta(remote: FamilyTreeData, delta: TreeDelta): FamilyTreeData {
   const merged: FamilyTreeData = {
-    people: applyChanges(remote.people ?? [], people.changed, people.deletedIds),
-    families: applyChanges(remote.families ?? [], families.changed, families.deletedIds),
+    people: applyChanges(remote.people ?? [], delta.people.changed, new Set(delta.people.deletedIds)),
+    families: applyChanges(
+      remote.families ?? [],
+      delta.families.changed,
+      new Set(delta.families.deletedIds)
+    ),
   }
 
   const mergedRegistries = applyChanges(
     remote.registries ?? [],
-    registries.changed,
-    registries.deletedIds
+    delta.registries.changed,
+    new Set(delta.registries.deletedIds)
   )
   if (mergedRegistries.length > 0) merged.registries = mergedRegistries
 
-  // 2モデル照合の食い違いは要素ごとのidを持たないため、まとめて扱う。
-  // 自分が変えていなければ remote を残す（再解析した人の結果を消さないため）
-  const localIssues = local.crossCheckIssues
-  const baselineIssues = baseline.crossCheckIssues
-  const issues: ConsistencyIssue[] | undefined =
-    JSON.stringify(localIssues ?? null) === JSON.stringify(baselineIssues ?? null)
-      ? remote.crossCheckIssues
-      : localIssues
+  const issues =
+    delta.crossCheckIssues !== undefined ? delta.crossCheckIssues : remote.crossCheckIssues
   if (issues && issues.length > 0) merged.crossCheckIssues = issues
 
   return merged
+}
+
+/** 変更が1つでもあるか（持ち越す必要があるかの判定に使う） */
+export function hasDelta(delta: TreeDelta): boolean {
+  return (
+    delta.people.changed.length > 0 ||
+    delta.people.deletedIds.length > 0 ||
+    delta.families.changed.length > 0 ||
+    delta.families.deletedIds.length > 0 ||
+    delta.registries.changed.length > 0 ||
+    delta.registries.deletedIds.length > 0 ||
+    delta.crossCheckIssues !== undefined
+  )
 }
 
 /** baseline と local が同じ内容か（保存する変更があるかの判定に使う） */

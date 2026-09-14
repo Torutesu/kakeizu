@@ -2,6 +2,7 @@ import { useCallback, useRef, useEffect, useState, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { ZoomIn, ZoomOut, RotateCcw, Maximize } from "lucide-react"
 import { PersonNode, RelationEmphasis } from './PersonNode'
+import { LiveEdit, applyLiveEdits, editorColor } from '../utils/liveEdits'
 import { FamilyTreeLines } from './FamilyTreeLines'
 import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
 import { useLayoutCalculation } from '../hooks/useLayoutCalculation'
@@ -47,6 +48,10 @@ interface FamilyTreeProps {
   // 人物が1人もいない場合の空状態から呼び出すアクション（編集権限がない場合は渡さない）
   onAddPerson?: () => void
   onUploadKoseki?: () => void
+  /** 他の利用者の保存前の編集（表示にだけ重ねる） */
+  liveEdits?: Map<string, LiveEdit>
+  /** ドラッグ中の位置をその場で他の人へ流す */
+  onLiveMove?: (personId: string, position: { x: number; y: number } | null) => void
 }
 
 export function FamilyTree({
@@ -57,6 +62,8 @@ export function FamilyTree({
   onPersonEdit,
   onPersonPositionUpdate,
   focusPerson,
+  liveEdits,
+  onLiveMove,
   zoomSettings = DEFAULT_ZOOM_SETTINGS,
   onAddPerson,
   onUploadKoseki
@@ -72,6 +79,13 @@ export function FamilyTree({
     snapToGeneration,
     getGenerationY
   } = useLayoutCalculation(persons, families)
+
+  // 保存前の下書き（他の人が入力中・ドラッグ中の値）を表示にだけ重ねる。
+  // 自分の保存データには混ぜない（他人の入力途中を保存してしまうため）
+  const displayPersons = useMemo(
+    () => (liveEdits && liveEdits.size > 0 ? applyLiveEdits(layoutPersons, liveEdits) : layoutPersons),
+    [layoutPersons, liveEdits]
+  )
 
   // 選択中の人物と直接つながる人物（配偶者・親・子）のID。
   // 大きな家系図でも「誰とつながっているか」が一目で分かるようにする。
@@ -381,7 +395,9 @@ export function FamilyTree({
 
     // ドラッグ中は一時位置として描画するだけで、確定（Undo履歴・保存対象への反映）はドラッグ終了時に行う
     setDragOverride({ id: draggedPerson.id, x: safeX, y: safeY })
-  }, [isDragging, draggedPerson, dragOffset, zoom, panX, panY, setDragOverride, snapToGeneration])
+    // 他の人の画面でも動いて見えるように、途中の位置を流す（保存はしない）
+    onLiveMove?.(draggedPerson.id, { x: safeX, y: safeY })
+  }, [isDragging, draggedPerson, dragOffset, zoom, panX, panY, setDragOverride, snapToGeneration, onLiveMove])
 
   const handlePersonDragEnd = useCallback((e: PointerEvent) => {
     if (e.pointerId !== dragPointerIdRef.current) return
@@ -405,13 +421,14 @@ export function FamilyTree({
       }
     }
 
+    if (draggedPerson) onLiveMove?.(draggedPerson.id, null)
     dragPointerIdRef.current = null
     dragPositionRef.current = null
     setDragOverride(null)
     setIsDragging(false)
     setDraggedPerson(null)
     setDragOffset({ x: 0, y: 0 })
-  }, [draggedPerson, getGenerationFromY, setDragOverride, onPersonPositionUpdate, onPersonSelect])
+  }, [draggedPerson, getGenerationFromY, setDragOverride, onPersonPositionUpdate, onPersonSelect, onLiveMove])
 
   // 「F」キーからの全体表示要求を受け取る（アプリ側でキー入力を一元管理しているため）
   useEffect(() => {
@@ -647,17 +664,23 @@ export function FamilyTree({
             />
 
             {/* 人物ノード */}
-            {layoutPersons.map((person) => (
+            {displayPersons.map((person) => {
+              const live = liveEdits?.get(person.id)
+              return (
               <PersonNode
                 key={person.id}
                 person={person}
+                editor={
+                  live ? { label: live.label, color: editorColor(live.userId) } : undefined
+                }
                 isSelected={selectedPerson?.id === person.id}
                 isDragging={isDragging && draggedPerson?.id === person.id}
                 emphasis={emphasisFor(person.id)}
                 onDragStart={handlePersonDragStart}
                 onEdit={onPersonEdit}
               />
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>
