@@ -98,6 +98,7 @@ export function PersonNode({
       onDoubleClick={handleDoubleClick}
       data-person-card
       data-person-id={person.id}
+      data-editing-by={editor?.label}
     >
       {/* 他の利用者が編集中であることを、その人の色で示す */}
       {editor && (

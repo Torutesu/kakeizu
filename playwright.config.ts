@@ -22,6 +22,8 @@ const BASE_URL = `http://127.0.0.1:${PORT}`
 
 export default defineConfig({
   testDir: './e2e',
+  // 実機確認（e2e/live）は本物の環境が要るため、こちらでは拾わない
+  testIgnore: '**/live/**',
   // 家系図の描画とレイアウト計算を待つ場面があるため、既定より少し長めにする
   timeout: 30_000,
   expect: { timeout: 7_000 },

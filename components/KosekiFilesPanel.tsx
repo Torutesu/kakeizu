@@ -147,7 +147,15 @@ export function KosekiFilesPanel({
             const expired = isRetentionExpired(file)
             const canOpen = canOpenKosekiFile(file, isAdmin)
             return (
-            <div key={file.id} className="border border-gray-200 rounded-lg p-3">
+            <div
+              key={file.id}
+              className="border border-gray-200 rounded-lg p-3"
+              data-koseki-file={file.id}
+              data-expired={expired ? 'true' : 'false'}
+              data-can-open={canOpen ? 'true' : 'false'}
+              data-group-id={file.documentGroupId}
+              data-page-number={file.pageNumber}
+            >
               <div className="flex items-start gap-2">
                 <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">

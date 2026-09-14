@@ -522,7 +522,16 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* ヘッダー */}
-      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
+      {/* data-* は実機確認（docs/QA_CHECKLIST.md）を自動で流すための目印。
+          表示は文言で行うが、文言はいつ変わってもよいものなので、
+          確認する側はこちらを見る */}
+      <header
+        className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3"
+        data-app-header
+        data-save-status={saveStatus}
+        data-can-edit={canEdit ? 'true' : 'false'}
+        data-other-editors={otherEditors.length}
+      >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <Link href="/projects">

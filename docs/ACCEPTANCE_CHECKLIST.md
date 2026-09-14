@@ -8,8 +8,12 @@
 **動かさないと確認できない項目は [docs/QA_CHECKLIST.md](./QA_CHECKLIST.md)。**
 同時編集・オフライン・戸籍の保管期間など、実機で1つずつ確かめる手順を並べてある。
 
-**自動で確認できる範囲:** `pnpm typecheck` / `pnpm lint` / `pnpm test`（239件）/
-`pnpm verify:db`（RLS 16件）/ `pnpm e2e`（34件）/ `pnpm build`。CIで同じものが走る。
+**自動で確認できる範囲:** `pnpm typecheck` / `pnpm lint` / `pnpm test`（259件）/
+`pnpm verify:db`（RLS 19件）/ `pnpm e2e`（37件）/ `pnpm build`。CIで同じものが走る。
+
+**実機でしか確認できない範囲も、`pnpm qa:live` で自動で流せる**（31件）。
+本物の環境に対してブラウザを2つ動かし、同時編集・保管期間・オフラインを
+実際に起こして確かめる。鍵が足りない分は理由つきでskipされる（QA_CHECKLIST 0.4）。
 
 ---
 

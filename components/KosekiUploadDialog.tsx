@@ -291,6 +291,11 @@ export function KosekiUploadDialog({
                 <div
                   key={`${item.file.name}-${index}`}
                   className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg"
+                  data-upload-item={index}
+                  data-upload-status={item.status}
+                  data-document-index={position?.documentIndex}
+                  data-page-number={position?.pageNumber}
+                  data-page-count={position?.pages}
                 >
                   <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <div className="min-w-0 flex-1">

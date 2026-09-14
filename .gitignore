@@ -33,6 +33,7 @@ next-env.d.ts
 # Playwright（E2E）
 /test-results/
 /playwright-report/
+/playwright-report-live/
 /blob-report/
 /playwright/.cache/
 

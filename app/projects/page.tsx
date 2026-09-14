@@ -153,7 +153,12 @@ export default function ProjectsPage() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {projects.map(project => (
-              <Card key={project.id} className="hover:shadow-md transition-shadow">
+              <Card
+                key={project.id}
+                className="hover:shadow-md transition-shadow"
+                data-project-card
+                data-project-id={project.id}
+              >
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between">
                     <Link href={`/projects/${project.id}`} className="flex-1 min-w-0">

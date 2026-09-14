@@ -79,6 +79,15 @@ SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... pnpm qa:fixtures list
 SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... pnpm qa:fixtures expire <ファイルid>
 ```
 
+手順書の大半は自動で流せます（ブラウザを2つ動かして、実際に同時編集させます）。
+
+```bash
+LIVE_BASE_URL=https://<本番URL> LIVE_ADMIN_EMAIL=... LIVE_ADMIN_PASSWORD=... \
+LIVE_WORKER_EMAIL=... LIVE_WORKER_PASSWORD=... pnpm qa:live
+```
+
+渡していない環境変数の分は、理由つきでskipされます（詳細は QA_CHECKLIST の 0.4）。
+
 ### 6. 解析モデルのベンチマーク（実データでの精度比較）
 
 ```bash
