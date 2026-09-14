@@ -162,3 +162,38 @@ describe('isValidFamilyTreeData', () => {
     expect(isValidFamilyTreeData('json')).toBe(false)
   })
 })
+
+describe('婚姻日・離婚日の原文表記（要件4.4）', () => {
+  it('処理と書き戻しの往復で、原文表記が失われない', () => {
+    const data: FamilyTreeData = {
+      people: [
+        {
+          id: 'p1', generation: 1, sex: 'male',
+          name: { surname: '阿吹', given_name: '軍一' },
+          birth: { original_date: null, date: null, place: null },
+          death: { original_date: null, date: null, place: null },
+        },
+        {
+          id: 'p2', generation: 1, sex: 'female',
+          name: { surname: '遠藤', given_name: 'ハナ' },
+          birth: { original_date: null, date: null, place: null },
+          death: { original_date: null, date: null, place: null },
+        },
+      ],
+      families: [
+        {
+          id: 'f1', parents: ['p1', 'p2'], children: [],
+          marriage_date: { original_date: '大正九年一月十日', date: '1920-01-10' },
+          divorce_date: { original_date: '昭和十年三月三日', date: '1935-03-03' },
+          relation_type: 'blood',
+        },
+      ],
+    }
+
+    const processed = processFamilyData(data)
+    const back = toFamilyTreeData(processed.persons, processed.families)
+
+    expect(back.families[0].marriage_date.original_date).toBe('大正九年一月十日')
+    expect(back.families[0].divorce_date.original_date).toBe('昭和十年三月三日')
+  })
+})

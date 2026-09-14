@@ -22,6 +22,26 @@ interface Identified {
   id: string
 }
 
+/**
+ * キーの順番に左右されない比較用の文字列を作る。
+ *
+ * **これを素の JSON.stringify にしてはいけない。** baseline はDBのjsonb列から来る
+ * （jsonbはキーの順番を保持せず、長さとバイト順に並べ替える）のに対し、
+ * local は手元で組み立てた順のままになる。単純に文字列化して比べると、
+ * **中身が同じでも「変更された」と判定され**、自分が触っていない要素まで
+ * 相手の保存結果に上書きしてしまう。このモジュールが防ぎたい事故そのものになる。
+ */
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    // undefined のキーは「無い」のと同じに扱う（省略可能なフィールドの差で誤判定しない）
+    .filter(([, item]) => item !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`
+}
+
 /** baseline と local を比べ、自分が追加・変更した要素と削除した要素を取り出す */
 function diff<T extends Identified>(
   baseline: T[],
@@ -33,7 +53,7 @@ function diff<T extends Identified>(
   const changed = local.filter(item => {
     const before = baselineById.get(item.id)
     // 追加された要素、または内容が変わった要素
-    return before === undefined || JSON.stringify(before) !== JSON.stringify(item)
+    return before === undefined || canonicalJson(before) !== canonicalJson(item)
   })
 
   const deletedIds = new Set(
@@ -109,8 +129,8 @@ export function computeTreeDelta(baseline: FamilyTreeData, local: FamilyTreeData
   const registries = diff<RegistryData>(baseline.registries ?? [], local.registries ?? [])
 
   const issuesChanged =
-    JSON.stringify(local.crossCheckIssues ?? null) !==
-    JSON.stringify(baseline.crossCheckIssues ?? null)
+    canonicalJson(local.crossCheckIssues ?? null) !==
+    canonicalJson(baseline.crossCheckIssues ?? null)
 
   return {
     people: { changed: people.changed, deletedIds: [...people.deletedIds] },
@@ -158,7 +178,12 @@ export function hasDelta(delta: TreeDelta): boolean {
   )
 }
 
-/** baseline と local が同じ内容か（保存する変更があるかの判定に使う） */
+/**
+ * baseline と local が同じ内容か（保存する変更があるかの判定に使う）。
+ *
+ * ここも素の JSON.stringify では、読み込み直後や相手の変更を取り込んだ直後に
+ * 必ず「変更あり」になり、**2つのタブが互いの保存を呼び合って止まらなくなる。**
+ */
 export function hasNoChanges(baseline: FamilyTreeData, local: FamilyTreeData): boolean {
-  return JSON.stringify(baseline) === JSON.stringify(local)
+  return !hasDelta(computeTreeDelta(baseline, local))
 }

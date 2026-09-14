@@ -6,9 +6,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   ProcessedPerson,
-  UnreadableField,
   UNREADABLE_FIELD_LABELS,
 } from '../utils/familyDataProcessor'
+import { resolveUnreadable } from '../utils/unreadableFields'
 import { LiveEditDraft } from '../utils/liveEdits'
 
 /**
@@ -86,19 +86,19 @@ export function PersonEditDialog({
 
   // 入力のたびに下書きを流す。表計算ソフトのように、相手の画面でその場で変わる
   const update = (changes: Partial<typeof formData>) => {
-    setFormData(prev => {
-      const next = { ...prev, ...changes }
-      if (person) {
-        onLiveDraft?.(person.id, {
-          surname: next.surname,
-          givenName: next.givenName,
-          sex: next.sex,
-          birthDate: next.birthDate || null,
-          deathDate: next.deathDate || null,
-        })
-      }
-      return next
-    })
+    // 更新関数の中で送ると、描画中の副作用になり二重に送られる（StrictModeで顕在化）。
+    // いまの値から次の値を作り、送信は外で1回だけ行う
+    const next = { ...formData, ...changes }
+    setFormData(next)
+    if (person) {
+      onLiveDraft?.(person.id, {
+        surname: next.surname,
+        givenName: next.givenName,
+        sex: next.sex,
+        birthDate: next.birthDate || null,
+        deathDate: next.deathDate || null,
+      })
+    }
   }
 
   const handleSave = () => {
@@ -106,14 +106,19 @@ export function PersonEditDialog({
 
     // 手で直したのは西暦側であり、戸籍の原文表記は残す（要件4.4「元の表記も保持」）。
     // ここでnullにすると、原文がいちばん必要な「西暦がおかしいので直す」場面で失われる
-    const filled: UnreadableField[] = []
-    if (formData.surname || formData.givenName) filled.push('name')
-    if (formData.birthDate) filled.push('birth_date')
-    if (formData.deathDate) filled.push('death_date')
-    if (formData.birthPlace) filled.push('birth_place')
-    if (formData.deathPlace) filled.push('death_place')
-    // 入力された項目は「読み取り失敗」を解除する。担当者が原本を見て埋めた値のため
-    const remainingUnreadable = (person.unreadable ?? []).filter(key => !filled.includes(key))
+    // 解除するのは、担当者が実際に値を入れ直した項目だけ（utils/unreadableFields.ts）
+    const remainingUnreadable = resolveUnreadable(
+      person.unreadable,
+      {
+        surname: person.name?.surname,
+        givenName: person.name?.given_name,
+        birthDate: person.birth?.date,
+        deathDate: person.death?.date,
+        birthPlace: person.birth?.place,
+        deathPlace: person.death?.place,
+      },
+      formData
+    )
 
     const updates: Partial<ProcessedPerson> = {
       name: {

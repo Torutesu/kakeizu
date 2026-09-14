@@ -126,6 +126,9 @@ export interface FamilyGroup {
   children: ProcessedPerson[]
   marriageDate?: string
   divorceDate?: string
+  // 戸籍上の原文表記（和暦）。要件4.4「元の表記も保持」のため往復で失わない
+  marriageOriginalDate?: string | null
+  divorceOriginalDate?: string | null
   relationType: 'blood' | 'adoption'
   marriageLines: Array<{x1: number, y1: number, x2: number, y2: number}>
   childrenLines: Array<{
@@ -205,6 +208,8 @@ export function processFamilyData(data: FamilyTreeData): {
           children,
           marriageDate: family.marriage_date?.date || undefined,
           divorceDate: family.divorce_date?.date || undefined,
+          marriageOriginalDate: family.marriage_date?.original_date ?? null,
+          divorceOriginalDate: family.divorce_date?.original_date ?? null,
           relationType: family.relation_type,
           marriageLines: [], // レイアウト計算で設定
           childrenLines: []  // レイアウト計算で設定
@@ -285,12 +290,13 @@ export function toFamilyTreeData(
     id: family.id,
     parents: family.parents.map(p => p.id),
     children: family.children.map(c => c.id),
+    // 原文表記は手で直しても失わない（人物と同じ扱い。要件4.4）
     marriage_date: {
-      original_date: null,
+      original_date: family.marriageOriginalDate ?? null,
       date: family.marriageDate || null,
     },
     divorce_date: {
-      original_date: null,
+      original_date: family.divorceOriginalDate ?? null,
       date: family.divorceDate || null,
     },
     relation_type: family.relationType,

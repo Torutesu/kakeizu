@@ -37,6 +37,10 @@ export type SaveStatus = 'saved' | 'saving' | 'offline' | 'error'
 
 const AUTOSAVE_DEBOUNCE_MS = 800
 
+// 参照を変えないための空配列（毎回新しい配列を作るとuseEffectが無駄に再実行される）
+const EMPTY_REGISTRIES: RegistryData[] = []
+const EMPTY_ISSUES: ConsistencyIssue[] = []
+
 interface FamilyDataState {
   persons: ProcessedPerson[]
   families: FamilyGroup[]
@@ -116,6 +120,8 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   const [restoredOfflineDraft, setRestoredOfflineDraft] = useState(false)
   // 持ち越しの保存先を利用者ごとに分ける（共用PCで他人の未保存分を拾わないため）
   const userIdRef = useRef<string | null>(null)
+  // 復元した持ち越しを、読み込み直後に一度だけ送るための印
+  const pendingSendRef = useRef(false)
 
   // サーバー上のバージョン。保存成功・他の人の保存の受信のたびに進める
   const versionRef = useRef(0)
@@ -138,8 +144,10 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   } = useUndoRedo<FamilyDataState>({ persons: [], families: [] })
 
   const { persons, families, crossCheckIssues } = currentState
-  const registries = currentState.registries ?? []
-  const issues = currentState.issues ?? []
+  // 毎回 `?? []` で新しい配列を作ると、自動保存のuseEffectが描画のたびに張り直される。
+  // 空の配列は使い回す
+  const registries = currentState.registries ?? EMPTY_REGISTRIES
+  const issues = currentState.issues ?? EMPTY_ISSUES
 
   // 非同期処理（複数ファイルの連続マージなど）から呼ばれても常に最新のstateを
   // 参照できるよう、refに現在値を持たせる（クロージャの古いstateによるデータ欠落防止）
@@ -177,6 +185,9 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
 
       setSaveStatus(hasPending ? 'offline' : 'saved')
       setRestoredOfflineDraft(hasPending)
+      // つながった状態で復元した場合は、そのまま送る。
+      // 次の編集を待つと、**送られないまま残っていることに気づけない**
+      if (hasPending) pendingSendRef.current = true
 
       const processed = processFamilyData(restored)
       // 読み込んだ状態をアンドゥ履歴の起点にする（空の状態までアンドゥで戻れないようにする）
@@ -312,6 +323,13 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     window.addEventListener('online', handleOnline)
     return () => window.removeEventListener('online', handleOnline)
   }, [])
+
+  // 読み込み時に復元した持ち越しを送る
+  useEffect(() => {
+    if (isLoading || !canEdit || !pendingSendRef.current) return
+    pendingSendRef.current = false
+    void persistRef.current()
+  }, [isLoading, canEdit])
 
   // 自動保存（デバウンス付き）
   const isFirstRenderRef = useRef(true)

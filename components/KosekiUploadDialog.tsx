@@ -144,9 +144,14 @@ export function KosekiUploadDialog({
     setQueue(prev => prev.map((item, i) => (i === index ? { ...item, ...updates } : item)))
   }
 
-  /** 1通分（PDF1件、または続いた画像）をアップロードして解析する */
+  /**
+   * 1通分（PDF1件、または続いた画像）をアップロードして解析する。
+   *
+   * @param indexes その1通に属する全ファイル。ページ番号はこの並びで決まる
+   *                （未処理分だけで数えると、一部をやり直したときに番号がずれる）
+   */
   const processDocument = useCallback(async (indexes: number[], queueSnapshot: QueuedFile[]) => {
-    // 一部だけアップロード済みの場合は、その束に続きを入れる（束が割れないようにする）
+    // すでにアップロード済みのページがあれば、その束に続きを入れる（束が割れないようにする）
     const documentGroupId =
       indexes.map(index => queueSnapshot[index].documentGroupId).find(Boolean) ??
       newDocumentGroupId()
@@ -203,9 +208,10 @@ export function KosekiUploadDialog({
     // 進行中に書き換えるため、stateの配列そのものではなく複製を使う
     const snapshot = queue.map(item => ({ ...item }))
     for (const indexes of planDocuments(snapshot.map(toPlannedFile))) {
-      const pending = indexes.filter(index => snapshot[index].status !== 'success')
-      if (pending.length === 0) continue
-      await processDocument(pending, snapshot)
+      // 1通すべてが済んでいれば飛ばす。1枚でも残っていれば、
+      // **その1通の全ファイルを渡す**（束のidとページ番号を通しで決めるため）
+      if (indexes.every(index => snapshot[index].status === 'success')) continue
+      await processDocument(indexes, snapshot)
     }
 
     setIsProcessing(false)

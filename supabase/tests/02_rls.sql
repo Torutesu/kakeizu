@@ -126,6 +126,36 @@ select '管理者は30日を過ぎた原本も読める', count(*) = 1
   from storage.objects
  where name = 'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/old.pdf';
 
+-- ---- 17〜19) 0013: 行が無いオブジェクトの扱い ----
+-- アップロードの最中・巻き戻し・削除の途中には、メタデータの行が無い瞬間がある。
+-- ここを閉じると、取り込みが失敗したり、消せない戸籍が残り続ける
+
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+insert into rls_results
+select '行が無いオブジェクトは、担当案件なら読める（取り込みの最中）',
+       public.can_edit_project('cccccccc-0000-0000-0000-000000000001')
+       and not public.koseki_object_row_exists(
+         'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/uploading.pdf');
+
+insert into rls_results
+select 'パスから案件を取り出せる（新旧どちらの形でも）',
+       public.koseki_object_project(
+         'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/x.pdf'
+       ) = 'cccccccc-0000-0000-0000-000000000001'
+       and public.koseki_object_project('cccccccc-0000-0000-0000-000000000001/x.pdf')
+         = 'cccccccc-0000-0000-0000-000000000001';
+
+-- 担当外の案件のパスは、行が無くても触れない
+insert into rls_results
+select '行が無くても、担当外の案件のオブジェクトは扱えない',
+       not public.can_edit_project(
+         public.koseki_object_project(
+           'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000002/x.pdf'));
+
+reset role;
+
 reset role;
 
 -- ---- 結果の出力 ----
@@ -144,7 +174,7 @@ from rls_results;
 do $$
 declare
   -- 上の検証の数と一致させること。検証を増やしたらこの値も更新する
-  c_expected constant integer := 16;
+  c_expected constant integer := 19;
   v_failed integer;
   v_total integer;
 begin

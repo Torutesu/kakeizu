@@ -123,6 +123,39 @@ describe('mergeTreeChanges', () => {
   })
 })
 
+describe('キーの順番に左右されないこと（DBのjsonbは順番を保持しない）', () => {
+  it('キーの順番が違うだけなら「変更なし」と判定する', () => {
+    // baseline はDBのjsonb由来で、キーが並べ替わっている想定
+    const baseline: FamilyTreeData = {
+      people: [{ sex: null, name: { given_name: 'a', surname: '阿吹' }, id: 'a', generation: 1,
+        death: { place: null, date: null, original_date: null },
+        birth: { place: null, date: null, original_date: null } } as PersonData],
+      families: [],
+    }
+    const local = tree([person('a')])
+
+    expect(hasNoChanges(baseline, local)).toBe(true)
+  })
+
+  it('キーの順番が違うだけの要素は、相手の変更を上書きしない', () => {
+    const baseline: FamilyTreeData = {
+      people: [
+        { sex: null, name: { given_name: 'a', surname: '阿吹' }, id: 'a', generation: 1,
+          death: { place: null, date: null, original_date: null },
+          birth: { place: null, date: null, original_date: null } } as PersonData,
+      ],
+      families: [],
+    }
+    const local = tree([person('a')])
+    // 相手が a の性別を入れて保存した
+    const remote = tree([person('a', { sex: 'female' })])
+
+    const merged = mergeTreeChanges(baseline, local, remote)
+    // 自分は a を触っていないため、相手の変更が残る
+    expect(merged.people[0].sex).toBe('female')
+  })
+})
+
 describe('hasNoChanges', () => {
   it('内容が同じなら変更なしと判定する', () => {
     expect(hasNoChanges(tree([person('a')]), tree([person('a')]))).toBe(true)

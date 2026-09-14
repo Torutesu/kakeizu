@@ -94,6 +94,32 @@ function toKosekiFile(row: KosekiFileRow): KosekiFile {
   }
 }
 
+/**
+ * 束（1通の戸籍）ごとにまとめ、束は新しい順・束の中はページ順に並べる。
+ *
+ * DB側の order だけでは、取り込み日時が1枚ごとに違うため**束の中が逆順**になり、
+ * 「1通3枚中 1枚目」が最後に来てしまう（再解析ボタンも最後の1枚に付く）。
+ */
+export function sortByDocument(files: KosekiFile[]): KosekiFile[] {
+  const newestByGroup = new Map<string, string>()
+  files.forEach(file => {
+    const current = newestByGroup.get(file.documentGroupId)
+    if (!current || file.createdAt > current) {
+      newestByGroup.set(file.documentGroupId, file.createdAt)
+    }
+  })
+
+  return [...files].sort((a, b) => {
+    if (a.documentGroupId !== b.documentGroupId) {
+      const newestA = newestByGroup.get(a.documentGroupId) ?? ''
+      const newestB = newestByGroup.get(b.documentGroupId) ?? ''
+      if (newestA !== newestB) return newestA < newestB ? 1 : -1
+      return a.documentGroupId < b.documentGroupId ? -1 : 1
+    }
+    return a.pageNumber - b.pageNumber
+  })
+}
+
 const SELECT_COLUMNS =
   'id, project_id, storage_path, file_name, file_size, mime_type, analysis_status, analysis_error, analysis_model, analyzed_at, person_count, family_count, created_at, document_group_id, page_number'
 
@@ -103,12 +129,8 @@ export async function fetchKosekiFiles(projectId: string): Promise<KosekiFile[]>
     .from('koseki_files')
     .select(SELECT_COLUMNS)
     .eq('project_id', projectId)
-    // 束（1通の戸籍）が一覧でばらけないよう、束ごとにページ順で並べる
-    .order('created_at', { ascending: false })
-    .order('document_group_id', { ascending: true })
-    .order('page_number', { ascending: true })
   if (error) throw new Error(`戸籍ファイル一覧の取得に失敗しました: ${error.message}`)
-  return (data as KosekiFileRow[]).map(toKosekiFile)
+  return sortByDocument((data as KosekiFileRow[]).map(toKosekiFile))
 }
 
 /**
@@ -184,17 +206,17 @@ export async function uploadKosekiFile(
 export async function deleteKosekiFile(orgId: string, file: KosekiFile): Promise<void> {
   const supabase = getSupabaseBrowserClient()
 
-  const { error } = await supabase.from('koseki_files').delete().eq('id', file.id)
-  if (error) throw new Error(`ファイルの削除に失敗しました: ${error.message}`)
-
+  // **実体を先に消す。** 行を先に消すと、実体を消す権限の判定材料（行）が無くなり、
+  // 消せない戸籍がストレージに残り続ける（閲覧もできないため気づけない）
   const { error: storageError } = await supabase.storage
     .from(BUCKET)
     .remove([file.storagePath])
-  // 実体の削除に失敗してもメタデータは消えているため、ログに残して処理は継続する
   if (storageError) {
     console.error('ストレージ上のファイル削除に失敗:', storageError.message)
   }
 
+  const { error } = await supabase.from('koseki_files').delete().eq('id', file.id)
+  if (error) throw new Error(`ファイルの削除に失敗しました: ${error.message}`)
 }
 
 /** 閲覧・ダウンロード用の一時URLを発行する（バケットは非公開のため直リンクは不可） */
