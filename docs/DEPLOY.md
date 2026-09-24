@@ -12,7 +12,7 @@
 
 ```bash
 # キーとトークンの取得手順: docs/KEYS_SETUP.md
-SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... VERCEL_TEAM_ID=... GEMINI_API_KEY=... \
+SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
   AI_NO_TRAINING_CONFIRMED=true \
   SMTP_HOST=... SMTP_PORT=587 SMTP_USER=... SMTP_PASS=... SMTP_SENDER_EMAIL=no-reply@<独自ドメイン> \
   pnpm provision
@@ -53,11 +53,12 @@ service_roleキーはSupabase APIから自動取得してVercelに設定しま�
 | Vercel Pro | $20（約3,000円） | **Hobby（無料）は規約で商用利用不可。**事務所の業務で使う以上 Pro |
 | Supabase Pro | $25（約3,800円） | Freeは**1週間使わないと停止**し、**自動バックアップが無い**。戸籍を預かる以上避ける |
 | 招待メールの送信元（SMTP） | 0円〜 | 件数が少ないため、送信サービスの無料枠で足りる（下の「招待メールの送信元」） |
-| **計** | **約7,000円** | 解析AIの利用料は別（月100案件で4万円台の試算。docs/MODEL_RESEARCH.md） |
+| **計** | **約6,750円** | 解析AIの利用料は別。既定の2モデル照合（Gemini 3.1 Pro＋Claude Opus 5）で1ページ約28円、20ページの案件で約550円（COST_ESTIMATE.md） |
 
 **Vercel の $20 は「開発・運用する人」の人数分だけ。**事務所の職員はアプリの利用者であって
-Vercel のメンバーではないので、何人使っても増えない。Pro はチーム単位の契約のため、
-`pnpm provision` には `VERCEL_TEAM_ID` を渡す（未指定だと個人アカウント＝Hobby に作られるので止める）。
+Vercel のメンバーではないので、何人使っても増えない。**個人アカウントのまま Pro にできる**
+（Settings → Billing → Upgrade。1人で $20）。別のチームに置く場合だけ `VERCEL_TEAM_ID` を渡す。
+クライアント向けの費用説明は [COST_ESTIMATE.md](./COST_ESTIMATE.md)。
 
 **Supabase のプランは組織単位。**プロジェクトを作る前に、組織を Pro にしておく
 （Organization → Billing）。計算資源は既定の Micro のまま（Pro に含まれる利用枠で相殺される。
@@ -132,7 +133,7 @@ Authentication → Emails → SMTP Settings で行う。設定後、自分の別
 > 解析APIは `maxDuration = 300` を指定済み（Pro の範囲内）。Fluid compute は既定で有効。
 > 無効になっている場合は Project Settings → Functions で有効化する。
 >
-> **インポート先は Pro のチームを選ぶこと。**個人アカウント（Hobby）に作ると商用利用の規約に反する。
+> **インポート先は Pro にしたアカウントを選ぶこと**（個人アカウントのままでよい）。Hobby のままだと商用利用の規約に反する。
 > サーバー処理の場所はリポジトリの `vercel.json` で東京（hnd1）に固定されるため、設定は不要。
 
 ## 3. 認証リダイレクトの設定（約3分）
@@ -203,6 +204,6 @@ GitHubのリポジトリ設定でデフォルトブランチが `main` になっ
 | 解析が「データ利用ポリシーが未確認」 | `AI_NO_TRAINING_CONFIRMED=true` を設定して再デプロイ |
 | 招待は成功するがメールが届かない | ① `SUPABASE_SERVICE_ROLE_KEY` 未設定（設定後は **Redeploy**）② **送信元（SMTP）が未設定**。Supabase標準の送信はSupabaseのチームメンバー宛てにしか届かない（「招待メールの送信元」） |
 | 保存や読み込みが妙に遅い | `/api/health` の `region` が `hnd1` 以外。`vercel.json` の `regions` が反映されているか確認 |
-| `pnpm provision` が「無料枠です」で止まる | 仕様。Vercel はチームを Pro に、Supabase は組織を Pro にする。確認用の環境なら `ALLOW_FREE_PLAN=true` |
+| `pnpm provision` が「無料枠です」で止まる | 仕様。Vercel はアカウント（またはチーム）を Pro に、Supabase は組織を Pro にする。確認用の環境なら `ALLOW_FREE_PLAN=true` |
 | 「ログインの有効期限が切れました」と出る | 仕様。セッション切れ時にAPIが401を返す。再ログインすれば解消 |
 | 担当外の案件が見えてしまう | `0009` のマイグレーション未適用。SQL Editorで実行 |

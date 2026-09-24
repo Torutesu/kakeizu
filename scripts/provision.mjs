@@ -7,14 +7,14 @@
 // 途中で失敗しても再実行すればよい。
 //
 // 前提の構成: Vercel Pro ＋ Supabase Pro（どちらも東京）。docs/DEPLOY.md「構成と費用」
-//   - Vercel Hobby は規約で商用利用不可。事務所の業務で使う以上 Pro（チーム）に置く
+//   - Vercel Hobby は規約で商用利用不可。事務所の業務で使う以上 Pro（個人アカウントのまま Pro にできる）
 //   - Supabase Free は1週間使わないと停止し、自動バックアップも無い
 //   どちらも無料枠のままなら**作り始める前に止める**（確認用の環境だけ ALLOW_FREE_PLAN=true で通す）
 //
 // 必要な環境変数:
 //   SUPABASE_ACCESS_TOKEN  https://supabase.com/dashboard/account/tokens で発行
 //   VERCEL_TOKEN           https://vercel.com/account/settings/tokens で発行
-//   VERCEL_TEAM_ID         Vercel Pro のチームID（Pro はチーム単位の契約のため）
+//   VERCEL_TEAM_ID         Vercel Pro のチームID（省略時は個人アカウントの既定チーム。個人で Pro 契約ならそれでよい）
 //   GEMINI_API_KEY         解析AI（1つ以上。ANTHROPIC_API_KEY / OPENAI_API_KEY も可）
 //
 // 実行:
@@ -137,27 +137,31 @@ async function checkPlans() {
       '（Freeは1週間使わないと停止し、自動バックアップもありません）。'
   )
 
-  if (!VERCEL_TEAM_ID) {
-    requirePaidPlan(
-      'Vercel',
-      'hobby',
-      'VERCEL_TEAM_ID が未指定のため、個人アカウント（Hobby・商用利用不可）に作られます。' +
-        'Pro のチームIDを VERCEL_TEAM_ID に指定してください（チームの Settings → General）。'
-    )
-    return
+  // 個人アカウントも内部では「既定のチーム」になっており、それを Pro にすれば個人で契約できる。
+  // VERCEL_TEAM_ID が無ければ、デプロイ先になる既定のチームのプランを見る
+  let teamId = VERCEL_TEAM_ID
+  if (!teamId) {
+    try {
+      teamId = (await api(VERCEL_API, vercelToken, '/v2/user'))?.user?.defaultTeamId ?? ''
+    } catch { /* 確認できない場合は警告だけにする */ }
   }
   let vercelPlan = null
-  try {
-    const team = await api(VERCEL_API, vercelToken, `/v2/teams/${VERCEL_TEAM_ID}`)
-    vercelPlan = team?.billing?.plan ?? null
-  } catch (error) {
-    fail(`VERCEL_TEAM_ID=${VERCEL_TEAM_ID} のチームにアクセスできません（${error.message}）。` +
-      'トークンのスコープにこのチームが含まれているか確認してください。')
+  if (teamId) {
+    try {
+      const team = await api(VERCEL_API, vercelToken, `/v2/teams/${teamId}`)
+      vercelPlan = team?.billing?.plan ?? null
+    } catch (error) {
+      if (VERCEL_TEAM_ID) {
+        fail(`VERCEL_TEAM_ID=${VERCEL_TEAM_ID} のチームにアクセスできません（${error.message}）。` +
+          'トークンのスコープにこのチームが含まれているか確認してください。')
+      }
+    }
   }
   requirePaidPlan(
     'Vercel',
     vercelPlan,
-    'チームの Settings → Billing で Pro にしてください（Hobbyは規約で商用利用不可）。'
+    'Settings → Billing で Pro にしてください（Hobbyは規約で商用利用不可。' +
+      '個人アカウントのまま Pro にできる。別のチームに置く場合は VERCEL_TEAM_ID を指定）。'
   )
 }
 

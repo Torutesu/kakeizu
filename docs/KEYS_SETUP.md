@@ -13,7 +13,7 @@
 |---|---|---|
 | `SUPABASE_ACCESS_TOKEN` | Supabaseプロジェクトの作成・スキーマ適用 | **構築時のみ** |
 | `VERCEL_TOKEN` | Vercelへのデプロイと環境変数の設定 | **構築時のみ** |
-| `VERCEL_TEAM_ID` | デプロイ先の Pro チーム（Pro はチーム単位の契約） | **構築時のみ** |
+| `VERCEL_TEAM_ID` | 任意。個人アカウント以外のチームに置く場合だけ | **構築時のみ** |
 | `SMTP_*` | 招待メールの送信元（Supabaseに保存される） | 構築時に設定 |
 | `GEMINI_API_KEY` | 戸籍の解析 | 常時 |
 | `ANTHROPIC_API_KEY` | 2モデル照合（推奨） | 常時 |
@@ -44,9 +44,10 @@
      （チームに所属している場合、ここを間違えると個人アカウント側に作られます）
    - **有効期限**: **選べる中で最短にする**（構築時にしか使わないため）
 3. **表示は一度きり**。その場でコピーする
-4. **チームIDを控える。** Pro のチームを開き、Settings → General の「Team ID」（`team_` で始まる）。
-   これを `VERCEL_TEAM_ID` に入れる。未指定だと個人アカウント（Hobby・商用利用不可）に
-   作られるため、`pnpm provision` は作り始める前に止まる
+4. **アカウントを Pro にしておく。** 個人アカウントのまま Settings → Billing → Upgrade でよい（1人で $20/月）。
+   Hobby のままだと商用利用の規約に反するため、`pnpm provision` は作り始める前に止まる。
+   個人ではなく別のチームに置く場合だけ、そのチームの Settings → General の「Team ID」
+   （`team_` で始まる）を `VERCEL_TEAM_ID` に入れる
 
 ---
 
@@ -125,7 +126,7 @@ APIキーが2社ぶん設定されると、**2モデル照合が自動的に有�
 ```
 SUPABASE_ACCESS_TOKEN=<手順1の値>
 VERCEL_TOKEN=<手順2の値>
-VERCEL_TEAM_ID=<手順2-4の値>
+# VERCEL_TEAM_ID=<別のチームに置く場合のみ>
 GEMINI_API_KEY=<手順3の値>
 ANTHROPIC_API_KEY=<手順4の値>
 AI_NO_TRAINING_CONFIRMED=true
