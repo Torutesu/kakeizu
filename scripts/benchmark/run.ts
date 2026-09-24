@@ -69,6 +69,11 @@ interface FileResult {
 // 未知のモデルは概算できないため原価欄を空にする。
 const PRICING: Record<string, { input: number; output: number; cachedInput: number }> = {
   'gemini-3.1-pro':   { input: 2.0,   output: 12.0, cachedInput: 0.2 },
+  'gemini-3.1-pro-preview': { input: 2.0, output: 12.0, cachedInput: 0.2 },
+  // 3.1 Flash は2026年末までの価格。2027-01-01 から 入力1.50 / 出力7.50 / キャッシュ0.15 に上がる
+  'gemini-3.1-flash':      { input: 0.75, output: 3.75, cachedInput: 0.075 },
+  'gemini-3.1-flash-lite': { input: 0.25, output: 1.5,  cachedInput: 0.025 },
+  'gemini-2.5-flash':      { input: 0.3,  output: 2.5,  cachedInput: 0.03 },
   'gemini-2.5-pro':   { input: 1.25,  output: 10.0, cachedInput: 0.125 },
   'claude-opus-5':    { input: 5.0,   output: 25.0, cachedInput: 0.5 },
   'claude-sonnet-5':  { input: 2.0,   output: 10.0, cachedInput: 0.2 },
@@ -270,6 +275,8 @@ async function main() {
   lines.push(`- 実行日時: ${new Date().toLocaleString('ja-JP')}`)
   lines.push(`- 対象: ${dir}（${files.length}ファイル）`)
   lines.push(`- 候補: ${candidates.map(c => `${c.provider}:${c.model}`).join(', ')}`)
+  // 思考の深さは費用に直結する（思考は出力として課金される）。比べるときは条件を揃える
+  lines.push(`- 思考の深さ（Gemini 3.x）: ${process.env.ANALYSIS_THINKING_LEVEL || '既定（high）'}`)
   lines.push(`- 読み取り前の画像処理: ${preprocess}`)
   lines.push('')
 
@@ -291,8 +298,8 @@ async function main() {
   // 候補別の集計（正解データがあるファイルのみ）
   lines.push('## モデル別の集計（正解データのあるファイルのみ）')
   lines.push('')
-  lines.push('| モデル | 成功/試行 | 平均F1 | 平均再現率 | 平均適合率 | 平均生年一致 | 平均所要 | 平均入力tok | キャッシュ率 | 平均原価/枚 |')
-  lines.push('|---|---|---|---|---|---|---|---|---|---|')
+  lines.push('| モデル | 成功/試行 | 平均F1 | 平均再現率 | 平均適合率 | 平均生年一致 | 平均所要 | 平均入力tok | キャッシュ率 | 平均思考tok | 平均原価/件 |')
+  lines.push('|---|---|---|---|---|---|---|---|---|---|---|')
   for (const candidate of candidates) {
     const label = `${candidate.provider}:${candidate.model}`
     const all = results.filter(r => r.candidate === label)
@@ -312,6 +319,12 @@ async function main() {
     const totalInput = withUsage.reduce((a, r) => a + (r.usage!.inputTokens ?? 0), 0)
     const totalCached = withUsage.reduce((a, r) => a + (r.usage!.cachedInputTokens ?? 0), 0)
     const cacheRate = totalInput > 0 ? totalCached / totalInput : null
+    // 原価には思考分も含まれる（outputTokens に足してある）。内訳として平均を出す
+    const avgThinking = mean(
+      withUsage
+        .map(r => r.usage!.thinkingTokens)
+        .filter((v): v is number => typeof v === 'number')
+    )
     const avgYen = mean(
       withUsage
         .map(r => estimateYen(candidate.model, r.usage))
@@ -323,6 +336,7 @@ async function main() {
       `${formatPercent(avg(s => s.birthDateAccuracy))} | ${avgDuration.toFixed(1)}s | ` +
       `${avgInput === null ? '-' : Math.round(avgInput).toLocaleString()} | ` +
       `${cacheRate === null ? '-' : formatPercent(cacheRate)} | ` +
+      `${avgThinking === null ? '-' : Math.round(avgThinking).toLocaleString()} | ` +
       `${avgYen === null ? '-' : '¥' + avgYen.toFixed(2)} |`
     )
   }

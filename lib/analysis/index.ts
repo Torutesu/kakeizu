@@ -36,7 +36,7 @@ export interface AnalysisOverride {
  */
 function logTokenUsage(candidate: ProviderCandidate, usage: TokenUsage | null): void {
   if (!usage) return
-  const { inputTokens, outputTokens, cachedInputTokens } = usage
+  const { inputTokens, outputTokens, cachedInputTokens, thinkingTokens } = usage
   const hitRate =
     inputTokens && inputTokens > 0 && cachedInputTokens !== null
       ? `${Math.round((cachedInputTokens / inputTokens) * 100)}%`
@@ -44,7 +44,8 @@ function logTokenUsage(candidate: ProviderCandidate, usage: TokenUsage | null): 
   console.info(
     `戸籍解析トークン: ${candidate.provider}/${candidate.model} ` +
       `入力=${inputTokens ?? '?'} (キャッシュ${cachedInputTokens ?? '?'}, ヒット率${hitRate}) ` +
-      `出力=${outputTokens ?? '?'}`
+      `出力=${outputTokens ?? '?'}` +
+      (thinkingTokens != null ? ` (うち思考${thinkingTokens})` : '')
   )
   if (cachedInputTokens === 0) {
     console.warn(

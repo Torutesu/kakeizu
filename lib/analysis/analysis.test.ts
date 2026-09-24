@@ -83,32 +83,53 @@ describe('resolveProviderChain', () => {
 describe('resolveCrossCheckCandidate', () => {
   const gemini = { provider: 'gemini' as const, model: 'gemini-3.1-pro' }
 
-  it('キーが2つ以上あれば、設定なしでも既定で有効になる', () => {
-    // opt-inにすると設定を知らないまま運用が始まり、一度も動かないまま終わるため
+  it('キーが2つあっても、設定しなければ使わない（1社で読む）', () => {
+    // 照合は読み取りの費用を数倍にするため、既定では有効にしない
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k' }, gemini)
+    ).toBeNull()
+  })
+
+  it('ANALYSIS_ENSEMBLE=true で有効になる', () => {
     const candidate = resolveCrossCheckCandidate(
-      { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k' },
+      { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k', ANALYSIS_ENSEMBLE: 'true' },
       gemini
     )
     expect(candidate?.provider).toBe('anthropic')
   })
 
-  it('ANALYSIS_ENSEMBLE=false で明示的に無効化できる', () => {
+  it('照合先を指定しただけでも有効になる（決めたのに動かない状態を作らない）', () => {
+    const candidate = resolveCrossCheckCandidate(
+      { GEMINI_API_KEY: 'k', OPENAI_API_KEY: 'k', ANALYSIS_ENSEMBLE_PROVIDER: 'openai' },
+      gemini
+    )
+    expect(candidate?.provider).toBe('openai')
+  })
+
+  it('ANALYSIS_ENSEMBLE=false は照合先の指定より優先して無効にする', () => {
     expect(
       resolveCrossCheckCandidate(
-        { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k', ANALYSIS_ENSEMBLE: 'false' },
+        {
+          GEMINI_API_KEY: 'k',
+          ANTHROPIC_API_KEY: 'k',
+          ANALYSIS_ENSEMBLE: 'false',
+          ANALYSIS_ENSEMBLE_PROVIDER: 'anthropic',
+        },
         gemini
       )
     ).toBeNull()
   })
 
   it('キーが1つしかなければ照合しようがないので無効になる', () => {
-    expect(resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k' }, gemini)).toBeNull()
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANALYSIS_ENSEMBLE: 'true' }, gemini)
+    ).toBeNull()
   })
 
   it('必ずprimaryと別のプロバイダを選ぶ', () => {
     // 同じモデルを2回呼んでも同じ誤読を再現するだけで照合にならない
     const candidate = resolveCrossCheckCandidate(
-      { GEMINI_API_KEY: 'k', OPENAI_API_KEY: 'k' },
+      { GEMINI_API_KEY: 'k', OPENAI_API_KEY: 'k', ANALYSIS_ENSEMBLE: 'true' },
       gemini
     )
     expect(candidate?.provider).not.toBe('gemini')

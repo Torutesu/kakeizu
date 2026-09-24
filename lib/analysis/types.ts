@@ -30,6 +30,11 @@ export interface TokenUsage {
   outputTokens: number | null
   /** 入力のうちキャッシュから読まれた分。0のままならキャッシュが効いていない */
   cachedInputTokens: number | null
+  /**
+   * 出力のうち「思考」に使われた分（outputTokens に含む。どちらも出力として課金される）。
+   * 分けて返すプロバイダのみ。費用のうち思考が占める割合を見るために残す
+   */
+  thinkingTokens?: number | null
 }
 
 export interface AnalysisSuccess {

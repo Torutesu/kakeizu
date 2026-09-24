@@ -1,7 +1,8 @@
 import '../../server-guard'
-import { GoogleGenAI } from '@google/genai'
+import { GoogleGenAI, ThinkingLevel } from '@google/genai'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT, KOSEKI_RESPONSE_SCHEMA } from '../../koseki-prompt'
 import { AnalysisInput, AnalysisProvider, ProviderResult } from '../types'
+import { resolveGeminiThinkingLevel } from '../thinking'
 
 /**
  * Google Gemini プロバイダ。
@@ -14,6 +15,9 @@ export const geminiProvider: AnalysisProvider = {
     if (!apiKey) {
       throw new Error('GEMINI_API_KEY が設定されていません')
     }
+
+    const thinking = resolveGeminiThinkingLevel(model, process.env)
+    if (thinking.warning) console.warn(`戸籍解析: ${thinking.warning}`)
 
     const ai = new GoogleGenAI({ apiKey })
     const response = await ai.models.generateContent({
@@ -36,6 +40,10 @@ export const geminiProvider: AnalysisProvider = {
         temperature: 0,
         responseMimeType: 'application/json',
         responseSchema: KOSEKI_RESPONSE_SCHEMA,
+        // 思考の深さ。未設定ならモデルの既定（3.x は high）のまま
+        ...(thinking.level
+          ? { thinkingConfig: { thinkingLevel: ThinkingLevel[thinking.level] } }
+          : {}),
       },
     })
 
@@ -46,12 +54,20 @@ export const geminiProvider: AnalysisProvider = {
     // （Gemini 3.x系は4,096トークン、2.5系は2,048トークン）。
     // 現在の固定プロンプトはこの閾値付近のため、効いているかは実測でしか分からない。
     const meta = response.usageMetadata
+    // 思考のトークンは candidatesTokenCount に含まれないが、出力として課金される。
+    // 足さないと費用を少なく見積もる（Gemini 3.x は既定で深く考えるため差が大きい）
+    const thinkingTokens = meta?.thoughtsTokenCount ?? null
+    const answerTokens = meta?.candidatesTokenCount ?? null
     return {
       raw: JSON.parse(text),
       usage: {
         inputTokens: meta?.promptTokenCount ?? null,
-        outputTokens: meta?.candidatesTokenCount ?? null,
+        outputTokens:
+          answerTokens === null && thinkingTokens === null
+            ? null
+            : (answerTokens ?? 0) + (thinkingTokens ?? 0),
         cachedInputTokens: meta?.cachedContentTokenCount ?? null,
+        thinkingTokens,
       },
     }
   },

@@ -84,7 +84,7 @@
 |---|---|---|
 | 論理矛盾の自動検出と印 | `utils/consistency.ts`（error 4種・warning 6種） | `pnpm test`（consistency 23件） |
 | 印を付けた理由の表示 | `PersonNode` のツールチップ ＋ `IssuesPanel` | `pnpm e2e`（指摘の表示4件） |
-| 2モデル照合と食い違いの提示 | `lib/analysis/ensemble.ts` ＋ `IssuesPanel` | `pnpm e2e`（人物に紐づかない指摘1件） |
+| 2モデル照合と食い違いの提示 | `lib/analysis/ensemble.ts` ＋ `IssuesPanel`（**選択式。既定は1社で読む**） | `pnpm e2e`（人物に紐づかない指摘1件） |
 
 ## 4.7 成果物の出力
 
@@ -117,7 +117,7 @@
 |---|---|---|
 | モデルの比較検証と選定 | `scripts/benchmark/run.ts` | **仕組みは完成。実施は実データ待ち（G-07）** |
 | 論理矛盾の自動検出 | `utils/consistency.ts` | 実装済み |
-| 複数モデルによる照合 | `lib/analysis/ensemble.ts` | 実装済み（キーが2社以上で既定オン） |
+| 複数モデルによる照合 | `lib/analysis/ensemble.ts` | 実装済み。**費用のため既定はオフ**（`ANALYSIS_ENSEMBLE=true` で有効）。**要件定義書の次版で「選択式」と明記する** |
 | 読み取り失敗箇所の明示 | `unreadable` ＋ 赤字表示 | 実装済み |
 | 読み取り指示の調整 | `lib/koseki-prompt.ts` | 継続対応 |
 | 画像処理の検討 | `lib/analysis/preprocess.ts` | 実装済み。basicを既定で有効化。enhancedの採否は実データで判断 |

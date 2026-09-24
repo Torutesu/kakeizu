@@ -67,6 +67,8 @@ export const openaiProvider: AnalysisProvider = {
         inputTokens: usage?.input_tokens ?? null,
         outputTokens: usage?.output_tokens ?? null,
         cachedInputTokens: usage?.input_tokens_details?.cached_tokens ?? null,
+        // output_tokens は推論分を含む（内訳として残す）
+        thinkingTokens: usage?.output_tokens_details?.reasoning_tokens ?? null,
       },
     }
   },

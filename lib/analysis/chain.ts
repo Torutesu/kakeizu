@@ -118,10 +118,15 @@ export function resolveProviderChain(env: ChainEnv): ProviderCandidate[] {
  * 照合用モデルを選ぶ。primaryと**別プロバイダ**であることが要件。
  * 同じモデルを2回呼んでも同じ誤読を再現するだけで、照合の意味がないため。
  *
- * **既定で有効。** 明示的に ANALYSIS_ENSEMBLE=false を設定した場合のみ無効になる。
- * opt-inにすると設定を知らないまま運用が始まり、実装したのに一度も動かないまま
- * 終わる（照合はOCR精度の中核なので、既定で効いているべき）。
- * APIコストは2倍になるが、人手の修正コストより1桁小さい（docs/MODEL_RESEARCH.md）。
+ * **既定では使わない（1社で読む）。** 照合は読み取りの費用を数倍にする
+ * （既定の組み合わせでは Claude Opus 5 が加わり、1ページ約6円→約28円）。
+ * 読み取りそのものの精度は変わらず、論理矛盾の検出（utils/consistency.ts）は
+ * 照合なしでも動くため、費用に見合う場面でだけ有効にする（docs/MODEL_RESEARCH.md）。
+ *
+ * 有効にするのは次のどちらか:
+ *   - ANALYSIS_ENSEMBLE=true
+ *   - ANALYSIS_ENSEMBLE_PROVIDER を指定（照合先を決めたのに動かない、という状態を作らない）
+ * ANALYSIS_ENSEMBLE=false はどちらよりも優先して無効にする。
  *
  * 2つ目のプロバイダのAPIキーがなければ、静かに無効になる（照合しようがないため）。
  */
@@ -129,9 +134,11 @@ export function resolveCrossCheckCandidate(
   env: ChainEnv,
   primary: ProviderCandidate
 ): ProviderCandidate | null {
-  if ((env.ANALYSIS_ENSEMBLE ?? '').trim().toLowerCase() === 'false') return null
+  const flag = (env.ANALYSIS_ENSEMBLE ?? '').trim().toLowerCase()
+  if (flag === 'false') return null
 
   const configured = (env.ANALYSIS_ENSEMBLE_PROVIDER ?? '').trim().toLowerCase()
+  if (flag !== 'true' && !configured) return null
   if (configured) {
     const candidate = resolveOverrideCandidate(env, configured, env.ANALYSIS_ENSEMBLE_MODEL)
     return candidate && candidate.provider !== primary.provider ? candidate : null
