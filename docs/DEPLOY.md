@@ -1,7 +1,9 @@
 # デプロイ手順（URL公開までの最短ルート）
 
-Vercel + Supabase で本番URLに公開する手順。**所要25分程度**（アカウントがあれば）。
+**Vercel Pro ＋ Supabase Pro（どちらも東京）** で本番URLに公開する手順。
+**所要25分程度**（アカウントがあれば）。
 社内利用が前提のため、公開後もアプリ自体がログイン必須で守られる。
+構成を選んだ理由と費用は下の「構成と費用」を参照。
 
 ## 方法A: 全自動プロビジョニング（推奨・約10分）
 
@@ -10,9 +12,14 @@ Vercel + Supabase で本番URLに公開する手順。**所要25分程度**（�
 
 ```bash
 # キーとトークンの取得手順: docs/KEYS_SETUP.md
-SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... GEMINI_API_KEY=... \
-  AI_NO_TRAINING_CONFIRMED=true pnpm provision
+SUPABASE_ACCESS_TOKEN=... VERCEL_TOKEN=... VERCEL_TEAM_ID=... GEMINI_API_KEY=... \
+  AI_NO_TRAINING_CONFIRMED=true \
+  SMTP_HOST=... SMTP_PORT=587 SMTP_USER=... SMTP_PASS=... SMTP_SENDER_EMAIL=no-reply@<独自ドメイン> \
+  pnpm provision
 ```
+
+**どちらかが無料枠のままだと、何も作らないうちに止まる**（下の「構成と費用」）。
+確認用の環境として無料枠で作る場合だけ `ALLOW_FREE_PLAN=true` を付ける。
 
 **必要な4つの値の取り方は [KEYS_SETUP.md](./KEYS_SETUP.md) に手順をまとめてある。**
 特にGeminiは無料枠のキーだと入力が学習に使われ得るため、
@@ -34,10 +41,54 @@ service_roleキーはSupabase APIから自動取得してVercelに設定しま�
 ## 構成
 
 ```
-ブラウザ ──> Vercel (Next.jsアプリ)
-                ├──> Supabase (認証・DB・ストレージ / RLSで保護)
+ブラウザ ──> Vercel Pro・東京 hnd1 (Next.jsアプリ)
+                ├──> Supabase Pro・東京 ap-northeast-1 (認証・DB・ストレージ / RLSで保護)
                 └──> 解析AI (Gemini / Claude / GPT ※サーバー側のみ)
 ```
+
+## 構成と費用
+
+| | 月額の目安 | 選んだ理由 |
+|---|---|---|
+| Vercel Pro | $20（約3,000円） | **Hobby（無料）は規約で商用利用不可。**事務所の業務で使う以上 Pro |
+| Supabase Pro | $25（約3,800円） | Freeは**1週間使わないと停止**し、**自動バックアップが無い**。戸籍を預かる以上避ける |
+| 招待メールの送信元（SMTP） | 0円〜 | 件数が少ないため、送信サービスの無料枠で足りる（下の「招待メールの送信元」） |
+| **計** | **約7,000円** | 解析AIの利用料は別（月100案件で4万円台の試算。docs/MODEL_RESEARCH.md） |
+
+**Vercel の $20 は「開発・運用する人」の人数分だけ。**事務所の職員はアプリの利用者であって
+Vercel のメンバーではないので、何人使っても増えない。Pro はチーム単位の契約のため、
+`pnpm provision` には `VERCEL_TEAM_ID` を渡す（未指定だと個人アカウント＝Hobby に作られるので止める）。
+
+**Supabase のプランは組織単位。**プロジェクトを作る前に、組織を Pro にしておく
+（Organization → Billing）。計算資源は既定の Micro のまま（Pro に含まれる利用枠で相殺される。
+上げると月額が増える）。
+
+**請求の上限を必ず入れる。**
+- Vercel: Settings → Billing → **Spend Management** で上限額を設定する
+- Supabase: **Spend Cap は有効のまま**にする（Pro の既定。外すと超過分が青天井になる）
+
+**場所はどちらも東京に揃える。**Supabase は `ap-northeast-1`、Vercel のサーバー処理は
+`vercel.json` の `regions: ["hnd1"]` で東京に固定している。Vercel の既定は米国（iad1）で、
+揃えないと保存のたびに太平洋を往復し、戸籍データの経路も無用に伸びる。
+`/api/health` の `region` が `hnd1` であることで確かめられる。
+
+**Cloudflare 等にしなかった理由。**Workers は月$5と安いが、読み取り前の画像処理に使う
+sharp（ネイティブモジュール）が動かず作り直しが要る。浮くのは月2,000円程度で、
+作り直しと今後の追随の手間に見合わない。費用を下げたいなら、ホスティングではなく
+解析AI（2モデル照合を切る等）を見直すほうが桁違いに効く。
+
+## 招待メールの送信元（SMTP）
+
+**Supabase 標準のメール送信は、Supabase のチームメンバー宛てにしか届かない**（件数も絞られる）。
+そのままだと**事務所の人に招待メールが届かない**ため、本番では送信元を設定する。
+
+件数は月に数通なので、送信サービスの無料枠で足りる（Resend・Amazon SES など）。
+いずれも**独自ドメイン**の DNS に送信元の認証レコード（SPF・DKIM）を足す必要がある。
+`vercel.app` のドメインからは送れない。
+
+設定は `pnpm provision` に `SMTP_*` を渡すか、Supabase の
+Authentication → Emails → SMTP Settings で行う。設定後、自分の別アドレスを招待して
+**実際に届くこと**を確かめる。
 
 ## 1. Supabase（約15分）
 
@@ -78,8 +129,11 @@ service_roleキーはSupabase APIから自動取得してVercelに設定しま�
 | `ANALYSIS_PROVIDER` | 任意（ベンチマーク後に勝者を設定） |
 | `AI_NO_TRAINING_CONFIRMED` | **`true` 必須**（未設定だと解析が停止。[AI_DATA_POLICY.md](./AI_DATA_POLICY.md) の要件を満たしてから） |
 
-> 解析APIは `maxDuration = 300` を指定済み。HobbyプランでもFluid compute（既定で有効）
-> により300秒まで実行できる。無効になっている場合は Project Settings → Functions で有効化する。
+> 解析APIは `maxDuration = 300` を指定済み（Pro の範囲内）。Fluid compute は既定で有効。
+> 無効になっている場合は Project Settings → Functions で有効化する。
+>
+> **インポート先は Pro のチームを選ぶこと。**個人アカウント（Hobby）に作ると商用利用の規約に反する。
+> サーバー処理の場所はリポジトリの `vercel.json` で東京（hnd1）に固定されるため、設定は不要。
 
 ## 3. 認証リダイレクトの設定（約3分）
 
@@ -120,6 +174,10 @@ service_roleキーはSupabase APIから自動取得してVercelに設定しま�
       （既定は `assigned_only`。全案件を共有する場合のみ設定で明示的に変更する）
 - [ ] `/api/health` の `realtimeEnabled` が true（同時編集の配信。
       無効でも保存は動くため気づきにくい）
+- [ ] `/api/health` の `region` が `hnd1`（サーバー処理が東京。DBと同じ場所）
+- [ ] Vercel・Supabase がどちらも **Pro**（Hobby は商用不可、Supabase Free は停止・バックアップ無し）
+- [ ] 請求の上限: Vercel の Spend Management を設定、Supabase の Spend Cap は有効のまま
+- [ ] 招待メールの送信元（SMTP）を設定し、**事務所の人のアドレスに**招待メールが届くことを確認
 - [ ] **[docs/QA_CHECKLIST.md](./QA_CHECKLIST.md) を通しで実施**（同時編集・オフライン・
       保管期間など、動かさないと確認できない項目。40〜60分）。
       保管期間は `pnpm qa:fixtures expire <ファイルid>` で30日待たずに再現できる
@@ -143,6 +201,8 @@ GitHubのリポジトリ設定でデフォルトブランチが `main` になっ
 | 登録時に「招待制です」と出る | 仕様。管理者に招待してもらうか、最初の組織作成がまだなら組織を作る |
 | 解析が「レート制限を確認できない」 | `0006`のマイグレーション未適用。SQL Editorで実行 |
 | 解析が「データ利用ポリシーが未確認」 | `AI_NO_TRAINING_CONFIRMED=true` を設定して再デプロイ |
-| 招待は成功するがメールが届かない | `SUPABASE_SERVICE_ROLE_KEY` 未設定。設定後は **Redeploy** が必要 |
+| 招待は成功するがメールが届かない | ① `SUPABASE_SERVICE_ROLE_KEY` 未設定（設定後は **Redeploy**）② **送信元（SMTP）が未設定**。Supabase標準の送信はSupabaseのチームメンバー宛てにしか届かない（「招待メールの送信元」） |
+| 保存や読み込みが妙に遅い | `/api/health` の `region` が `hnd1` 以外。`vercel.json` の `regions` が反映されているか確認 |
+| `pnpm provision` が「無料枠です」で止まる | 仕様。Vercel はチームを Pro に、Supabase は組織を Pro にする。確認用の環境なら `ALLOW_FREE_PLAN=true` |
 | 「ログインの有効期限が切れました」と出る | 仕様。セッション切れ時にAPIが401を返す。再ログインすれば解消 |
 | 担当外の案件が見えてしまう | `0009` のマイグレーション未適用。SQL Editorで実行 |

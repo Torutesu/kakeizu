@@ -58,7 +58,7 @@ pnpm qa:live
 
 | 環境変数 | 流せるようになる項目 |
 |---|---|
-| `LIVE_BASE_URL` | 1-1〜1-3、未ログイン時のアクセス制御 |
+| `LIVE_BASE_URL` | 1-1〜1-3・1-5、未ログイン時のアクセス制御 |
 | `LIVE_ADMIN_*` | 2（取り込み）、6（出力） |
 | `LIVE_WORKER_*` | 4（同時編集）、5（オフライン）、7-2 |
 | `SUPABASE_URL` ＋ `SUPABASE_SERVICE_ROLE_KEY` | 1-4、3（保管期間・削除で実体が消えるか） |
@@ -97,6 +97,7 @@ pnpm qa:live
 | 1-2 | 同上 | `noTrainingConfirmed: true`（falseなら読み取りが動かない） |
 | 1-3 | 同上 | **`realtimeEnabled: true`** |
 | 1-4 | `pnpm qa:fixtures status` | 「Realtimeの配信（tree_revisions）: 有効」 |
+| 1-5 | `/api/health` | **`region: "hnd1"`**（サーバー処理が東京。DBと同じ場所） |
 
 > `realtimeEnabled` が false なら、Supabase の Database → Replication で
 > `tree_revisions` を有効にする。**無効でも保存は動く**ため、

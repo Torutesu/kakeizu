@@ -43,6 +43,15 @@ test.describe('1. 設定の確認', () => {
     expect(await realtimeEnabled()).toBe(true)
   })
 
+  test('1-5 サーバー処理が東京（hnd1）で動いている', async ({ request }) => {
+    const body = await (await request.get('/api/health')).json()
+    test.skip(body.region === null || body.region === undefined, 'Vercel以外の環境のため確認できません')
+    expect(
+      body.region,
+      'DB（Supabase東京）と離れた場所で動いています。vercel.json の regions が反映されているか確認してください'
+    ).toBe('hnd1')
+  })
+
   test('ログイン前の画面に個人情報が出ない', async ({ page }) => {
     await page.goto('/projects')
     await expect(page).toHaveURL(/\/login/)

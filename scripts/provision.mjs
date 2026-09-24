@@ -6,9 +6,15 @@
 // 疎通確認までを一括で行う。冪等（既存の同名プロジェクトがあれば再利用）なので、
 // 途中で失敗しても再実行すればよい。
 //
+// 前提の構成: Vercel Pro ＋ Supabase Pro（どちらも東京）。docs/DEPLOY.md「構成と費用」
+//   - Vercel Hobby は規約で商用利用不可。事務所の業務で使う以上 Pro（チーム）に置く
+//   - Supabase Free は1週間使わないと停止し、自動バックアップも無い
+//   どちらも無料枠のままなら**作り始める前に止める**（確認用の環境だけ ALLOW_FREE_PLAN=true で通す）
+//
 // 必要な環境変数:
 //   SUPABASE_ACCESS_TOKEN  https://supabase.com/dashboard/account/tokens で発行
 //   VERCEL_TOKEN           https://vercel.com/account/settings/tokens で発行
+//   VERCEL_TEAM_ID         Vercel Pro のチームID（Pro はチーム単位の契約のため）
 //   GEMINI_API_KEY         解析AI（1つ以上。ANTHROPIC_API_KEY / OPENAI_API_KEY も可）
 //
 // 実行:
@@ -18,8 +24,13 @@
 //   PROJECT_NAME           プロジェクト名（既定: kakeizu）
 //   SUPABASE_REGION        リージョン（既定: ap-northeast-1 = 東京）
 //   SUPABASE_ORG_ID        複数組織がある場合に指定（省略時は最初の組織）
-//   VERCEL_TEAM_ID         Vercelのチーム配下に作る場合に指定
 //   VERCEL_CLI_VERSION     使用するVercel CLIのバージョン（既定: 48）
+//   ALLOW_FREE_PLAN        true で無料枠のまま続行する（確認用の環境に限る）
+//
+// 招待メールの送信元（本番では実質必須。未指定だと招待メールが事務所の人に届かない）:
+//   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS
+//   SMTP_SENDER_EMAIL      送信元アドレス（例: no-reply@example.jp）
+//   SMTP_SENDER_NAME       送信者名（既定: 家系図システム）
 // ============================================================================
 
 import fs from 'node:fs'
@@ -34,6 +45,9 @@ const SUPABASE_REGION = process.env.SUPABASE_REGION || 'ap-northeast-1'
 const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID || ''
 // 出力・フラグの互換性を固定するためVercel CLIのバージョンをピン留めする
 const VERCEL_CLI_VERSION = process.env.VERCEL_CLI_VERSION || '48'
+const ALLOW_FREE_PLAN = process.env.ALLOW_FREE_PLAN === 'true'
+// サーバー処理を置く場所。vercel.json の regions と揃えること（Supabaseの東京に寄せる）
+const VERCEL_REGION = 'hnd1'
 
 const supabaseToken = process.env.SUPABASE_ACCESS_TOKEN
 const vercelToken = process.env.VERCEL_TOKEN
@@ -80,6 +94,71 @@ const vercel = (path, options) => api(VERCEL_API, vercelToken, vercelPath(path),
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// ---------------------------------------------------------------------------
+// 0. プランの確認
+//
+// 作ってから「無料枠だった」と気づくと、停止・バックアップ無しの環境に戸籍が
+// 入ってしまう。**何も作らないうちに止める。**
+// ---------------------------------------------------------------------------
+function requirePaidPlan(service, plan, hint) {
+  if (plan && !['free', 'hobby'].includes(String(plan).toLowerCase())) {
+    console.log(`  ${service}: ${plan}`)
+    return
+  }
+  if (!plan) {
+    console.log(`  ⚠ ${service}: プランを確認できませんでした。${hint}`)
+    return
+  }
+  if (ALLOW_FREE_PLAN) {
+    console.log(`  ⚠ ${service}: 無料枠（${plan}）のまま続行します（ALLOW_FREE_PLAN=true）。確認用の環境に限ってください`)
+    return
+  }
+  fail(`${service} が無料枠（${plan}）です。${hint}\n` +
+    '  確認用の環境として無料枠のまま作る場合のみ ALLOW_FREE_PLAN=true を付けて再実行してください。')
+}
+
+async function checkPlans() {
+  step('プランを確認（Vercel Pro ＋ Supabase Pro の前提）')
+
+  const orgs = await supa('/v1/organizations')
+  const orgId = process.env.SUPABASE_ORG_ID || orgs?.[0]?.id
+  let supabasePlan = null
+  if (orgId) {
+    try {
+      supabasePlan = (await supa(`/v1/organizations/${orgId}`))?.plan ?? null
+    } catch { /* 確認できない場合は警告だけにする */ }
+  }
+  requirePaidPlan(
+    'Supabase',
+    supabasePlan,
+    'プランは組織単位です。ダッシュボードの Organization → Billing で Pro にしてください' +
+      '（Freeは1週間使わないと停止し、自動バックアップもありません）。'
+  )
+
+  if (!VERCEL_TEAM_ID) {
+    requirePaidPlan(
+      'Vercel',
+      'hobby',
+      'VERCEL_TEAM_ID が未指定のため、個人アカウント（Hobby・商用利用不可）に作られます。' +
+        'Pro のチームIDを VERCEL_TEAM_ID に指定してください（チームの Settings → General）。'
+    )
+    return
+  }
+  let vercelPlan = null
+  try {
+    const team = await api(VERCEL_API, vercelToken, `/v2/teams/${VERCEL_TEAM_ID}`)
+    vercelPlan = team?.billing?.plan ?? null
+  } catch (error) {
+    fail(`VERCEL_TEAM_ID=${VERCEL_TEAM_ID} のチームにアクセスできません（${error.message}）。` +
+      'トークンのスコープにこのチームが含まれているか確認してください。')
+  }
+  requirePaidPlan(
+    'Vercel',
+    vercelPlan,
+    'チームの Settings → Billing で Pro にしてください（Hobbyは規約で商用利用不可）。'
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -304,9 +383,11 @@ async function configureAuth(supabase, productionUrl) {
 
   // 既存の許可リストを保持したまま、必要なURLを追加する（再実行で独自ドメイン等を消さない）
   let existing = []
+  let currentSmtpHost = ''
   try {
     const current = await supa(`/v1/projects/${supabase.ref}/config/auth`)
     existing = (current?.uri_allow_list ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    currentSmtpHost = current?.smtp_host ?? ''
   } catch { /* 取得失敗時は新規設定として続行 */ }
 
   const merged = Array.from(new Set([...existing, callback, localCallback]))
@@ -318,11 +399,40 @@ async function configureAuth(supabase, productionUrl) {
       uri_allow_list: merged.join(','),
       // なりすまし登録を防ぐため、メール確認を必須にする
       mailer_autoconfirm: false,
+      ...smtpConfig(),
     }),
   })
   console.log(`  Site URL: ${productionUrl}`)
   console.log(`  許可リスト: ${merged.join(', ')}`)
   console.log('  メール確認: 必須（mailer_autoconfirm=false）')
+
+  if (smtpConfig().smtp_host) {
+    console.log(`  招待メールの送信元: ${process.env.SMTP_SENDER_EMAIL}（${process.env.SMTP_HOST}）`)
+  } else if (!currentSmtpHost) {
+    // Supabase標準の送信は、Supabaseのチームメンバー宛てにしか届かず件数も絞られる。
+    // **事務所の人に招待メールが届かない**ため、本番では送信元の設定が要る
+    console.log('  ⚠ 招待メールの送信元（SMTP）が未設定です。このままでは事務所の人に招待メールが届きません')
+    console.log('     SMTP_HOST 等を付けて再実行するか、Authentication → Emails → SMTP Settings で設定してください')
+    console.log('     （docs/DEPLOY.md「招待メールの送信元」）')
+  }
+}
+
+/** 招待メールの送信元。すべてそろっているときだけ設定する（一部だけ入れると送信が壊れる） */
+function smtpConfig() {
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_SENDER_EMAIL } = process.env
+  if (!SMTP_HOST) return {}
+  const lack = Object.entries({ SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_SENDER_EMAIL })
+    .filter(([, value]) => !value)
+    .map(([key]) => key)
+  if (lack.length > 0) fail(`SMTP_HOST を指定する場合は ${lack.join(', ')} も必要です`)
+  return {
+    smtp_host: SMTP_HOST,
+    smtp_port: String(SMTP_PORT),
+    smtp_user: SMTP_USER,
+    smtp_pass: SMTP_PASS,
+    smtp_admin_email: SMTP_SENDER_EMAIL,
+    smtp_sender_name: process.env.SMTP_SENDER_NAME || '家系図システム',
+  }
 }
 
 async function smokeTest(productionUrl) {
@@ -335,6 +445,15 @@ async function smokeTest(productionUrl) {
         console.log(`  ${JSON.stringify(health)}`)
         if (!health.supabaseConfigured) {
           console.log('  ⚠ supabaseConfigured=false: 環境変数設定後の再デプロイが必要な可能性があります')
+        }
+        if (health.region && health.region !== VERCEL_REGION) {
+          console.log(`  ⚠ サーバー処理が ${health.region} で動いています（想定は ${VERCEL_REGION}＝東京）。` +
+            'vercel.json の regions が反映されているか確認してください')
+        } else if (health.region === VERCEL_REGION) {
+          console.log('  サーバー処理の場所: 東京（hnd1）')
+        }
+        if (health.realtimeEnabled !== true) {
+          console.log('  ⚠ realtimeEnabled が true ではありません。Database → Replication で tree_revisions を有効にしてください')
         }
         return true
       }
@@ -356,6 +475,9 @@ async function main() {
   if (!vercelToken) fail('VERCEL_TOKEN が未設定です（https://vercel.com/account/settings/tokens で発行）')
   if (!fs.existsSync('supabase/setup_all.sql')) fail('supabase/setup_all.sql がありません（pnpm db:bundle で生成）')
 
+  // 送信元の指定漏れは、作り始めてからではなく最初に止める
+  smtpConfig()
+  await checkPlans()
   const supabase = await provisionSupabase()
   const { productionUrl } = await provisionVercel(supabase)
   await configureAuth(supabase, productionUrl)
@@ -371,6 +493,8 @@ async function main() {
   console.log('  2. Supabaseダッシュボード → Authentication → Providers で Google が無効であることを確認')
   console.log('     （メールアドレスのみの運用にしているため。有効だと認可エンドポイント経由で認証が成立しうる）')
   console.log('  3. 使い終わったらSUPABASE_ACCESS_TOKENとVERCEL_TOKENを失効させる')
+  console.log('  3b. 請求の上限: Vercel は Settings → Billing → Spend Management で上限を設定、')
+  console.log('      Supabase は Spend Cap を有効のままにする（想定外の請求を止めるため）')
   console.log('  4. mainへのマージで自動デプロイしたい場合はVercelダッシュボードでGitHub連携を有効化')
   console.log('  5. 動作確認は docs/RELEASE_CHECKLIST.md 「4. 手動での動作確認」に従う')
 }

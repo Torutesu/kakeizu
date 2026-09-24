@@ -36,5 +36,9 @@ export async function GET() {
     noTrainingConfirmed: isNoTrainingConfirmed(process.env),
     // 同時編集の配信。nullは確認できなかった（DBへ到達できない等）
     realtimeEnabled: await checkRealtime(),
+    // サーバー処理が動いている場所（Vercelのみ。東京なら hnd1）。
+    // vercel.json で東京に固定している。DB（Supabase東京）と離れると保存のたびに
+    // 太平洋を往復し、戸籍データの経路も無用に伸びるため、確かめられるようにする
+    region: process.env.VERCEL_REGION ?? null,
   })
 }

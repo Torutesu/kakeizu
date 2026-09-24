@@ -26,12 +26,16 @@ pnpm e2e            # ブラウザでの実挙動
 
 ## 2. Supabaseプロジェクトの用意
 
-1. Supabaseで新規プロジェクトを作成する
+0. **組織を Pro にしておく**（Freeは1週間使わないと停止し、自動バックアップが無い）。
+   Vercel も **Pro のチーム**に置く（Hobbyは商用利用不可）。理由と費用は DEPLOY.md「構成と費用」
+1. Supabaseで新規プロジェクトを作成する（リージョンは Tokyo）
 2. SQL Editor に `supabase/setup_all.sql` を貼り付けて実行する
 3. **Authentication → Providers で Google を無効にする**
    （コードからは削除済みだが、プロバイダが有効なままだと認可エンドポイントを直接叩けば認証が成立しうる）
 4. Authentication → Email でメール確認を有効にする
 5. Storage に `koseki` バケットが作られていることを確認する（`setup_all.sql` が作成する）
+6. **Authentication → Emails → SMTP Settings で送信元を設定する。**
+   Supabase標準の送信はSupabaseのチームメンバー宛てにしか届かず、事務所の人に招待メールが届かない
 
 ### 最初の管理者を作る
 
@@ -114,5 +118,7 @@ pnpm e2e            # ブラウザでの実挙動
 ## 6. リリース後すぐに確認すること
 
 - [ ] 解析を1回実行し、サーバーログでキャッシュとモデルを確認する
-- [ ] 招待を1件送り、メールが届くことを確認する
+- [ ] 招待を1件送り、**事務所の人のアドレスに**メールが届くことを確認する（自分宛てだけでは送信元の設定漏れに気づけない）
+- [ ] `/api/health` の `region` が `hnd1`（東京）であることを確認する
+- [ ] Vercel の Spend Management で上限を設定し、Supabase の Spend Cap が有効なことを確認する
 - [ ] エラー監視（Sentry等）を入れる場合はこの時点で
