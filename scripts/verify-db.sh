@@ -16,12 +16,29 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PG_BIN="${PG_BIN:-/usr/lib/postgresql/16/bin}"
+if [ -z "${PG_BIN:-}" ]; then
+  if command -v pg_config >/dev/null 2>&1; then
+    PG_BIN="$(pg_config --bindir)"
+  elif command -v brew >/dev/null 2>&1 && [ -d "$(brew --prefix postgresql@16 2>/dev/null)/bin" ]; then
+    PG_BIN="$(brew --prefix postgresql@16)/bin"
+  else
+    PG_BIN="/usr/lib/postgresql/16/bin"
+  fi
+fi
+export PATH="$PG_BIN:$PATH"
+# Linuxのroot環境だけユーザーを切り替える。macOS等では現在の利用者で起動する。
+run_pg() {
+  if [ "$(id -u)" -eq 0 ]; then
+    runuser -u postgres -- "$@"
+  else
+    "$@"
+  fi
+}
 TEMP_PG=""
 
 cleanup() {
   if [ -n "$TEMP_PG" ] && [ -d "$TEMP_PG" ]; then
-    su postgres -c "$PG_BIN/pg_ctl -D $TEMP_PG stop -m immediate" >/dev/null 2>&1 || true
+    run_pg "$PG_BIN/pg_ctl" -D "$TEMP_PG" stop -m immediate >/dev/null 2>&1 || true
     rm -rf "$TEMP_PG"
   fi
 }
@@ -32,17 +49,17 @@ if [ -z "${DATABASE_URL:-}" ]; then
   TEMP_PG="$(mktemp -d /var/tmp/kakeizu-pg-XXXXXX)"
   PORT="${PGPORT:-55432}"
   # postgresはrootで起動できないため、postgresユーザーで実行する
-  chown postgres:postgres "$TEMP_PG"
+  if [ "$(id -u)" -eq 0 ]; then chown postgres:postgres "$TEMP_PG"; fi
   chmod 700 "$TEMP_PG"
-  su postgres -c "$PG_BIN/initdb -D $TEMP_PG -U postgres --auth=trust" >/dev/null
-  su postgres -c "$PG_BIN/pg_ctl -D $TEMP_PG -o '-p $PORT -k /var/tmp' -l $TEMP_PG/server.log start" >/dev/null
+  run_pg "$PG_BIN/initdb" -D "$TEMP_PG" -U postgres --auth=trust >/dev/null
+  run_pg "$PG_BIN/pg_ctl" -D "$TEMP_PG" -o "-p $PORT -k $TEMP_PG -h 127.0.0.1" -l "$TEMP_PG/server.log" start >/dev/null
   # 起動完了を待つ
   for _ in $(seq 1 30); do
-    if psql -h /var/tmp -p "$PORT" -U postgres -c 'select 1' >/dev/null 2>&1; then break; fi
+    if psql -h "$TEMP_PG" -p "$PORT" -U postgres -c 'select 1' >/dev/null 2>&1; then break; fi
     sleep 1
   done
-  psql -h /var/tmp -p "$PORT" -U postgres -q -c 'create database kakeizu_verify;'
-  DATABASE_URL="postgres://postgres@localhost:$PORT/kakeizu_verify?host=/var/tmp"
+  psql -h "$TEMP_PG" -p "$PORT" -U postgres -q -c 'create database kakeizu_verify;'
+  DATABASE_URL="postgres://postgres@localhost:$PORT/kakeizu_verify?host=$TEMP_PG"
 fi
 
 run() { psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q "$@"; }
