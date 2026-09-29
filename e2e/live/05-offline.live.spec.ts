@@ -10,7 +10,9 @@ import {
   openPersonEdit,
   openProject,
   savePersonEdit,
-  waitSaved,
+  andSave,
+  saveVersion,
+  waitSavedSince,
 } from './actions'
 
 // docs/QA_CHECKLIST.md 「5. オフライン」
@@ -47,8 +49,7 @@ test.describe('5. オフライン', () => {
     context = session.context
     page = session.page
     projectId = await ensureProject(page, 'オフライン')
-    personId = await addPerson(page, '確認', `圏外-${Date.now().toString().slice(-5)}`)
-    await waitSaved(page)
+    personId = await andSave(page, () => addPerson(page, '確認', `圏外-${Date.now().toString().slice(-5)}`))
   })
 
   test.afterAll(async () => {
@@ -82,8 +83,9 @@ test.describe('5. オフライン', () => {
   })
 
   test('5-4/5-5 通信が戻ると自動で送られる', async () => {
+    const before = await saveVersion(page)
     await context.setOffline(false)
-    await waitSaved(page)
+    await waitSavedSince(page, before)
 
     // 読み込み直しても入っていること（＝サーバーに届いている）
     await openProject(page, projectId)
@@ -97,18 +99,22 @@ test.describe('5. オフライン', () => {
   })
 
   test('5-7 ログアウトすると、端末に残った未保存の変更も消える', async () => {
-    await context.setOffline(true)
+    // 送れないまま残っている状態でログアウトする。
+    // 通信ごと切るとログアウトの画面（案件一覧）が開けないため、保存の送信だけを止める
+    const blockSave = (route: import('@playwright/test').Route) =>
+      route.request().method() === 'PATCH' ? route.abort() : route.continue()
+    await page.route('**/rest/v1/tree_revisions**', blockSave)
+
     const dialog = await openPersonEdit(page, personId)
     await dialog.getByLabel('没地').fill('ログアウト前に入れた値')
     await savePersonEdit(page)
-    await expect(header(page)).toHaveAttribute('data-save-status', 'offline', { timeout: 30_000 })
-    expect((await draftKeys(page)).length).toBeGreaterThan(0)
+    await expect(header(page)).toHaveAttribute('data-save-status', /error|offline/, { timeout: 30_000 })
+    expect((await draftKeys(page)).length, '送れなかった変更が端末に残っていません').toBeGreaterThan(0)
 
-    await context.setOffline(false)
-    await waitSaved(page)
     await page.goto('/projects')
     await page.getByRole('button', { name: 'ログアウト' }).click()
     await page.waitForURL(/\/login/)
+    await page.unroute('**/rest/v1/tree_revisions**', blockSave)
 
     expect(await draftKeys(page), 'ログアウト後も未保存の変更が端末に残っています').toEqual([])
   })

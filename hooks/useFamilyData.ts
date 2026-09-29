@@ -65,6 +65,8 @@ interface UseFamilyDataReturn {
   isLoading: boolean
   error: string | null
   saveStatus: SaveStatus
+  /** サーバー上の版数。自分の保存・他の人の保存の受信で進む（保存を待つ確認手順が見る） */
+  savedVersion: number
   canEdit: boolean
   /** 端末に持ち越した未保存の変更を復元したか（画面で知らせるために使う） */
   restoredOfflineDraft: boolean
@@ -125,6 +127,12 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
 
   // サーバー上のバージョン。保存成功・他の人の保存の受信のたびに進める
   const versionRef = useRef(0)
+  // 画面から見える版数。refだけだと描画に出ないため、同じ値を state にも持つ
+  const [savedVersion, setSavedVersion] = useState(0)
+  const setVersion = useCallback((version: number) => {
+    versionRef.current = version
+    setSavedVersion(version)
+  }, [])
   // 最後にサーバーと同期した内容。自分が触った範囲を判定するための基準にする。
   // これが無いと、保存時に「自分の変更」と「相手の変更」を区別できない
   const baselineRef = useRef<FamilyTreeData>({ people: [], families: [] })
@@ -168,7 +176,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       ])
       const userId = auth.data.user?.id ?? null
       userIdRef.current = userId
-      versionRef.current = revision.version
+      setVersion(revision.version)
       baselineRef.current = revision.data
       setCanEdit(editable)
 
@@ -296,7 +304,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
         versionRef.current
       )
       if (result.ok) {
-        versionRef.current = result.version
+        setVersion(result.version)
         baselineRef.current = result.data
         if (userId) clearOfflineDraft(projectId, userId)
         setSaveStatus('saved')
@@ -341,9 +349,40 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     }
     if (!canEdit) return
 
+    // 保存までの待ち（デバウンス）の間も「保存済み」と出さない。
+    // 出したままだと、未保存の変更があるのに保存済みと表示され、
+    // その間に閉じた人は変更が残ったと思い込む。
+    // 他の人の変更を取り込んだだけ（手元の変更なし）のときは表示を変えない
+    const state = currentStateRef.current
+    const local = toFamilyTreeData(state.persons, state.families, state.crossCheckIssues, state.registries)
+    const hasLocalChanges = !hasNoChanges(baselineRef.current, local)
+    const knownOffline = typeof navigator !== 'undefined' && navigator.onLine === false
+    if (hasLocalChanges && !knownOffline) setSaveStatus('saving')
+
     const timeoutId = setTimeout(() => { persistRef.current() }, AUTOSAVE_DEBOUNCE_MS)
     return () => clearTimeout(timeoutId)
   }, [persons, families, registries, crossCheckIssues, isLoading, canEdit])
+
+  // 保存を待たずにタブを閉じた・再読み込みした場合も、変更を端末に残す。
+  // 自動保存は入力が止まってから走るため、その間に閉じると消えていた。
+  // 残した分は次に開いたときに復元して送る（オフラインの持ち越しと同じ経路）
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stash = () => {
+      const userId = userIdRef.current
+      if (!userId) return
+      const state = currentStateRef.current
+      const local = toFamilyTreeData(state.persons, state.families, state.crossCheckIssues, state.registries)
+      if (hasNoChanges(baselineRef.current, local)) return
+      saveOfflineDraft(projectId, userId, {
+        baselineVersion: versionRef.current,
+        delta: computeTreeDelta(baselineRef.current, local),
+        savedAt: new Date().toISOString(),
+      })
+    }
+    window.addEventListener('pagehide', stash)
+    return () => window.removeEventListener('pagehide', stash)
+  }, [projectId])
 
   // 明示的な保存（保存ボタン用）
   const saveNow = useCallback(async () => {
@@ -363,10 +402,10 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       // 相手の保存で自分の編集中の内容が消えないようにするため
       const baseline = baselineRef.current
       baselineRef.current = remote.data
-      versionRef.current = remote.version
+      setVersion(remote.version)
       applyRemoteChange(remote.data, baseline)
     })
-  }, [projectId, isLoading, applyRemoteChange])
+  }, [projectId, isLoading, applyRemoteChange, setVersion])
 
   // 人物追加
   const addPerson = useCallback((personData: Partial<ProcessedPerson>) => {
@@ -596,6 +635,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     isLoading,
     error,
     saveStatus,
+    savedVersion,
     canEdit,
     restoredOfflineDraft,
     addPerson,

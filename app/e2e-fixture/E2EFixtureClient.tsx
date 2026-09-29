@@ -5,6 +5,7 @@ import { FamilyTree } from '@/components/FamilyTree'
 import { IssuesPanel } from '@/components/IssuesPanel'
 import { RegistriesPanel } from '@/components/RegistriesPanel'
 import { PdfExportDialog } from '@/components/PdfExportDialog'
+import { KosekiUploadDialog } from '@/components/KosekiUploadDialog'
 import { Button } from '@/components/ui/button'
 import { processFamilyData, FamilyTreeData, ProcessedPerson } from '@/utils/familyDataProcessor'
 import { LiveEdit } from '@/utils/liveEdits'
@@ -92,6 +93,9 @@ export function E2EFixtureClient() {
   const [focus, setFocus] = useState<{ id: string; requestId: number } | null>(null)
   const [focusCount, setFocusCount] = useState(0)
   const [isPdfOpen, setIsPdfOpen] = useState(false)
+  // 取り込み画面。束ね方の表示・並べ替え・貼り付けは画面だけで完結するため、ここで確かめる
+  // （「解析」は押さない。押すとアップロードが走るが、フィクスチャはDBにつながっていない）
+  const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [exported, setExported] = useState<string | null>(null)
   // 大きい家系図を想定した寸法。A4 1枚では判読できない大きさにしてある
   const contentSize = { width: 2400, height: 1400 }
@@ -153,6 +157,9 @@ export function E2EFixtureClient() {
           <Button size="sm" onClick={() => setIsPdfOpen(true)}>
             PDF書き出し
           </Button>
+          <Button size="sm" variant="outline" data-testid="open-upload" onClick={() => setIsUploadOpen(true)}>
+            取り込み画面
+          </Button>
           <Button size="sm" variant="outline" data-testid="start-live-edit" onClick={startLiveEdit}>
             他の利用者の編集を開始
           </Button>
@@ -173,6 +180,14 @@ export function E2EFixtureClient() {
         </div>
       </aside>
 
+      <KosekiUploadDialog
+        orgId="e2e-fixture"
+        projectId="e2e-fixture"
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onDataExtracted={() => {}}
+        onFilesChanged={() => {}}
+      />
       <PdfExportDialog
         open={isPdfOpen}
         onOpenChange={setIsPdfOpen}

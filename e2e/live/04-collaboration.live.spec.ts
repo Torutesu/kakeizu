@@ -10,7 +10,7 @@ import {
   openProject,
   ensureProject,
   savePersonEdit,
-  waitSaved,
+  andSave,
 } from './actions'
 
 // docs/QA_CHECKLIST.md 「4. 同時編集」
@@ -43,9 +43,8 @@ test.describe('4. 同時編集', () => {
     projectId = await ensureProject(a, '同時編集')
 
     // 確認用の人物を2人用意する（既存の案件を使う場合は足すだけ）
-    personX = await addPerson(a, '確認', `X-${Date.now().toString().slice(-5)}`)
-    personY = await addPerson(a, '確認', `Y-${Date.now().toString().slice(-5)}`)
-    await waitSaved(a)
+    personX = await andSave(a, () => addPerson(a, '確認', `X-${Date.now().toString().slice(-5)}`))
+    personY = await andSave(a, () => addPerson(a, '確認', `Y-${Date.now().toString().slice(-5)}`))
 
     const worker = await loginAs(browser, live.worker!)
     contextB = worker.context
@@ -91,8 +90,7 @@ test.describe('4. 同時編集', () => {
   test('4-8 相手の保存が自分の画面に入る', async () => {
     const dialog = await openPersonEdit(b, personX)
     await dialog.getByLabel('出生地').fill('広島県福山市')
-    await savePersonEdit(b)
-    await waitSaved(b)
+    await andSave(b, () => savePersonEdit(b))
 
     await openPersonEdit(a, personX)
     await expect(a.getByLabel('出生地')).toHaveValue('広島県福山市', { timeout: 30_000 })
@@ -108,8 +106,7 @@ test.describe('4. 同時編集', () => {
     const dialogB = await openPersonEdit(b, personY)
     await dialogB.getByLabel('没年月日').fill('昭和30年3月3日')
 
-    await Promise.all([savePersonEdit(a), savePersonEdit(b)])
-    await Promise.all([waitSaved(a), waitSaved(b)])
+    await Promise.all([andSave(a, () => savePersonEdit(a)), andSave(b, () => savePersonEdit(b))])
 
     // 読み込み直しても両方残っていること
     await openProject(a, projectId)
@@ -127,10 +124,8 @@ test.describe('4. 同時編集', () => {
     const dialogB = await openPersonEdit(b, personX)
     await dialogB.getByLabel('出生地').fill('あとから保存した側')
 
-    await savePersonEdit(a)
-    await waitSaved(a)
-    await savePersonEdit(b)
-    await waitSaved(b)
+    await andSave(a, () => savePersonEdit(a))
+    await andSave(b, () => savePersonEdit(b))
 
     await openProject(a, projectId)
     const check = await openPersonEdit(a, personX)
@@ -139,16 +134,12 @@ test.describe('4. 同時編集', () => {
   })
 
   test('4-12 取り消しても、相手の追加は消えない', async () => {
-    const mine = await addPerson(a, '確認', `取消-${Date.now().toString().slice(-5)}`)
-    await waitSaved(a)
-
-    const theirs = await addPerson(b, '確認', `相手-${Date.now().toString().slice(-5)}`)
-    await waitSaved(b)
+    const mine = await andSave(a, () => addPerson(a, '確認', `取消-${Date.now().toString().slice(-5)}`))
+    const theirs = await andSave(b, () => addPerson(b, '確認', `相手-${Date.now().toString().slice(-5)}`))
     // 相手の追加が自分の画面に届くまで待つ
     await expect(card(a, theirs)).toBeVisible({ timeout: 30_000 })
 
-    await a.locator('body').press('Control+z')
-    await waitSaved(a)
+    await andSave(a, () => a.locator('body').press('Control+z'))
 
     await expect(card(a, mine), '自分の追加は取り消される').toHaveCount(0)
     await expect(card(a, theirs), '相手の追加は残る').toHaveCount(1)

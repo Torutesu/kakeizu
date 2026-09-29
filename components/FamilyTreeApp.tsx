@@ -91,6 +91,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     isLoading,
     error,
     saveStatus,
+    savedVersion,
     canEdit,
     addPerson,
     updatePerson,
@@ -529,6 +530,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3"
         data-app-header
         data-save-status={saveStatus}
+        data-save-version={savedVersion}
         data-can-edit={canEdit ? 'true' : 'false'}
         data-other-editors={otherEditors.length}
       >

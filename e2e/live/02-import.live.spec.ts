@@ -17,13 +17,17 @@ import { listKosekiFiles, storageObjectExists } from './service'
 test.describe.configure({ mode: 'serial' })
 
 function samples(): { images: string[]; pdfs: string[] } {
-  if (!live.kosekiDir) return { images: [], pdfs: [] }
+  if (!live.kosekiDir || !fs.existsSync(live.kosekiDir)) return { images: [], pdfs: [] }
   const entries = fs
     .readdirSync(live.kosekiDir)
     .map(name => path.join(live.kosekiDir, name))
     .filter(file => fs.statSync(file).isFile())
+  const images = entries.filter(file => /\.(jpe?g|png|webp)$/i.test(file)).sort()
+  // 1通を複数枚に分けたもの（名前が _1, _2 … で終わる）を優先する。
+  // 別々の戸籍の画像を混ぜて1通として読ませると、確認として意味をなさない
+  const paged = images.filter(file => /_\d+\.(jpe?g|png|webp)$/i.test(file))
   return {
-    images: entries.filter(file => /\.(jpe?g|png|webp)$/i.test(file)).sort(),
+    images: paged.length >= 3 ? paged : images,
     pdfs: entries.filter(file => /\.pdf$/i.test(file)).sort(),
   }
 }
@@ -59,7 +63,9 @@ test.describe('2. 戸籍の取り込み', () => {
     test.skip(images.length < 3, '画像が3枚以上必要です（LIVE_KOSEKI_DIR）')
 
     await openUpload()
-    await page.locator('input[type="file"]').setInputFiles(images.slice(0, 3))
+    // 家系図画面にはJSONの読み込み用にも file 入力があるため、取り込み画面の中に絞る
+    const uploadDialog = page.getByRole('dialog').filter({ hasText: 'クリックして選択' })
+    await uploadDialog.locator('input[type="file"]').setInputFiles(images.slice(0, 3))
 
     await expect(page.getByText(/3枚をまとめて通しで読み取ります/)).toBeVisible()
     const items = page.locator('[data-upload-item]')
@@ -70,9 +76,13 @@ test.describe('2. 戸籍の取り込み', () => {
     }
 
     // 並べ替えると枚数の表示が追従する（並び順がそのままページ順になる）
-    const firstName = await items.nth(0).textContent()
+    const firstName = path.basename(images[0])
     await items.nth(1).getByTitle('1つ前のページにする').click()
-    await expect(items.nth(1)).toContainText((firstName ?? '').trim().slice(-12))
+    await expect(items.nth(1)).toContainText(firstName)
+    await expect(items.nth(1)).toHaveAttribute('data-page-number', '2')
+    // 元の順に戻す（次の読み取りで、ページ順が入れ替わったまま読ませない）
+    await items.nth(1).getByTitle('1つ前のページにする').click()
+    await expect(items.nth(0)).toContainText(firstName)
   })
 
   test('2-4/2-5 解析すると1回の読み取りにまとまり、一覧は束の1枚目が先頭に出る', async () => {

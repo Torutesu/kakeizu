@@ -13,7 +13,7 @@ export async function login(page: Page, who: LiveAccount): Promise<void> {
   await page.goto('/login')
   await page.getByLabel('メールアドレス').fill(who.email)
   await page.getByLabel('パスワード').fill(who.password)
-  await page.getByRole('button', { name: 'ログイン' }).click()
+  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
   await page.waitForURL(/\/(projects|onboarding)/, { timeout: 30_000 })
   // 招待を受けていない利用者は組織に属さないため、ここで気づけるようにする
   expect(page.url(), 'この利用者は組織に属していません（招待を受けた利用者を使ってください）')
@@ -47,7 +47,7 @@ export async function ensureProject(page: Page, label: string): Promise<string> 
   await page.getByRole('button', { name: '新しい案件' }).click()
   const name = `実機確認 ${label} ${new Date().toISOString().slice(0, 19)}`
   await page.getByLabel('案件名 *').fill(name)
-  await page.getByRole('button', { name: '作成' }).click()
+  await page.getByRole('button', { name: '作成', exact: true }).click()
 
   const card = page.locator('[data-project-card]').filter({ hasText: name })
   await expect(card).toBeVisible()
@@ -67,9 +67,32 @@ export const header = (page: Page) => page.locator('[data-app-header]')
 export const card = (page: Page, personId: string) =>
   page.locator(`[data-person-card][data-person-id="${personId}"]`)
 
-/** 保存が終わるまで待つ（自動保存は入力が止まってから走る） */
-export async function waitSaved(page: Page): Promise<void> {
+/** サーバー上の版数（保存・他の人の保存の受信で進む） */
+export async function saveVersion(page: Page): Promise<number> {
+  return Number((await header(page).getAttribute('data-save-version')) ?? 0)
+}
+
+/**
+ * 版数が before より進み、かつ手元に未保存の変更がない状態まで待つ。
+ *
+ * 「保存済み」の表示だけを待ってはいけない。操作の直後はまだ表示が切り替わっておらず、
+ * 待つ前から「保存済み」に見えて素通りしてしまう（保存前に次の操作へ進む）。
+ * 版数が進んだこと＝保存が1回終わったこと、を合わせて確かめる。
+ * 手元に変更が残っている間は「保存中」のままなので、相手の保存で版数が進んだだけでは抜けない。
+ */
+export async function waitSavedSince(page: Page, before: number): Promise<void> {
+  await expect
+    .poll(() => saveVersion(page), { timeout: 30_000, message: '保存が終わりません（版数が進まない）' })
+    .toBeGreaterThan(before)
   await expect(header(page)).toHaveAttribute('data-save-status', 'saved', { timeout: 30_000 })
+}
+
+/** 操作を行い、その操作による保存が終わるまで待つ */
+export async function andSave<T>(page: Page, action: () => Promise<T>): Promise<T> {
+  const before = await saveVersion(page)
+  const result = await action()
+  await waitSavedSince(page, before)
+  return result
 }
 
 /** 人物を1人追加し、そのidを返す */
@@ -96,7 +119,7 @@ export async function openPersonEdit(page: Page, personId: string) {
   return dialog
 }
 
-/** 編集画面の「保存」。保存そのものの完了は waitSaved で待つ */
+/** 編集画面の「保存」。サーバーへの保存の完了は andSave で待つ */
 export async function savePersonEdit(page: Page): Promise<void> {
   const dialog = page.getByRole('dialog').filter({ hasText: '人物情報の編集' })
   await dialog.getByRole('button', { name: '保存' }).click()

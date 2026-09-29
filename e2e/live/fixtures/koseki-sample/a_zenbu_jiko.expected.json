@@ -1,0 +1,120 @@
+{
+  "people": [
+    {
+      "id": "taro",
+      "generation": 1,
+      "sex": "male",
+      "name": {
+        "surname": "甲野",
+        "given_name": "太郎"
+      },
+      "birth": {
+        "original_date": "昭和2年10月6日",
+        "date": "1927-10-06",
+        "place": "東京府東京市麹町区"
+      },
+      "death": {
+        "original_date": "平成20年3月3日",
+        "date": "2008-03-03",
+        "place": "東京都千代田区"
+      },
+      "relation_to_family_head": "夫"
+    },
+    {
+      "id": "haruko",
+      "generation": 1,
+      "sex": "female",
+      "name": {
+        "surname": "甲野",
+        "given_name": "春子"
+      },
+      "birth": {
+        "original_date": "昭和5年1月20日",
+        "date": "1930-01-20",
+        "place": "神奈川県横浜市"
+      },
+      "death": {
+        "original_date": null,
+        "date": null,
+        "place": null
+      },
+      "relation_to_family_head": "妻"
+    },
+    {
+      "id": "ichiro",
+      "generation": 2,
+      "sex": "male",
+      "name": {
+        "surname": "甲野",
+        "given_name": "一郎"
+      },
+      "birth": {
+        "original_date": "昭和32年2月2日",
+        "date": "1957-02-02",
+        "place": "東京都千代田区"
+      },
+      "death": {
+        "original_date": null,
+        "date": null,
+        "place": null
+      },
+      "relation_to_family_head": "長男"
+    },
+    {
+      "id": "aiko",
+      "generation": 2,
+      "sex": "female",
+      "name": {
+        "surname": "甲野",
+        "given_name": "愛子"
+      },
+      "birth": {
+        "original_date": "昭和35年12月24日",
+        "date": "1960-12-24",
+        "place": "東京都千代田区"
+      },
+      "death": {
+        "original_date": null,
+        "date": null,
+        "place": null
+      },
+      "relation_to_family_head": "長女"
+    }
+  ],
+  "families": [
+    {
+      "id": "f1",
+      "parents": [
+        "taro",
+        "haruko"
+      ],
+      "children": [
+        "ichiro",
+        "aiko"
+      ],
+      "marriage_date": {
+        "original_date": "昭和30年6月1日",
+        "date": "1955-06-01"
+      },
+      "divorce_date": {
+        "original_date": null,
+        "date": null
+      },
+      "relation_type": "blood"
+    }
+  ],
+  "registries": [
+    {
+      "id": "r1",
+      "registered_domicile": "東京都千代田区平河町一丁目10番地",
+      "head_of_family": "甲野太郎",
+      "registry_type": "current",
+      "member_ids": [
+        "taro",
+        "haruko",
+        "ichiro",
+        "aiko"
+      ]
+    }
+  ]
+}

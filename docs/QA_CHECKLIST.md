@@ -50,7 +50,6 @@ LIVE_BASE_URL=https://<本番URL> \
 LIVE_ADMIN_EMAIL=... LIVE_ADMIN_PASSWORD=... \
 LIVE_WORKER_EMAIL=... LIVE_WORKER_PASSWORD=... \
 SUPABASE_URL=https://xxxx.supabase.co SUPABASE_SERVICE_ROLE_KEY=... \
-LIVE_KOSEKI_DIR=/path/to/確認用の戸籍 \
 pnpm qa:live
 ```
 
@@ -62,7 +61,7 @@ pnpm qa:live
 | `LIVE_ADMIN_*` | 2（取り込み）、6（出力） |
 | `LIVE_WORKER_*` | 4（同時編集）、5（オフライン）、7-2 |
 | `SUPABASE_URL` ＋ `SUPABASE_SERVICE_ROLE_KEY` | 1-4、3（保管期間・削除で実体が消えるか） |
-| `LIVE_KOSEKI_DIR` | 2-2〜2-8（確認用の戸籍を置いたディレクトリ） |
+| `LIVE_KOSEKI_DIR` | 任意。2-2〜2-8 に使う戸籍の置き場所。**未指定なら同梱の見本**（架空の甲野家。`e2e/live/fixtures/koseki-sample/`） |
 | `LIVE_VIEWER_*` ＋ `LIVE_PROJECT_ID` | 7-3（閲覧のみ） |
 
 **足りないものは失敗ではなく skip になる**（何が足りないか理由が出る）。
@@ -74,12 +73,16 @@ pnpm qa:live
 > `SUPABASE_SERVICE_ROLE_KEY` はRLSを迂回する。確認用の環境にだけ渡し、
 > 終わったらシェルの履歴から消すこと。
 
+2-2・2-3・2-6（束ね方の表示・並べ替え・貼り付け）は、画面だけで完結するため
+通常の `pnpm e2e`（`e2e/upload.spec.ts`）でも毎回確かめている。
+
+触って確かめる流れ（見本の戸籍と、その正解つき）は [HANDS_ON_TEST.md](./HANDS_ON_TEST.md)。
+
 **手でしか確認できないもの**（自動では流せない）:
 
 | # | 内容 | 理由 |
 |---|---|---|
 | 2-1 | PDFのドラッグ＆ドロップ | OSのドラッグ操作は再現できない |
-| 2-6 | クリップボードからの貼り付け | OSのクリップボードが要る |
 | 2-7 | 横倒しの写真の向きが直るか | 読み取り結果を人が見て判断する |
 | 2-9/2-10 | 赤字が消える・残る | 原本を見ながら値を入れる必要がある |
 | 3-3 | Storageの画面で実体を見る | 自動側はAPIで確認済み（3-2/3-3） |

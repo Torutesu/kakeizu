@@ -316,4 +316,65 @@ describe('useFamilyData', () => {
     await waitFor(() => expect(mockedSave).toHaveBeenCalled(), { timeout: 3000 })
     expect(mockedSave.mock.calls[0][3]).toBe(5)
   })
+
+  describe('保存待ちの表示と、閉じたときの持ち越し', () => {
+    const remotePerson = {
+      id: 'other',
+      generation: 1,
+      sex: null,
+      name: { surname: '相手', given_name: 'が追加' },
+      birth: { original_date: null, date: null, place: null },
+      death: { original_date: null, date: null, place: null },
+    }
+
+    it('編集した直後から「保存中」になる（自動保存を待つ間に保存済みと出さない）', async () => {
+      const result = await setupHook()
+      expect(result.current.saveStatus).toBe('saved')
+
+      act(() => { result.current.addPerson({ id: 'p1' }) })
+      // 自動保存（デバウンス）はまだ走っていない
+      expect(mockedSave).not.toHaveBeenCalled()
+      expect(result.current.saveStatus).toBe('saving')
+
+      await waitFor(() => expect(result.current.saveStatus).toBe('saved'), { timeout: 3000 })
+      expect(result.current.savedVersion).toBe(1)
+    })
+
+    it('他の人の変更を取り込んだだけでは「保存中」にしない', async () => {
+      const result = await setupHook()
+      const onRemoteSave = mockedSubscribe.mock.calls[0][1]
+
+      act(() => {
+        onRemoteSave({ data: { people: [remotePerson], families: [] }, version: 3 })
+      })
+      expect(result.current.persons.map(p => p.id)).toEqual(['other'])
+      expect(result.current.saveStatus).toBe('saved')
+      expect(result.current.savedVersion).toBe(3)
+      // 手元に変更がないので保存も走らない
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      expect(mockedSave).not.toHaveBeenCalled()
+    })
+
+    it('保存を待たずに閉じても、変更を端末に残して次に開いたとき送る', async () => {
+      const result = await setupHook()
+      act(() => { result.current.addPerson({ id: 'p1', name: { surname: '閉', given_name: '前' } }) })
+
+      // 自動保存の前にタブを閉じた
+      act(() => { window.dispatchEvent(new Event('pagehide')) })
+      const keys = Object.keys(localStorage).filter(key => key.startsWith('kakeizu:offline-draft:'))
+      expect(keys).toHaveLength(1)
+
+      // 開き直すと復元され、送られる
+      const reopened = renderHook(() => useFamilyData(PROJECT_ID)).result
+      await waitFor(() => expect(reopened.current.isLoading).toBe(false))
+      expect(reopened.current.persons.map(p => p.displayName)).toContain('閉 前')
+      await waitFor(() => expect(mockedSave).toHaveBeenCalled(), { timeout: 3000 })
+    })
+
+    it('手元に変更がなければ、閉じても何も残さない', async () => {
+      await setupHook()
+      act(() => { window.dispatchEvent(new Event('pagehide')) })
+      expect(Object.keys(localStorage).filter(key => key.startsWith('kakeizu:offline-draft:'))).toEqual([])
+    })
+  })
 })

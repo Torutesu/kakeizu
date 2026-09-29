@@ -1,0 +1,142 @@
+{
+  "people": [
+    {
+      "id": "gitaro",
+      "generation": 1,
+      "sex": "male",
+      "name": {
+        "surname": "甲野",
+        "given_name": "義太郎"
+      },
+      "birth": {
+        "original_date": "明治参拾五年五月拾日",
+        "date": "1902-05-10",
+        "place": "東京府東京市麹町区"
+      },
+      "death": {
+        "original_date": "昭和四拾八年九月壱日",
+        "date": "1973-09-01",
+        "place": "東京都千代田区"
+      },
+      "relation_to_family_head": "戸主"
+    },
+    {
+      "id": "umeko",
+      "generation": 1,
+      "sex": "female",
+      "name": {
+        "surname": "甲野",
+        "given_name": "梅子"
+      },
+      "birth": {
+        "original_date": "明治四拾年弐月参日",
+        "date": "1907-02-03",
+        "place": "神奈川県橘樹郡"
+      },
+      "death": {
+        "original_date": "昭和五拾五年壱月弐拾日",
+        "date": "1980-01-20",
+        "place": "東京都千代田区"
+      },
+      "relation_to_family_head": "妻"
+    },
+    {
+      "id": "taro",
+      "generation": 2,
+      "sex": "male",
+      "name": {
+        "surname": "甲野",
+        "given_name": "太郎"
+      },
+      "birth": {
+        "original_date": "昭和弐年拾月六日",
+        "date": "1927-10-06",
+        "place": "東京市麹町区"
+      },
+      "death": {
+        "original_date": null,
+        "date": null,
+        "place": null
+      },
+      "relation_to_family_head": "長男"
+    },
+    {
+      "id": "hanako",
+      "generation": 2,
+      "sex": "female",
+      "name": {
+        "surname": "甲野",
+        "given_name": "花子"
+      },
+      "birth": {
+        "original_date": "昭和五年四月拾五日",
+        "date": "1930-04-15",
+        "place": "東京市麹町区"
+      },
+      "death": {
+        "original_date": null,
+        "date": null,
+        "place": null
+      },
+      "relation_to_family_head": "長女"
+    },
+    {
+      "id": "jiro",
+      "generation": 2,
+      "sex": "male",
+      "name": {
+        "surname": "甲野",
+        "given_name": "次郎"
+      },
+      "birth": {
+        "original_date": "昭和八年八月八日",
+        "date": "1933-08-08",
+        "place": "東京市麹町区"
+      },
+      "death": {
+        "original_date": null,
+        "date": null,
+        "place": null
+      },
+      "relation_to_family_head": "二男"
+    }
+  ],
+  "families": [
+    {
+      "id": "f1",
+      "parents": [
+        "gitaro",
+        "umeko"
+      ],
+      "children": [
+        "taro",
+        "hanako",
+        "jiro"
+      ],
+      "marriage_date": {
+        "original_date": "大正拾五年参月拾日",
+        "date": "1926-03-10"
+      },
+      "divorce_date": {
+        "original_date": null,
+        "date": null
+      },
+      "relation_type": "blood"
+    }
+  ],
+  "registries": [
+    {
+      "id": "r1",
+      "registered_domicile": "東京都千代田区平河町一丁目拾番地",
+      "head_of_family": "甲野義太郎",
+      "registry_type": "revised",
+      "member_ids": [
+        "gitaro",
+        "umeko",
+        "taro",
+        "hanako",
+        "jiro"
+      ]
+    }
+  ]
+}

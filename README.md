@@ -88,6 +88,9 @@ LIVE_WORKER_EMAIL=... LIVE_WORKER_PASSWORD=... pnpm qa:live
 
 渡していない環境変数の分は、理由つきでskipされます（詳細は QA_CHECKLIST の 0.4）。
 
+人が触って確かめる流れは **[docs/HANDS_ON_TEST.md](./docs/HANDS_ON_TEST.md)**（20分）。
+見本の戸籍（架空の家族）とその正解が `e2e/live/fixtures/koseki-sample/` にあります。
+
 ### 6. 解析モデルのベンチマーク（実データでの精度比較）
 
 ```bash

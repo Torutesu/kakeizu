@@ -5,6 +5,8 @@
 // 何も流せない」より「そろった分から流す」ほうが役に立つ。
 // ============================================================================
 
+import path from 'node:path'
+
 export interface LiveAccount {
   email: string
   password: string
@@ -27,8 +29,12 @@ export const live = {
   viewer: account('LIVE_VIEWER'),
   /** 確認に使う案件。未指定なら確認用の案件をその場で作る */
   projectId: process.env.LIVE_PROJECT_ID ?? '',
-  /** 取り込みの確認に使う戸籍の画像・PDFを置いたディレクトリ（任意） */
-  kosekiDir: process.env.LIVE_KOSEKI_DIR ?? '',
+  /**
+   * 取り込みの確認に使う戸籍の画像・PDFを置いたディレクトリ。
+   * 未指定なら同梱の見本（架空の家族。scripts/make-sample-koseki.mjs で作成）を使う
+   */
+  kosekiDir:
+    process.env.LIVE_KOSEKI_DIR ?? path.join(process.cwd(), 'e2e/live/fixtures/koseki-sample'),
   /** 保管期間の確認に使う。RLSを迂回するため確認用の環境にだけ渡すこと */
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
