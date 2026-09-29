@@ -16,6 +16,11 @@ const CARD_W = LAYOUT_CONFIG.cardWidth
 const CARD_H = 96
 const PADDING = 80
 
+// PDF標準フォントは日本語を持たないため、貼り合わせ位置はASCIIで記す。
+export function formatPdfTileLabel(row: number, column: number, rows: number, columns: number): string {
+  return `Page ${row * columns + column + 1}/${rows * columns} | Row ${row + 1}/${rows} | Column ${column + 1}/${columns}`
+}
+
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -30,13 +35,8 @@ interface TreeGeometry {
   height: number
 }
 
-/** 家系図全体をSVG文字列として組み立てる（純関数） */
-export function buildTreeSvg(
-  persons: ProcessedPerson[],
-  families: FamilyGroup[],
-  projectName: string,
-  now: Date = new Date()
-): TreeGeometry {
+/** 予告と実際のPDFで同じ配置・余白・見出し寸法を使う。 */
+export function measureTreePdf(persons: ProcessedPerson[], families: FamilyGroup[]) {
   const getGenerationY = (generation: number) =>
     LAYOUT_CONFIG.initialY + (generation - 1) * LAYOUT_CONFIG.generationSpacing
   const positions = calculateTreeLayout(persons, families, getGenerationY)
@@ -59,6 +59,17 @@ export function buildTreeSvg(
   const width = Math.ceil(maxX - minX + PADDING * 2)
   const height = Math.ceil(maxY - minY + PADDING * 2 + titleHeight)
 
+  return { positions, offsetX, offsetY, width, height }
+}
+
+/** 家系図全体をSVG文字列として組み立てる（純関数） */
+export function buildTreeSvg(
+  persons: ProcessedPerson[],
+  families: FamilyGroup[],
+  projectName: string,
+  now: Date = new Date()
+): TreeGeometry {
+  const { positions, offsetX, offsetY, width, height } = measureTreePdf(persons, families)
   const at = (pos: Point): Point => ({ x: pos.x + offsetX, y: pos.y + offsetY })
 
   const parts: string[] = []
@@ -272,7 +283,7 @@ export async function exportTreePdf(
       pdf.setFontSize(8)
       pdf.setTextColor(150)
       pdf.text(
-        `${row + 1}-${column + 1} / 縦${plan.rows}×横${plan.columns}`,
+        formatPdfTileLabel(row, column, plan.rows, plan.columns),
         plan.pageWidth - margin,
         plan.pageHeight - margin / 2,
         { align: 'right' }

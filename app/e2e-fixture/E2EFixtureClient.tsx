@@ -7,6 +7,7 @@ import { RegistriesPanel } from '@/components/RegistriesPanel'
 import { PdfExportDialog } from '@/components/PdfExportDialog'
 import { KosekiUploadDialog } from '@/components/KosekiUploadDialog'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { processFamilyData, FamilyTreeData, ProcessedPerson } from '@/utils/familyDataProcessor'
 import { LiveEdit } from '@/utils/liveEdits'
 
@@ -156,9 +157,11 @@ export function E2EFixtureClient() {
           }}
         />
         <div className="px-6 py-3 flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => setIsPdfOpen(true)}>
-            PDF書き出し
-          </Button>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild><Button size="sm">書き出しメニュー</Button></DropdownMenuTrigger>
+            <DropdownMenuContent><DropdownMenuItem onClick={() => setIsPdfOpen(true)}>PDF書き出し</DropdownMenuItem></DropdownMenuContent>
+          </DropdownMenu>
+          <Button size="sm" onClick={() => setIsPdfOpen(true)}>PDF書き出し</Button>
           <Button size="sm" variant="outline" data-testid="open-upload" onClick={() => setIsUploadOpen(true)}>
             取り込み画面
           </Button>

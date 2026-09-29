@@ -49,7 +49,7 @@ import { IssuesPanel } from "./IssuesPanel"
 import { RegistriesPanel } from "./RegistriesPanel"
 import { PdfExportDialog } from "./PdfExportDialog"
 import { PdfExportOptions } from "../utils/pdfLayout"
-import { LAYOUT_CONFIG } from "../constants/config"
+import { measureTreePdf } from "../utils/exportPdf"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { formatKyonen } from "../utils/age"
@@ -434,16 +434,10 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   }
 
   // ダイアログでページ数・倍率を計算するため、実際の描画サイズを求める
-  const pdfContentSize = useMemo(() => {
-    if (persons.length === 0) return { width: 0, height: 0 }
-    const xs = persons.map(p => p.x)
-    const ys = persons.map(p => p.y)
-    const padding = LAYOUT_CONFIG.canvasPadding
-    return {
-      width: Math.max(...xs) - Math.min(...xs) + LAYOUT_CONFIG.cardWidth + padding * 2,
-      height: Math.max(...ys) - Math.min(...ys) + LAYOUT_CONFIG.cardHeight + padding * 2,
-    }
-  }, [persons])
+  const pdfContentSize = useMemo(
+    () => measureTreePdf(persons, families),
+    [persons, families]
+  )
 
   // JSON読み込みハンドラー
   const handleLoadFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -642,7 +636,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                 />
               </>
             )}
-            <DropdownMenu>
+            {/* PDFダイアログへ移る際にメニューの操作ロックを残さない */}
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
                   <Upload className="w-4 h-4 mr-2" />

@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { test, expect, BrowserContext, Page } from '@playwright/test'
 import { live, missing } from './env'
 import { anyPersonId, ensureProject, loginAs, samplePath, uploadSample } from './actions'
@@ -55,11 +56,18 @@ test.describe('6. 成果物の出力', () => {
     await page.getByTestId('mode-tile').click()
     await expect(page.getByTestId('pdf-plan')).toContainText(/ページ|枚/)
 
+    const preview = await page.getByTestId('pdf-plan').innerText()
+    const expectedPages = Number(preview.match(/(\d+)ページ/)?.[1])
+    expect(expectedPages).toBeGreaterThan(0)
     const download = page.waitForEvent('download', { timeout: 60_000 })
     await page.getByTestId('confirm-export').click()
     const file = await download
     expect(file.suggestedFilename()).toMatch(/\.pdf$/)
-    expect((await file.path()) !== null, 'PDFが落ちてきませんでした').toBe(true)
+    const path = await file.path()
+    expect(path !== null, 'PDFが落ちてきませんでした').toBe(true)
+    // jsPDFのページ辞書を数え、予告だけが配置前の座標を使う退行を検出する。
+    const pdf = (await readFile(path!)).toString('latin1')
+    expect(pdf.match(/\/Type\s*\/Page\b/g)?.length).toBe(expectedPages)
   })
 
   test('6-3 Excelが落ちてきて、原文と読み取り失敗の列がある', async () => {

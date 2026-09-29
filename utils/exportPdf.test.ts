@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildTreeSvg } from './exportPdf'
+import { buildTreeSvg, measureTreePdf, formatPdfTileLabel } from './exportPdf'
 import { processFamilyData, FamilyTreeData } from './familyDataProcessor'
 
 const NOW = new Date('2026-08-22T00:00:00Z')
@@ -67,4 +67,20 @@ describe('buildTreeSvg', () => {
     expect(emptyResult.svg.startsWith('<svg')).toBe(true)
     expect(emptyResult.width).toBeGreaterThan(0)
   })
+})
+
+// 取り込み直後の全員x/y=0からでも、予告は実際の描画領域と一致しなければならない。
+it('PDFの予告は配置前の座標ではなく出力と同じ寸法を使う', () => {
+  const { persons, families } = processFamilyData(data)
+  const unpositioned = persons.map(p => ({ ...p, x: 0, y: 0 }))
+  const preview = measureTreePdf(unpositioned, families)
+  const output = buildTreeSvg(unpositioned, families, '確認', NOW)
+  expect(preview.width).toBe(output.width)
+  expect(preview.height).toBe(output.height)
+  expect(preview.positions.get('p1')?.y).not.toBe(preview.positions.get('p2')?.y)
+})
+
+it('分割PDFの貼り合わせ位置は標準フォントで読める文字だけを使う', () => {
+  expect(formatPdfTileLabel(1, 4, 2, 5)).toBe('Page 10/10 | Row 2/2 | Column 5/5')
+  expect(formatPdfTileLabel(0, 0, 2, 5)).toMatch(/^[\x20-\x7E]+$/)
 })

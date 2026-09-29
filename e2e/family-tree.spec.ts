@@ -242,3 +242,13 @@ test.describe('同時編集の見え方', () => {
     await expect(card(page, 'ko1').locator('text=さんが編集中')).toHaveCount(0)
   })
 })
+
+// メニューから開いたダイアログを閉じても、画面全体の操作が止まらないこと。
+test('PDF出力後に書き出しメニューをもう一度開ける', async ({ page }) => {
+  await page.getByRole('button', { name: '書き出しメニュー', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'PDF書き出し', exact: true }).click()
+  await page.getByTestId('confirm-export').click()
+  await expect(page.getByRole('dialog')).toBeHidden()
+  await page.getByRole('button', { name: '書き出しメニュー', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'PDF書き出し', exact: true })).toBeVisible()
+})
