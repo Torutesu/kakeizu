@@ -31,7 +31,7 @@ next-env.d.ts
 /benchmark-results/
 
 # Playwright（E2E）
-/test-results/
+/test-results*/
 /playwright-report/
 /playwright-report-live/
 /blob-report/
