@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { expect, Browser, BrowserContext, Page } from '@playwright/test'
 import { live, LiveAccount } from './env'
 
@@ -53,8 +54,39 @@ export async function ensureProject(page: Page, label: string): Promise<string> 
   await expect(card).toBeVisible()
   const projectId = await card.getAttribute('data-project-id')
   expect(projectId, '作成した案件のidが取れませんでした').toBeTruthy()
+
+  // 既定は「担当案件のみ」。作った案件に作業者・閲覧者を割り当てないと、
+  // その人たちからは案件が見えず、同時編集や保管期間の確認が成り立たない
+  const others = [live.worker?.email, live.viewer?.email].filter((email): email is string => !!email)
+  if (others.length > 0) await assignMembers(page, card, others)
+
   await openProject(page, projectId!)
   return projectId!
+}
+
+/** 案件一覧の「担当者のアサイン」から、指定した利用者を担当にする（管理者で呼ぶ） */
+async function assignMembers(
+  page: Page,
+  card: import('@playwright/test').Locator,
+  emails: string[]
+): Promise<void> {
+  await card.getByTitle('担当者のアサイン').click()
+  const dialog = page.getByRole('dialog').filter({ hasText: '担当者のアサイン' })
+  await expect(dialog).toBeVisible()
+  for (const email of emails) {
+    const row = dialog.locator(`[data-assign-member="${email}"]`)
+    await expect(
+      row,
+      `${email} が組織のメンバーにいません（管理者が招待し、その人が一度ログインしている必要があります）`
+    ).toBeVisible()
+    const toggle = row.getByRole('switch')
+    if ((await toggle.getAttribute('aria-checked')) !== 'true') {
+      await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-checked', 'true')
+    }
+  }
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
 }
 
 /** 案件を開き、家系図の画面が操作できる状態になるまで待つ */
@@ -131,6 +163,27 @@ export async function cancelPersonEdit(page: Page): Promise<void> {
   const dialog = page.getByRole('dialog').filter({ hasText: '人物情報の編集' })
   await dialog.getByRole('button', { name: 'キャンセル' }).click()
   await expect(dialog).toBeHidden()
+}
+
+/**
+ * 見本の戸籍を画面から取り込み、読み取りが終わるまで待つ（1〜2分かかる）。
+ * 原本や読み取り済みの人物が要る確認（保管期間・出典・書き出し）の下ごしらえに使う
+ */
+export async function uploadSample(page: Page, files: string[]): Promise<void> {
+  await page.getByText('戸籍PDFをアップロード').click()
+  const dialog = page.getByRole('dialog').filter({ hasText: 'クリックして選択' })
+  await expect(dialog).toBeVisible()
+  await dialog.locator('input[type="file"]').setInputFiles(files)
+  await dialog.getByRole('button', { name: /件を解析/ }).click()
+  await expect(dialog.getByText(/件の解析が完了し、家系図に取り込みました/)).toBeVisible({ timeout: 240_000 })
+  await expect(dialog.locator('[data-upload-status="failed"]'), '読み取りに失敗したファイルがあります').toHaveCount(0)
+  await dialog.getByRole('button', { name: '閉じる' }).click()
+  await expect(dialog).toBeHidden()
+}
+
+/** 同梱の見本の戸籍（架空の甲野家）のパス */
+export function samplePath(name: string): string {
+  return path.join(live.kosekiDir, name)
 }
 
 /** 案件にいる人物を1人選ぶ（確認用に「何か1人」でよい場面で使う） */

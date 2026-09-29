@@ -13,7 +13,8 @@ export interface LiveAccount {
 }
 
 function account(prefix: string): LiveAccount | null {
-  const email = process.env[`${prefix}_EMAIL`]
+  // Supabase はメールアドレスを小文字で持つ（画面の目印も小文字）。揃えておく
+  const email = process.env[`${prefix}_EMAIL`]?.trim().toLowerCase()
   const password = process.env[`${prefix}_PASSWORD`]
   if (!email || !password) return null
   return { email, password }

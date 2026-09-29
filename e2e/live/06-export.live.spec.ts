@@ -1,6 +1,6 @@
 import { test, expect, BrowserContext, Page } from '@playwright/test'
 import { live, missing } from './env'
-import { anyPersonId, ensureProject, loginAs } from './actions'
+import { anyPersonId, ensureProject, loginAs, samplePath, uploadSample } from './actions'
 
 // docs/QA_CHECKLIST.md 「6. 成果物の出力」
 //
@@ -15,11 +15,17 @@ test.describe('6. 成果物の出力', () => {
   let context: BrowserContext
   let page: Page
 
-  test.beforeAll(async ({ browser }) => {
+  test.beforeAll(async ({ browser }, testInfo) => {
+    // 見本の取り込み（読み取り）を含むため長めに取る
+    testInfo.setTimeout(300_000)
     const session = await loginAs(browser, live.admin!)
     context = session.context
     page = session.page
     await ensureProject(page, '書き出し')
+    // 書き出すもの（人物）と、出典（読み取り元の原本）が要る
+    if ((await page.locator('[data-person-card]').count()) === 0) {
+      await uploadSample(page, [samplePath('a_zenbu_jiko.pdf')])
+    }
   })
 
   test.afterAll(async () => {
@@ -68,10 +74,7 @@ test.describe('6. 成果物の出力', () => {
     const personId = await anyPersonId(page)
     await page.locator(`[data-person-card][data-person-id="${personId}"]`).click()
 
-    const sources = page.getByText('出典（読み取り元の書類）')
-    if ((await sources.count()) === 0) {
-      test.skip(true, 'この人物は手で追加したもので、読み取り元がありません')
-    }
-    await expect(sources).toBeVisible()
+    // 見本から読み取った人物なので、読み取り元の原本がある
+    await expect(page.getByText('出典（読み取り元の書類）')).toBeVisible()
   })
 })

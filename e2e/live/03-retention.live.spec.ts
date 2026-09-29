@@ -1,6 +1,6 @@
 import { test, expect, BrowserContext, Page } from '@playwright/test'
 import { live, missing } from './env'
-import { ensureProject, loginAs, openProject } from './actions'
+import { ensureProject, loginAs, openProject, samplePath, uploadSample } from './actions'
 import { expireFile, listKosekiFiles, unexpireFile } from './service'
 
 // docs/QA_CHECKLIST.md 「3. 戸籍の削除と保管期間」
@@ -24,21 +24,21 @@ test.describe('3. 保管期間', () => {
   let projectId = ''
   let fileId = ''
 
-  test.beforeAll(async ({ browser }) => {
+  test.beforeAll(async ({ browser }, testInfo) => {
+    // 見本の取り込み（読み取り）を含むため長めに取る
+    testInfo.setTimeout(300_000)
     const admin = await loginAs(browser, live.admin!)
     contextA = admin.context
     a = admin.page
     projectId = await ensureProject(a, '保管期間')
 
-    const files = await listKosekiFiles(projectId)
+    // 作ったばかりの案件には原本が無い。見本を1件取り込んでから確かめる
+    let files = await listKosekiFiles(projectId)
     if (files.length === 0) {
-      // 原本が無ければ確かめようがない。理由をはっきり出して skip する
-      test.skip(
-        true,
-        '案件に戸籍ファイルがありません。先に 02（取り込み）を流すか、' +
-          'LIVE_PROJECT_ID に原本のある案件を指定してください'
-      )
+      await uploadSample(a, [samplePath('a_zenbu_jiko.pdf')])
+      files = await listKosekiFiles(projectId)
     }
+    expect(files.length, '取り込んだはずの原本が見つかりません').toBeGreaterThan(0)
     fileId = files[0].id
 
     const worker = await loginAs(browser, live.worker!)

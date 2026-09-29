@@ -96,6 +96,7 @@ export function ProjectAssignDialog({ ctx, project, onClose }: ProjectAssignDial
               <div
                 key={member.userId}
                 className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                data-assign-member={member.email}
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">

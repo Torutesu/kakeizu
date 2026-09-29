@@ -17,7 +17,9 @@
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "verify:db": "bash scripts/verify-db.sh",
-    "qa:live": "playwright test --config playwright.live.config.ts"
+    "qa:live": "playwright test --config playwright.live.config.ts",
+    "qa:accounts": "node scripts/qa-accounts.mjs",
+    "qa:samples": "node scripts/make-sample-koseki.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
