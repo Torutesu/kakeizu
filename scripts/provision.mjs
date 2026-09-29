@@ -198,7 +198,7 @@ async function provisionSupabase() {
     })
     created = true
     console.log(`  作成しました: ${project.id}`)
-    console.log(`  ⚠ DBパスワード（直接DB接続時のみ必要。安全な場所に保管してください）: ${dbPassword}`)
+    // 生成したDBパスワードをログへ残さない。直接接続が必要なら管理画面で再設定する。
   }
   const ref = project.id
 
@@ -322,8 +322,10 @@ async function provisionVercel(supabase) {
     ['ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY],
     ['OPENAI_API_KEY', process.env.OPENAI_API_KEY],
     ['ANALYSIS_PROVIDER', process.env.ANALYSIS_PROVIDER],
+    ['ANALYSIS_MODEL', process.env.ANALYSIS_MODEL],
+    ['AI_SAMPLE_ONLY', process.env.AI_SAMPLE_ONLY || 'false'],
     // 学習不使用の確認フラグ（本番ではこれが無いと解析が停止する）
-    ['AI_NO_TRAINING_CONFIRMED', process.env.AI_NO_TRAINING_CONFIRMED],
+    ['AI_NO_TRAINING_CONFIRMED', process.env.AI_NO_TRAINING_CONFIRMED || 'false'],
   ].filter(([, value]) => Boolean(value))
 
   const hasAiKey = envVars.some(([key]) =>
@@ -332,7 +334,9 @@ async function provisionVercel(supabase) {
   if (!hasAiKey) {
     console.log('  ⚠ 解析AIのAPIキーが未指定です（解析機能は動きません。後から追加可能）')
   }
-  if (process.env.AI_NO_TRAINING_CONFIRMED !== 'true') {
+  if (process.env.AI_SAMPLE_ONLY === 'true') {
+    console.log('  見本限定: 同梱見本のみ無料APIへ送信します（学習不使用の確認とは異なります）')
+  } else if (process.env.AI_NO_TRAINING_CONFIRMED !== 'true') {
     console.log('  ⚠ AI_NO_TRAINING_CONFIRMED が未設定です。本番では解析が停止します')
     console.log('     docs/AI_DATA_POLICY.md の要件を満たした上で true を設定してください')
   }

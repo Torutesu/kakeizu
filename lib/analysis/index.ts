@@ -11,6 +11,8 @@ import { resolveProviderChain, resolveOverrideCandidate, resolveCrossCheckCandid
 import { kosekiResultSchema } from './schema'
 import { sanitizeFamilyTreeData } from './sanitize'
 import { checkDataPolicy } from './dataPolicy'
+import { isBundledSample } from './sampleOnly'
+import { preprocessParts, resolvePreprocessMode } from './preprocess'
 import { compareExtractions, summarizeIssues, CrossCheckIssue } from './ensemble'
 import { geminiProvider } from './providers/gemini'
 import { anthropicProvider } from './providers/anthropic'
@@ -99,12 +101,27 @@ function startCrossCheck(
  */
 export async function runKosekiAnalysis(
   input: AnalysisInput,
-  override?: AnalysisOverride
+  override?: AnalysisOverride,
+  preprocess = false
 ): Promise<AnalysisOutcome> {
   // 機微情報を送る前に、学習不使用の条件が確認済みかを検査する
-  const policy = checkDataPolicy(process.env)
+  const sampleOnly = process.env.AI_SAMPLE_ONLY === 'true'
+  if (sampleOnly && !isBundledSample(input)) {
+    return { success: false, error: '確認用環境では同梱の見本の戸籍だけを解析できます。' }
+  }
+  // 見本限定は学習不使用の確認とは別の条件。一般の戸籍には既存の制限を保つ。
+  const policy = sampleOnly ? { ok: true } : checkDataPolicy(process.env)
   if (!policy.ok) {
     return { success: false, error: policy.error ?? 'データ利用ポリシーが未確認です' }
+  }
+
+  if (sampleOnly) {
+    // 無料モデルの確認中に、有料モデルへのフォールバックや照合を起動しない。
+    override = { provider: 'gemini', model: 'gemini-2.5-pro' }
+  }
+  if (preprocess) {
+    const processed = await preprocessParts(input.parts, resolvePreprocessMode(process.env.KOSEKI_IMAGE_PREPROCESS))
+    input = { parts: processed.map(({ base64Data, mimeType }) => ({ base64Data, mimeType })) }
   }
 
   let chain: ProviderCandidate[]

@@ -34,6 +34,7 @@ export async function GET() {
     },
     // AIが入力を学習に使わない条件を確認済みか（falseなら本番では解析が止まる）
     noTrainingConfirmed: isNoTrainingConfirmed(process.env),
+    sampleOnly: process.env.AI_SAMPLE_ONLY === 'true',
     // 同時編集の配信。nullは確認できなかった（DBへ到達できない等）
     realtimeEnabled: await checkRealtime(),
     // サーバー処理が動いている場所（Vercelのみ。東京なら hnd1）。

@@ -26,6 +26,11 @@ html {
         `}</style>
       </head>
       <body>
+        {process.env.AI_SAMPLE_ONLY === 'true' && (
+          <div role="note" className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950">
+            見本専用の確認環境です。本物の戸籍は入れないでください。見本は無料AI APIへ送信され、品質改善に利用される場合があります。
+          </div>
+        )}
         {children}
         <Toaster />
       </body>
