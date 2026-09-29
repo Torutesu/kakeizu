@@ -216,7 +216,8 @@ export function mergeFamilyTreeData(
     }
     if (remapped.parents.length === 0) return
 
-    const target = familyById.get(remapped.id) ?? familyByKey.get(familyKey(remapped))
+    // AIの家族IDは書類ごとの連番になり得る。同じIDでも親が違えば別家族。
+    const target = familyByKey.get(familyKey(remapped))
     if (target) {
       // 子は和集合、日付は既存優先で補完
       target.children = [...new Set([...target.children, ...remapped.children])]
@@ -233,6 +234,9 @@ export function mergeFamilyTreeData(
       return
     }
 
+    const originalId = remapped.id
+    let suffix = 2
+    while (familyById.has(remapped.id)) remapped.id = `${originalId}_${suffix++}`
     families.push(remapped)
     familyByKey.set(familyKey(remapped), remapped)
     familyById.set(remapped.id, remapped)

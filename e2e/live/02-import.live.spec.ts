@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { test, expect, BrowserContext, Page } from '@playwright/test'
 import { live, missing } from './env'
-import { ensureProject, loginAs, openProject } from './actions'
+import type { FamilyTreeData } from '../../utils/familyDataProcessor'
+import { ensureProject, loginAs, openProject, uploadSample } from './actions'
 import { listKosekiFiles, storageObjectExists } from './service'
 
 // docs/QA_CHECKLIST.md 「2. 戸籍の取り込み」「3-2/3-3 削除」
@@ -42,11 +43,14 @@ test.describe('2. 戸籍の取り込み', () => {
   let page: Page
   let projectId = ''
 
-  test.beforeAll(async ({ browser }) => {
+  test.beforeAll(async ({ browser }, testInfo) => {
+    testInfo.setTimeout(300_000)
     const session = await loginAs(browser, live.admin!)
     context = session.context
     page = session.page
     projectId = await ensureProject(page, '取り込み')
+    const firstPdf = path.join(live.kosekiDir, 'a_zenbu_jiko.pdf')
+    if (fs.existsSync(firstPdf)) await uploadSample(page, [firstPdf])
   })
 
   test.afterAll(async () => {
@@ -54,7 +58,7 @@ test.describe('2. 戸籍の取り込み', () => {
   })
 
   async function openUpload(): Promise<void> {
-    await page.getByText('戸籍PDFをアップロード').click()
+    await page.getByText('戸籍PDFをアップロード', { exact: true }).click()
     await expect(page.getByRole('dialog').filter({ hasText: 'クリックして選択' })).toBeVisible()
   }
 
@@ -110,6 +114,27 @@ test.describe('2. 戸籍の取り込み', () => {
       nodes.slice(0, 3).map(node => node.getAttribute('data-group-id'))
     )
     expect(new Set(groups).size, '3枚が別々の戸籍として扱われています').toBe(1)
+
+    // 別の戸籍を足しても、AIが再利用した家族IDで別の夫婦を混ぜない。
+    if (fs.existsSync(path.join(live.kosekiDir, 'a_zenbu_jiko.pdf'))) {
+      await page.getByRole('button', { name: '書き出し' }).click()
+      const downloaded = page.waitForEvent('download')
+      await page.getByRole('menuitem', { name: /JSON/ }).click()
+      const file = await downloaded
+      const data = JSON.parse(fs.readFileSync((await file.path())!, 'utf8')) as FamilyTreeData
+      const id = (given: string) => {
+        const person = data.people.find(p => p.name.given_name === given)
+        expect(person, `${given}が取り込まれていません`).toBeTruthy()
+        return person!.id
+      }
+      const parentsFamily = data.families.find(f => f.parents.includes(id('太郎')) && f.parents.includes(id('春子')))
+      expect(parentsFamily?.children).toEqual(expect.arrayContaining([id('一郎'), id('愛子')]))
+      expect(parentsFamily?.children).not.toContain(id('太郎'))
+      const grandparentsFamily = data.families.find(f => f.parents.includes(id('義太郎')) && f.parents.includes(id('梅子')))
+      expect(grandparentsFamily?.children).toEqual(expect.arrayContaining([id('太郎'), id('花子'), id('次郎')]))
+      expect(data.families.every(f => f.children.every(child => !f.parents.includes(child)))).toBe(true)
+    }
+
   })
 
   test('2-8 判読できなかった項目が赤字で出る', async () => {

@@ -395,3 +395,34 @@ describe('出典の引き継ぎ', () => {
     expect(data.people[0].source_file_ids).toEqual(['file-a', 'file-b'])
   })
 })
+
+
+describe('別の戸籍で同じ家族IDが再利用された場合', () => {
+  it('祖父母と父母の家族を混ぜず、再取り込みしても増殖しない', () => {
+    const [grandfather, grandmother, father, mother, child] = ['祖父', '祖母', '父', '母', '子'].map((name, i) =>
+      makePerson({ id: `p${i}`, name: { surname: '甲野', given_name: name } }))
+    const existing: FamilyTreeData = {
+      people: [grandfather, grandmother, father, mother, child],
+      families: [makeFamily({ id: 'family_1', parents: [father.id, mother.id], children: [child.id] })],
+    }
+    const incoming: FamilyTreeData = {
+      people: [grandfather, grandmother, father],
+      families: [makeFamily({ id: 'family_1', parents: [grandfather.id, grandmother.id], children: [father.id] })],
+    }
+    const { data } = mergeFamilyTreeData(existing, incoming)
+    expect(data.families).toHaveLength(2)
+    expect(new Set(data.families.map(f => f.id)).size).toBe(2)
+    expect(data.families.find(f => f.parents.includes(father.id))?.children).toEqual([child.id])
+    expect(data.families.find(f => f.parents.includes(grandfather.id))?.children).toEqual([father.id])
+    expect(data.families.every(f => f.children.every(id => !f.parents.includes(id)))).toBe(true)
+    expect(mergeFamilyTreeData(data, incoming).data.families).toEqual(data.families)
+  })
+  it('同じID・同じ親でも血縁と養子縁組は別々に残す', () => {
+    const father = makePerson({ id: 'father' })
+    const base: FamilyTreeData = { people: [father], families: [makeFamily({ id: 'f1', parents: [father.id] })] }
+    const incoming: FamilyTreeData = { people: [father], families: [makeFamily({ id: 'f1', parents: [father.id], relation_type: 'adoption' })] }
+    const { data } = mergeFamilyTreeData(base, incoming)
+    expect(data.families).toHaveLength(2)
+    expect(new Set(data.families.map(f => f.id)).size).toBe(2)
+  })
+})
