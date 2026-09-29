@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { live, missing } from './env'
-import { login } from './actions'
+import { login, loginAs, ensureProject } from './actions'
 
 // docs/QA_CHECKLIST.md 「7. 権限」
 //
@@ -23,17 +23,25 @@ test.describe('7. 権限', () => {
     await expect(page.locator('[data-person-card]')).toHaveCount(0)
   })
 
-  test('7-3 閲覧のみの利用者には編集の操作が出ない', async ({ page }) => {
-    test.skip(!!missing('viewer', 'projectId'), missing('viewer', 'projectId') ?? '')
+  test('7-3 閲覧のみの利用者には編集の操作が出ない', async ({ page, browser }) => {
+    test.skip(!!missing('viewer'), missing('viewer') ?? '')
+    let projectId = live.projectId
+    if (!projectId) {
+      test.skip(!!missing('admin'), missing('admin') ?? '')
+      // 他の確認で編集した案件を共有せず、閲覧者を担当にした専用案件を作る。
+      const admin = await loginAs(browser, live.admin!)
+      try { projectId = await ensureProject(admin.page, '閲覧権限') }
+      finally { await admin.context.close() }
+    }
     await login(page, live.viewer!)
-    await page.goto(`/projects/${live.projectId}`)
+    await page.goto(`/projects/${projectId}`)
 
     const header = page.locator('[data-app-header]')
     await expect(header).toBeVisible({ timeout: 30_000 })
     await expect(header).toHaveAttribute('data-can-edit', 'false')
     await expect(header).toContainText('閲覧のみ')
     await expect(page.getByRole('button', { name: '保存' })).toHaveCount(0)
-    await expect(page.getByText('戸籍PDFをアップロード')).toHaveCount(0)
+    await expect(page.getByText('戸籍PDFをアップロード', { exact: true })).toHaveCount(0)
   })
 
   test('未ログインでは業務画面に入れない', async ({ page }) => {

@@ -37,7 +37,7 @@ async function draftKeys(page: Page): Promise<string[]> {
 }
 
 test.describe('5. オフライン', () => {
-  test.skip(() => !!missing('baseUrl', 'worker'), missing('baseUrl', 'worker') ?? '')
+  test.skip(() => !!missing('baseUrl', 'admin', 'worker'), missing('baseUrl', 'admin', 'worker') ?? '')
 
   let context: BrowserContext
   let page: Page
@@ -45,10 +45,17 @@ test.describe('5. オフライン', () => {
   let personId = ''
 
   test.beforeAll(async ({ browser }) => {
-    const session = await loginAs(browser, live.worker ?? live.admin!)
+    // 担当者の割り当ては管理者だけができる。下ごしらえと検査対象の権限を分ける。
+    const setup = await loginAs(browser, live.admin!)
+    try {
+      projectId = await ensureProject(setup.page, 'オフライン')
+    } finally {
+      await setup.context.close()
+    }
+    const session = await loginAs(browser, live.worker!)
     context = session.context
     page = session.page
-    projectId = await ensureProject(page, 'オフライン')
+    await openProject(page, projectId)
     personId = await andSave(page, () => addPerson(page, '確認', `圏外-${Date.now().toString().slice(-5)}`))
   })
 

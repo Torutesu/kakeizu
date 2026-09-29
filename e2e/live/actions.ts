@@ -49,6 +49,9 @@ export async function ensureProject(page: Page, label: string): Promise<string> 
   const name = `実機確認 ${label} ${new Date().toISOString().slice(0, 19)}`
   await page.getByLabel('案件名 *').fill(name)
   await page.getByRole('button', { name: '作成', exact: true }).click()
+  // 作成後は案件の編集画面へ自動遷移する。一覧へ戻って担当者を割り当てる。
+  await page.waitForURL(/\/projects\/[0-9a-f-]+$/, { timeout: 30_000 })
+  await page.goto('/projects')
 
   const card = page.locator('[data-project-card]').filter({ hasText: name })
   await expect(card).toBeVisible()
@@ -170,7 +173,7 @@ export async function cancelPersonEdit(page: Page): Promise<void> {
  * 原本や読み取り済みの人物が要る確認（保管期間・出典・書き出し）の下ごしらえに使う
  */
 export async function uploadSample(page: Page, files: string[]): Promise<void> {
-  await page.getByText('戸籍PDFをアップロード').click()
+  await page.getByText('戸籍PDFをアップロード', { exact: true }).click()
   const dialog = page.getByRole('dialog').filter({ hasText: 'クリックして選択' })
   await expect(dialog).toBeVisible()
   await dialog.locator('input[type="file"]').setInputFiles(files)

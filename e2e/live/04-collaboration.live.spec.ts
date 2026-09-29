@@ -11,6 +11,7 @@ import {
   ensureProject,
   savePersonEdit,
   andSave,
+  saveVersion,
 } from './actions'
 
 // docs/QA_CHECKLIST.md 「4. 同時編集」
@@ -88,10 +89,13 @@ test.describe('4. 同時編集', () => {
   })
 
   test('4-8 相手の保存が自分の画面に入る', async () => {
+    const before = await saveVersion(a)
     const dialog = await openPersonEdit(b, personX)
     await dialog.getByLabel('出生地').fill('広島県福山市')
     await andSave(b, () => savePersonEdit(b))
 
+    // 編集中のフォームは他人の保存で書き換えない設計。受信を確かめてから開く。
+    await expect.poll(() => saveVersion(a), { timeout: 30_000 }).toBeGreaterThan(before)
     await openPersonEdit(a, personX)
     await expect(a.getByLabel('出生地')).toHaveValue('広島県福山市', { timeout: 30_000 })
     await cancelPersonEdit(a)
@@ -135,6 +139,8 @@ test.describe('4. 同時編集', () => {
 
   test('4-12 取り消しても、相手の追加は消えない', async () => {
     const mine = await andSave(a, () => addPerson(a, '確認', `取消-${Date.now().toString().slice(-5)}`))
+    // Aの追加をBが受信してから次の操作へ進む（追加件数の基準がずれないようにする）。
+    await expect(card(b, mine)).toBeVisible({ timeout: 30_000 })
     const theirs = await andSave(b, () => addPerson(b, '確認', `相手-${Date.now().toString().slice(-5)}`))
     // 相手の追加が自分の画面に届くまで待つ
     await expect(card(a, theirs)).toBeVisible({ timeout: 30_000 })
