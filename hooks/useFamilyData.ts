@@ -244,6 +244,13 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     )
   }, [])
 
+  // 部分的な編集でも戸籍・照合情報を引き継ぐ。人物カードと指摘一覧は同じ
+  // 再判定結果から作り直し、補正済みの警告だけが残ることを防ぐ。
+  const pushEditedState = useCallback((changes: Partial<FamilyDataState>, label: string) => {
+    const next = { ...currentStateRef.current, ...changes }
+    pushState(toState(fromState(next)), label)
+  }, [pushState, toState, fromState])
+
   // サーバー側の内容で画面を置き換える。アンドゥ履歴には1件として積む
   // （履歴を消すと、取り込み直前の状態へ戻れなくなる）
   const applyServerData = useCallback((data: FamilyTreeData, label: string) => {
@@ -440,8 +447,8 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     newPerson.displayName = buildDisplayName(newPerson.name)
 
     const newPersons = [...persons, newPerson]
-    pushState({ persons: newPersons, families }, `${newPerson.displayName}を追加`)
-  }, [persons, families, pushState])
+    pushEditedState({ persons: newPersons, families }, `${newPerson.displayName}を追加`)
+  }, [persons, families, pushEditedState])
 
   // 人物更新
   const updatePerson = useCallback((id: string, updates: Partial<ProcessedPerson>) => {
@@ -459,8 +466,8 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
 
     const updatedPerson = newPersons.find(p => p.id === id)
     const actionName = updatedPerson ? `${updatedPerson.displayName}を更新` : '人物を更新'
-    pushState({ persons: newPersons, families }, actionName)
-  }, [persons, families, pushState])
+    pushEditedState({ persons: newPersons, families }, actionName)
+  }, [persons, families, pushEditedState])
 
   // 人物削除
   const deletePerson = useCallback((id: string) => {
@@ -474,8 +481,8 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     )
 
     const actionName = personToDelete ? `${personToDelete.displayName}を削除` : '人物を削除'
-    pushState({ persons: newPersons, families: newFamilies }, actionName)
-  }, [persons, families, pushState])
+    pushEditedState({ persons: newPersons, families: newFamilies }, actionName)
+  }, [persons, families, pushEditedState])
 
   // 人物の統合。取り込み時の名寄せは保守的に別人として残すため、
   // 婚姻改姓などをあとから人の判断でまとめられるようにする
@@ -485,7 +492,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     if (!keep || !drop) return
 
     const result = mergePersonsInState(persons, families, registries, keepId, dropId)
-    pushState(
+    pushEditedState(
       {
         persons: result.persons,
         families: result.families,
@@ -494,7 +501,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       },
       `${drop.displayName}を${keep.displayName}にまとめる`
     )
-  }, [persons, families, registries, crossCheckIssues, pushState])
+  }, [persons, families, registries, crossCheckIssues, pushEditedState])
 
   const mergeCandidates = useMemo(
     () => findMergeCandidates(persons, families),
@@ -531,16 +538,16 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     const newFamilies = [...families, newFamily]
     const parentNames = parents.map(p => p.displayName).join('と')
     const actionName = parents.length > 1 ? `${parentNames}の関係を追加` : `${parentNames}の家族関係を追加`
-    pushState({ persons, families: newFamilies }, actionName)
-  }, [persons, families, pushState])
+    pushEditedState({ persons, families: newFamilies }, actionName)
+  }, [persons, families, pushEditedState])
 
   // 家族関係更新
   const updateFamily = useCallback((id: string, updates: Partial<FamilyGroup>) => {
     const newFamilies = families.map(family =>
       family.id === id ? { ...family, ...updates } : family
     )
-    pushState({ persons, families: newFamilies }, '家族関係を更新')
-  }, [persons, families, pushState])
+    pushEditedState({ persons, families: newFamilies }, '家族関係を更新')
+  }, [persons, families, pushEditedState])
 
   // 家族関係削除
   const deleteFamily = useCallback((id: string) => {
@@ -553,8 +560,8 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       actionName = `${parentNames}の関係を削除`
     }
 
-    pushState({ persons, families: newFamilies }, actionName)
-  }, [persons, families, pushState])
+    pushEditedState({ persons, families: newFamilies }, actionName)
+  }, [persons, families, pushEditedState])
 
   // データの一括インポート（戸籍PDF解析結果やJSONファイルの読み込みに使用）
   // merge: 氏名・生没年による名寄せ付きで既存データへ統合（重複人物は単一ノードになる）

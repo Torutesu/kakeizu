@@ -378,3 +378,31 @@ describe('useFamilyData', () => {
     })
   })
 })
+
+it('編集で戸籍と照合情報を失わず、補正した警告をカードと一覧から除く', async () => {
+  const data: FamilyTreeData = {
+    people: [{ id: 'p1', generation: 1, sex: 'male', name: { surname: '甲野', given_name: '次郎' },
+      birth: { original_date: null, date: '1933-08-08', place: null },
+      death: { original_date: '判読不能', date: null, place: null }, unreadable: ['death_date'] }],
+    families: [],
+    registries: [{ id: 'r1', registered_domicile: '東京都千代田区', head_of_family: '甲野次郎',
+      registry_type: 'current', member_ids: ['p1'] }],
+    crossCheckIssues: [],
+  }
+  mockedLoad.mockResolvedValue({ data, version: 1 })
+  const result = await setupHook()
+  expect(result.current.persons[0].isUncertain).toBe(true)
+  act(() => result.current.updatePerson('p1', {
+    death: { original_date: '判読不能', date: '2020-01-01', place: null }, unreadable: [],
+  }))
+  expect(result.current.persons[0].isUncertain).toBe(false)
+  expect(result.current.persons[0].uncertaintyReasons).toEqual([])
+  expect(result.current.issues).toEqual([])
+  expect(result.current.exportFamilyTreeData().registries).toEqual(data.registries)
+  act(() => result.current.addPerson({ name: { surname: '確認', given_name: '追加' } }))
+  expect(result.current.registries).toEqual(data.registries)
+  act(() => result.current.undo())
+  act(() => result.current.undo())
+  expect(result.current.persons[0].isUncertain).toBe(true)
+  expect(result.current.registries).toEqual(data.registries)
+})
