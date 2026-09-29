@@ -171,17 +171,18 @@ async function checkPlans() {
 async function provisionSupabase() {
   step('Supabase: 組織を確認')
   const orgs = await supa('/v1/organizations')
-  if (!orgs?.length) fail('Supabaseの組織が見つかりません。ダッシュボードで一度ログインして組織を作成してください。')
-  const orgId = process.env.SUPABASE_ORG_ID || orgs[0].id
-  if (!orgs.some(o => o.id === orgId)) {
-    fail(`SUPABASE_ORG_ID=${orgId} はこのトークンでアクセスできる組織にありません。`)
+  const projects = await supa('/v1/projects')
+  const orgId = process.env.SUPABASE_ORG_ID || orgs?.[0]?.id
+  if (!orgId) fail('SUPABASE_ORG_ID を指定するか、組織を参照できるトークンを設定してください。')
+  // プロジェクト限定トークンでは組織一覧が空でも、許可済みプロジェクトの
+  // organization_idで所属を検証できる。新規作成権限を要求せず既存環境を再利用する。
+  let project = projects.find(p => p.name === PROJECT_NAME && p.organization_id === orgId)
+  if (!orgs.some(o => o.id === orgId) && !project) {
+    fail(`SUPABASE_ORG_ID=${orgId} にアクセス可能な対象プロジェクトがありません。`)
   }
   console.log(`  組織: ${orgs.find(o => o.id === orgId)?.name ?? orgId}`)
 
   step(`Supabase: プロジェクト「${PROJECT_NAME}」を作成（同一組織内に既存なら再利用）`)
-  const projects = await supa('/v1/projects')
-  // 別組織の同名プロジェクトを誤って再利用しないよう、必ず組織IDで絞り込む
-  let project = projects.find(p => p.name === PROJECT_NAME && p.organization_id === orgId)
   let created = false
   if (project) {
     console.log(`  既存プロジェクトを再利用: ${project.id}`)
@@ -288,6 +289,8 @@ async function getProductionUrl() {
   // プロジェクトの本番エイリアス（固定URL）を取得する。取得できなければnull。
   try {
     const info = await vercel(`/v9/projects/${PROJECT_NAME}`)
+    const currentAlias = info?.targets?.production?.alias?.find(a => typeof a === 'string')
+    if (currentAlias) return `https://${currentAlias}`
     const productionAlias = (info?.alias ?? []).find(
       a => a.target === 'PRODUCTION' || a.environment === 'production'
     )
@@ -392,24 +395,30 @@ async function configureAuth(supabase, productionUrl) {
   // 既存の許可リストを保持したまま、必要なURLを追加する（再実行で独自ドメイン等を消さない）
   let existing = []
   let currentSmtpHost = ''
+  let current = null
   try {
-    const current = await supa(`/v1/projects/${supabase.ref}/config/auth`)
+    current = await supa(`/v1/projects/${supabase.ref}/config/auth`)
     existing = (current?.uri_allow_list ?? '').split(',').map(s => s.trim()).filter(Boolean)
     currentSmtpHost = current?.smtp_host ?? ''
   } catch { /* 取得失敗時は新規設定として続行 */ }
 
   const merged = Array.from(new Set([...existing, callback, localCallback]))
 
-  await supa(`/v1/projects/${supabase.ref}/config/auth`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      site_url: productionUrl,
-      uri_allow_list: merged.join(','),
-      // なりすまし登録を防ぐため、メール確認を必須にする
-      mailer_autoconfirm: false,
-      ...smtpConfig(),
-    }),
-  })
+  const desired = {
+    site_url: productionUrl,
+    uri_allow_list: merged.join(','),
+    // なりすまし登録を防ぐため、メール確認を必須にする
+    mailer_autoconfirm: false,
+    ...smtpConfig(),
+  }
+  // 管理画面ですでに設定済みなら、読み取り権限だけでも再実行できる。
+  // 値が違う場合は従来通り更新し、権限不足を成功扱いにはしない。
+  const needsUpdate = Object.entries(desired).some(([key, value]) => current?.[key] !== value)
+  if (needsUpdate) {
+    await supa(`/v1/projects/${supabase.ref}/config/auth`, {
+      method: 'PATCH', body: JSON.stringify(desired),
+    })
+  }
   console.log(`  Site URL: ${productionUrl}`)
   console.log(`  許可リスト: ${merged.join(', ')}`)
   console.log('  メール確認: 必須（mailer_autoconfirm=false）')

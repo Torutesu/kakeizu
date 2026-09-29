@@ -117,7 +117,7 @@ export async function runKosekiAnalysis(
 
   if (sampleOnly) {
     // 無料モデルの確認中に、有料モデルへのフォールバックや照合を起動しない。
-    override = { provider: 'gemini', model: 'gemini-2.5-pro' }
+    override = { provider: 'gemini', model: 'gemini-3-flash-preview' }
   }
   if (preprocess) {
     const processed = await preprocessParts(input.parts, resolvePreprocessMode(process.env.KOSEKI_IMAGE_PREPROCESS))

@@ -1,0 +1,12 @@
+# 検証時の鍵・ブラウザ記録・一時的な転記サーバーをデプロイへ含めない。
+.env*
+.local-qa/
+test-results*/
+playwright-report*/
+blob-report/
+playwright/.cache/
+benchmark-results/
+testdata/
+.git/
+node_modules/
+.next/

@@ -27,7 +27,7 @@ describe('見本限定モードの外部送信境界', () => {
     vi.stubEnv('ANALYSIS_ENSEMBLE', 'true')
     const part = { base64Data: readFileSync('e2e/live/fixtures/koseki-sample/a_zenbu_jiko.pdf').toString('base64'), mimeType: 'application/pdf' }
     await runKosekiAnalysis({ parts: [part] }, { provider: 'gemini', model: 'gemini-3.1-pro' }, true)
-    expect(analyze).toHaveBeenCalledExactlyOnceWith({ parts: [part] }, 'gemini-2.5-pro')
+    expect(analyze).toHaveBeenCalledExactlyOnceWith({ parts: [part] }, 'gemini-3-flash-preview')
   })
   it('見本モードを指定しなければ従来の学習不使用の確認が必須', async () => {
     vi.stubEnv('NODE_ENV', 'production')
