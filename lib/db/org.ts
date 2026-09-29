@@ -30,6 +30,8 @@ export async function fetchOrgContext(): Promise<OrgContext | null> {
   const { data, error } = await supabase
     .from('memberships')
     .select('org_id, role, organizations(id, name, worker_access_mode)')
+    // RLSは同じ組織のメンバー一覧も許可する。本人に絞らないと、先に登録した管理者の役割を拾ってしまう。
+    .eq('user_id', user.id)
     .order('created_at', { ascending: true })
     .limit(1)
 
