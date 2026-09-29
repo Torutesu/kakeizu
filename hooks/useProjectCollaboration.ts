@@ -43,6 +43,8 @@ interface LiveEditMessage {
 
 /** 送信の間隔。詰めすぎると通信が増え、空けすぎると「その場で見える」感じが薄れる */
 const BROADCAST_INTERVAL_MS = 120
+// Presenceは開閉状態だけを送り、短い連続操作でサービス側の上限を超えないようまとめる。
+const PRESENCE_INTERVAL_MS = 500
 
 export interface UseProjectCollaborationReturn {
   /** 自分以外の在席者 */
@@ -68,6 +70,7 @@ export function useProjectCollaboration(
   const [liveEdits, setLiveEdits] = useState<Map<string, LiveEdit>>(new Map())
 
   const channelRef = useRef<RealtimeChannel | null>(null)
+  const schedulePresenceRef = useRef<(() => void) | null>(null)
   const editingPersonIdRef = useRef<string | null>(null)
   const lastSentAtRef = useRef<Map<string, number>>(new Map())
   const pendingRef = useRef<Map<string, LiveEditMessage>>(new Map())
@@ -81,6 +84,21 @@ export function useProjectCollaboration(
       config: { presence: { key: me.userId }, broadcast: { self: false } },
     })
     channelRef.current = channel
+    let subscribed = false
+    let lastPresenceAt = 0
+    let lastPersonId: string | null | undefined = undefined
+    let presenceTimer: ReturnType<typeof setTimeout> | null = null
+    const schedulePresence = () => {
+      if (!subscribed || presenceTimer || lastPersonId === editingPersonIdRef.current) return
+      presenceTimer = setTimeout(() => {
+        presenceTimer = null
+        if (!subscribed || lastPersonId === editingPersonIdRef.current) return
+        lastPersonId = editingPersonIdRef.current
+        lastPresenceAt = Date.now()
+        void channel.track({ ...me, editingPersonId: lastPersonId })
+      }, Math.max(0, PRESENCE_INTERVAL_MS - (Date.now() - lastPresenceAt)))
+    }
+    schedulePresenceRef.current = schedulePresence
 
     const syncPresence = () => {
       const state = channel.presenceState<PresencePayload>()
@@ -137,8 +155,10 @@ export function useProjectCollaboration(
         })
       })
       .subscribe(status => {
-        if (status === 'SUBSCRIBED') {
-          void channel.track({ ...me, editingPersonId: editingPersonIdRef.current })
+        subscribed = status === 'SUBSCRIBED'
+        if (subscribed) {
+          lastPersonId = undefined
+          schedulePresence()
         }
       })
 
@@ -151,6 +171,9 @@ export function useProjectCollaboration(
     }, LIVE_EDIT_TTL_MS / 2)
 
     return () => {
+      subscribed = false
+      if (presenceTimer) clearTimeout(presenceTimer)
+      schedulePresenceRef.current = null
       clearInterval(pruneTimer)
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
       channelRef.current = null
@@ -209,10 +232,9 @@ export function useProjectCollaboration(
   const setEditingPersonId = useCallback(
     (personId: string | null) => {
       editingPersonIdRef.current = personId
-      if (!me) return
-      void channelRef.current?.track({ ...me, editingPersonId: personId })
+      schedulePresenceRef.current?.()
     },
-    [me]
+    []
   )
 
   return useMemo(

@@ -203,6 +203,15 @@ test.describe('PDF書き出しの設定', () => {
 // 要件v1.1 4.5。他の利用者の「保存前の編集」がその場で見えること。
 // 表示の層でしか確かめられないため、E2Eで押さえる
 test.describe('同時編集の見え方', () => {
+  test('入力する前でも編集画面を開いた相手を示し、閉じると消える', async ({ page }) => {
+    await page.getByTestId('start-presence-edit').click()
+    await expect(card(page, 'ko1')).toHaveAttribute('data-editing-by', '花子')
+    await expect(card(page, 'ko1')).toContainText('花子さんが編集中')
+    await expect(card(page, 'ko1')).toContainText('阿吹 美則')
+    await page.getByTestId('end-live-edit').click()
+    await expect(card(page, 'ko1')).not.toHaveAttribute('data-editing-by', /.+/)
+  })
+
   test('他の利用者が編集中の人物に、名前と色枠が出る', async ({ page }) => {
     await expect(card(page, 'ko1').locator('text=さんが編集中')).toHaveCount(0)
 

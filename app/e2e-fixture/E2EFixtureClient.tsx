@@ -107,6 +107,7 @@ export function E2EFixtureClient() {
 
   // 他の利用者の「保存前の編集」。実際はRealtimeで届くが、E2Eでは手元で起こして
   // 表示の側だけを検証する（検出できていても画面に出ない、という不具合はここでしか防げない）
+  const [presenceEditing, setPresenceEditing] = useState(false)
   const [liveEdits, setLiveEdits] = useState<Map<string, LiveEdit>>(new Map())
   const startLiveEdit = () =>
     setLiveEdits(
@@ -135,6 +136,7 @@ export function E2EFixtureClient() {
           onPersonSelect={setSelected}
           focusPerson={focus}
           liveEdits={liveEdits}
+          editors={presenceEditing ? [{ userId: 'other-user', label: '花子', canEdit: true, editingPersonId: 'ko1' }] : []}
         />
       </div>
       <aside className="w-80 border-l border-gray-200 bg-white overflow-y-auto" data-testid="sidebar">
@@ -160,6 +162,9 @@ export function E2EFixtureClient() {
           <Button size="sm" variant="outline" data-testid="open-upload" onClick={() => setIsUploadOpen(true)}>
             取り込み画面
           </Button>
+          <Button size="sm" variant="outline" data-testid="start-presence-edit" onClick={() => setPresenceEditing(true)}>
+            他の利用者が編集画面を開く
+          </Button>
           <Button size="sm" variant="outline" data-testid="start-live-edit" onClick={startLiveEdit}>
             他の利用者の編集を開始
           </Button>
@@ -167,7 +172,7 @@ export function E2EFixtureClient() {
             size="sm"
             variant="outline"
             data-testid="end-live-edit"
-            onClick={() => setLiveEdits(new Map())}
+            onClick={() => { setLiveEdits(new Map()); setPresenceEditing(false) }}
           >
             他の利用者の編集を終了
           </Button>

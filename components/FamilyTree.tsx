@@ -2,6 +2,7 @@ import { useCallback, useRef, useEffect, useState, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { ZoomIn, ZoomOut, RotateCcw, Maximize } from "lucide-react"
 import { PersonNode, RelationEmphasis } from './PersonNode'
+import type { ProjectEditor } from '../hooks/useProjectCollaboration'
 import { LiveEdit, applyLiveEdits, editorColor } from '../utils/liveEdits'
 import { FamilyTreeLines } from './FamilyTreeLines'
 import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
@@ -50,6 +51,8 @@ interface FamilyTreeProps {
   onUploadKoseki?: () => void
   /** 他の利用者の保存前の編集（表示にだけ重ねる） */
   liveEdits?: Map<string, LiveEdit>
+  /** 入力前でも、編集画面を開いた人を示す */
+  editors?: ProjectEditor[]
   /** ドラッグ中の位置をその場で他の人へ流す */
   onLiveMove?: (personId: string, position: { x: number; y: number } | null) => void
 }
@@ -63,6 +66,7 @@ export function FamilyTree({
   onPersonPositionUpdate,
   focusPerson,
   liveEdits,
+  editors,
   onLiveMove,
   zoomSettings = DEFAULT_ZOOM_SETTINGS,
   onAddPerson,
@@ -666,12 +670,13 @@ export function FamilyTree({
             {/* 人物ノード */}
             {displayPersons.map((person) => {
               const live = liveEdits?.get(person.id)
+              const editor = live ?? editors?.find(editor => editor.editingPersonId === person.id)
               return (
               <PersonNode
                 key={person.id}
                 person={person}
                 editor={
-                  live ? { label: live.label, color: editorColor(live.userId) } : undefined
+                  editor ? { label: editor.label, color: editorColor(editor.userId) } : undefined
                 }
                 isSelected={selectedPerson?.id === person.id}
                 isDragging={isDragging && draggedPerson?.id === person.id}

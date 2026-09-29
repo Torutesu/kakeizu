@@ -779,6 +779,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             onPersonSelect={handlePersonSelect}
             onPersonEdit={canEdit ? handlePersonEdit : undefined}
             liveEdits={liveEdits}
+            editors={otherEditors}
             onLiveMove={canEdit ? handleLiveMove : undefined}
             onPersonPositionUpdate={handlePersonPositionUpdate}
             focusPerson={focusPerson}
