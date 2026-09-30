@@ -298,7 +298,7 @@ export function KosekiUploadDialog({
                 return (
                 <div
                   key={`${item.file.name}-${index}`}
-                  className="flex items-center gap-3 p-3 border border-border rounded-lg"
+                  className="flex flex-wrap sm:flex-nowrap items-center gap-3 p-3 border border-border rounded-lg"
                   data-upload-item={index}
                   data-upload-status={item.status}
                   data-document-index={position?.documentIndex}
@@ -306,7 +306,7 @@ export function KosekiUploadDialog({
                   data-page-count={position?.pages}
                 >
                   <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-[140px] sm:min-w-0 flex-1">
                     <p className="text-sm text-foreground truncate">
                       {position && position.pages > 1 && (
                         <span className="text-xs text-primary mr-1">
@@ -326,7 +326,7 @@ export function KosekiUploadDialog({
                       )}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 max-w-full sm:flex-shrink-0">
                     {(item.status === 'uploading' || item.status === 'analyzing') && (
                       <Loader2 className="w-4 h-4 animate-spin text-primary" />
                     )}
