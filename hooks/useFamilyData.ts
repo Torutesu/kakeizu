@@ -155,6 +155,53 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     loadData()
   }, [loadData])
 
+  // 保存処理の本体。同時に複数の保存を飛ばさず直列化する:
+  // 遅い保存が後発の保存を追い越して誤ってconflictになるのを防ぐため、
+  // 飛行中に保存要求が来たらsaveAgainRefを立て、完了後に最新stateで保存し直す。
+  // 保存ペイロードも送信時点のcurrentStateRefから組み立て、常に最新状態を送る。
+  const savingRef = useRef(false)
+  const saveAgainRef = useRef(false)
+  const performSaveRef = useRef<() => Promise<void>>(async () => {})
+  performSaveRef.current = async () => {
+    if (savingRef.current) {
+      saveAgainRef.current = true
+      return
+    }
+    savingRef.current = true
+    setSaveStatus('saving')
+    try {
+      const s = currentStateRef.current
+      const result = await saveTreeRevision(
+        projectId,
+        toFamilyTreeData(s.persons, s.families, s.crossCheckIssues, s.registries ?? []),
+        versionRef.current
+      )
+      if (result.ok) {
+        versionRef.current = result.version
+        setSaveStatus('saved')
+        if (saveAgainRef.current) {
+          // 保存中に変更が積まれた場合は最新状態でもう1回保存
+          saveAgainRef.current = false
+          savingRef.current = false
+          await performSaveRef.current()
+          return
+        }
+      } else {
+        saveAgainRef.current = false
+        setSaveStatus('conflict')
+      }
+    } catch (err) {
+      // 通信エラー等。積まれた再保存要求は捨て、次の変更で再試行される
+      saveAgainRef.current = false
+      console.error('保存に失敗:', err)
+      setSaveStatus('error')
+    }
+    savingRef.current = false
+  }
+  const requestSave = useCallback(() => {
+    void performSaveRef.current()
+  }, [])
+
   // 自動保存（デバウンス付き）。conflict状態では再読み込みまで保存を止める
   const isFirstRenderRef = useRef(true)
   useEffect(() => {
@@ -166,49 +213,15 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     if (!canEdit) return
     if (saveStatusRef.current === 'conflict') return
 
-    const timeoutId = setTimeout(async () => {
-      setSaveStatus('saving')
-      try {
-        const result = await saveTreeRevision(
-          projectId,
-          toFamilyTreeData(persons, families, crossCheckIssues, registries),
-          versionRef.current
-        )
-        if (result.ok) {
-          versionRef.current = result.version
-          setSaveStatus('saved')
-        } else {
-          setSaveStatus('conflict')
-        }
-      } catch (err) {
-        console.error('自動保存に失敗:', err)
-        setSaveStatus('error')
-      }
-    }, AUTOSAVE_DEBOUNCE_MS)
+    const timeoutId = setTimeout(requestSave, AUTOSAVE_DEBOUNCE_MS)
     return () => clearTimeout(timeoutId)
-  }, [persons, families, isLoading, canEdit, projectId])
+  }, [persons, families, crossCheckIssues, registries, isLoading, canEdit, projectId, requestSave])
 
   // 明示的な保存（保存ボタン用）
   const saveNow = useCallback(async () => {
     if (!canEdit || saveStatusRef.current === 'conflict') return
-    setSaveStatus('saving')
-    try {
-      const result = await saveTreeRevision(
-        projectId,
-        toFamilyTreeData(persons, families, crossCheckIssues, registries),
-        versionRef.current
-      )
-      if (result.ok) {
-        versionRef.current = result.version
-        setSaveStatus('saved')
-      } else {
-        setSaveStatus('conflict')
-      }
-    } catch (err) {
-      console.error('保存に失敗:', err)
-      setSaveStatus('error')
-    }
-  }, [canEdit, projectId, persons, families])
+    await performSaveRef.current()
+  }, [canEdit])
 
   // 人物追加
   const addPerson = useCallback((personData: Partial<ProcessedPerson>) => {
@@ -243,8 +256,11 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     newPerson.displayName = buildDisplayName(newPerson.name)
 
     const newPersons = [...persons, newPerson]
-    pushState({ persons: newPersons, families }, `${newPerson.displayName}を追加`)
-  }, [persons, families, pushState])
+    pushState(
+      { persons: newPersons, families, issues, crossCheckIssues, registries },
+      `${newPerson.displayName}を追加`
+    )
+  }, [persons, families, issues, crossCheckIssues, registries, pushState])
 
   // 人物更新
   const updatePerson = useCallback((id: string, updates: Partial<ProcessedPerson>) => {
@@ -262,23 +278,51 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
 
     const updatedPerson = newPersons.find(p => p.id === id)
     const actionName = updatedPerson ? `${updatedPerson.displayName}を更新` : '人物を更新'
-    pushState({ persons: newPersons, families }, actionName)
-  }, [persons, families, pushState])
+    pushState(
+      { persons: newPersons, families, issues, crossCheckIssues, registries },
+      actionName
+    )
+  }, [persons, families, issues, crossCheckIssues, registries, pushState])
 
   // 人物削除
   const deletePerson = useCallback((id: string) => {
     const personToDelete = persons.find(p => p.id === id)
     const newPersons = persons.filter(person => person.id !== id)
 
-    // 関連する家族関係も削除
-    const newFamilies = families.filter(family =>
-      !family.parents.some(p => p.id === id) &&
-      !family.children.some(c => c.id === id)
-    )
+    // 家族関係からは対象人物だけを外す。子を削除しても親夫婦の婚姻は残し、
+    // 親が1人と子が残れば片親の家族として維持する。残ったのが親1人だけの
+    // 「家族」は関係を表せないため削除する（親がいなくなった家族も同様）
+    const newFamilies = families
+      .map(family => ({
+        ...family,
+        parents: family.parents.filter(p => p.id !== id),
+        children: family.children.filter(c => c.id !== id),
+      }))
+      .filter(
+        family =>
+          family.parents.length > 0 &&
+          family.parents.length + family.children.length > 1
+      )
+
+    // 戸籍の構成員からも外す。誰もいなくなった戸籍も本籍の情報として残す
+    // （解析結果のサニタイズと同じ扱い）
+    const newRegistries = registries.map(r => ({
+      ...r,
+      member_ids: r.member_ids.filter(memberId => memberId !== id),
+    }))
 
     const actionName = personToDelete ? `${personToDelete.displayName}を削除` : '人物を削除'
-    pushState({ persons: newPersons, families: newFamilies }, actionName)
-  }, [persons, families, pushState])
+    pushState(
+      {
+        persons: newPersons,
+        families: newFamilies,
+        issues,
+        crossCheckIssues,
+        registries: newRegistries,
+      },
+      actionName
+    )
+  }, [persons, families, issues, crossCheckIssues, registries, pushState])
 
   // 家族関係追加
   const addFamily = useCallback((familyData: {
@@ -310,16 +354,27 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     const newFamilies = [...families, newFamily]
     const parentNames = parents.map(p => p.displayName).join('と')
     const actionName = parents.length > 1 ? `${parentNames}の関係を追加` : `${parentNames}の家族関係を追加`
-    pushState({ persons, families: newFamilies }, actionName)
-  }, [persons, families, pushState])
+    pushState(
+      { persons, families: newFamilies, issues, crossCheckIssues, registries },
+      actionName
+    )
+  }, [persons, families, issues, crossCheckIssues, registries, pushState])
 
   // 家族関係更新
   const updateFamily = useCallback((id: string, updates: Partial<FamilyGroup>) => {
-    const newFamilies = families.map(family =>
-      family.id === id ? { ...family, ...updates } : family
+    const newFamilies = families.map(family => {
+      if (family.id !== id) return family
+      const merged = { ...family, ...updates }
+      // 日付が編集されたら元号表記の原文は手入力値と一致しなくなるため破棄する
+      if ('marriageDate' in updates) merged.marriageOriginalDate = undefined
+      if ('divorceDate' in updates) merged.divorceOriginalDate = undefined
+      return merged
+    })
+    pushState(
+      { persons, families: newFamilies, issues, crossCheckIssues, registries },
+      '家族関係を更新'
     )
-    pushState({ persons, families: newFamilies }, '家族関係を更新')
-  }, [persons, families, pushState])
+  }, [persons, families, issues, crossCheckIssues, registries, pushState])
 
   // 家族関係削除
   const deleteFamily = useCallback((id: string) => {
@@ -332,8 +387,11 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       actionName = `${parentNames}の関係を削除`
     }
 
-    pushState({ persons, families: newFamilies }, actionName)
-  }, [persons, families, pushState])
+    pushState(
+      { persons, families: newFamilies, issues, crossCheckIssues, registries },
+      actionName
+    )
+  }, [persons, families, issues, crossCheckIssues, registries, pushState])
 
   // データの一括インポート（戸籍PDF解析結果やJSONファイルの読み込みに使用）
   // merge: 氏名・生没年による名寄せ付きで既存データへ統合（重複人物は単一ノードになる）
@@ -380,7 +438,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   // 現在のデータを可搬性のあるFamilyTreeData形式で取得（書き出し用）
   const exportFamilyTreeData = useCallback((): FamilyTreeData => {
     return toFamilyTreeData(persons, families, crossCheckIssues, registries)
-  }, [persons, families, crossCheckIssues])
+  }, [persons, families, crossCheckIssues, registries])
 
   // 人物検索
   const getPersonById = useCallback((id: string) => {

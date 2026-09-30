@@ -94,6 +94,9 @@ export interface FamilyGroup {
   children: ProcessedPerson[]
   marriageDate?: string
   divorceDate?: string
+  // 婚姻日・離婚日の元号表記（例: "明治35年"）。保存時に失われないよう引き回す
+  marriageOriginalDate?: string
+  divorceOriginalDate?: string
   relationType: 'blood' | 'adoption'
   marriageLines: Array<{x1: number, y1: number, x2: number, y2: number}>
   childrenLines: Array<{
@@ -173,6 +176,8 @@ export function processFamilyData(data: FamilyTreeData): {
           children,
           marriageDate: family.marriage_date?.date || undefined,
           divorceDate: family.divorce_date?.date || undefined,
+          marriageOriginalDate: family.marriage_date?.original_date || undefined,
+          divorceOriginalDate: family.divorce_date?.original_date || undefined,
           relationType: family.relation_type,
           marriageLines: [], // レイアウト計算で設定
           childrenLines: []  // レイアウト計算で設定
@@ -246,11 +251,11 @@ export function toFamilyTreeData(
     parents: family.parents.map(p => p.id),
     children: family.children.map(c => c.id),
     marriage_date: {
-      original_date: null,
+      original_date: family.marriageOriginalDate || null,
       date: family.marriageDate || null,
     },
     divorce_date: {
-      original_date: null,
+      original_date: family.divorceOriginalDate || null,
       date: family.divorceDate || null,
     },
     relation_type: family.relationType,

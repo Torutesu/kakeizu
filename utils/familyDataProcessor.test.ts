@@ -135,6 +135,29 @@ describe('toFamilyTreeData（エクスポート往復）', () => {
     expect(rp1.y).toBe(20)
     expect(rp1.manualPosition).toBe(true)
   })
+
+  it('婚姻日・離婚日の原文（元号表記）が保存往復で失われない', () => {
+    const source: FamilyTreeData = {
+      people: [makePerson({ id: 'p1' }), makePerson({ id: 'p2' })],
+      families: [
+        {
+          id: 'f1',
+          parents: ['p1', 'p2'],
+          children: [],
+          marriage_date: { original_date: '明治三十五年一月一日', date: '1902-01-01' },
+          divorce_date: { original_date: '大正十年三月', date: '1921-03-15' },
+          relation_type: 'blood',
+        },
+      ],
+    }
+
+    const processed = processFamilyData(source)
+    const exported = toFamilyTreeData(processed.persons, processed.families)
+
+    expect(exported.families[0].marriage_date.original_date).toBe('明治三十五年一月一日')
+    expect(exported.families[0].marriage_date.date).toBe('1902-01-01')
+    expect(exported.families[0].divorce_date.original_date).toBe('大正十年三月')
+  })
 })
 
 describe('searchPersons', () => {
