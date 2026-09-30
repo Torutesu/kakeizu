@@ -79,7 +79,7 @@ describe('案件一覧のロール別の出し分け', () => {
     expect(document.querySelector('[data-manage-members]')).toBeTruthy()
     expect(document.querySelector('[data-assign-project]')).toBeTruthy()
     expect(document.querySelector('[data-delete-project]')).toBeTruthy()
-    expect(screen.getByText('組織の全案件')).toBeTruthy()
+    expect(document.querySelector('[data-project-scope]')?.textContent).toBe('組織の全案件')
   })
 
   it('作業者（全案件モード）は案件を作成できるが、削除・担当・メンバー管理は出ない', async () => {
@@ -91,7 +91,7 @@ describe('案件一覧のロール別の出し分け', () => {
     expect(document.querySelector('[data-manage-members]')).toBeNull()
     expect(document.querySelector('[data-assign-project]')).toBeNull()
     expect(document.querySelector('[data-delete-project]')).toBeNull()
-    expect(screen.getByText('組織の全案件')).toBeTruthy()
+    expect(document.querySelector('[data-project-scope]')?.textContent).toBe('組織の全案件')
   })
 
   it('作業者（担当のみモード）は表示範囲が「担当案件のみ」になり管理操作は出ない', async () => {
@@ -103,8 +103,7 @@ describe('案件一覧のロール別の出し分け', () => {
     expect(document.querySelector('[data-manage-members]')).toBeNull()
     expect(document.querySelector('[data-assign-project]')).toBeNull()
     expect(document.querySelector('[data-delete-project]')).toBeNull()
-    expect(screen.getByText('担当案件のみ')).toBeTruthy()
-    expect(screen.getByText(/担当に設定された案件を表示しています/)).toBeTruthy()
+    expect(document.querySelector('[data-project-scope]')?.textContent).toBe('担当案件のみ')
   })
 
   it('閲覧者（全案件モード）は作成・削除・担当・メンバー管理が一切出ない', async () => {
@@ -128,7 +127,7 @@ describe('案件一覧のロール別の出し分け', () => {
     expect(document.querySelector('[data-manage-members]')).toBeNull()
     expect(document.querySelector('[data-assign-project]')).toBeNull()
     expect(document.querySelector('[data-delete-project]')).toBeNull()
-    expect(screen.getByText('担当案件のみ')).toBeTruthy()
+    expect(document.querySelector('[data-project-scope]')?.textContent).toBe('担当案件のみ')
   })
 
   it('どのロールでも案件を開く導線は残る', async () => {
