@@ -406,3 +406,111 @@ it('編集で戸籍と照合情報を失わず、補正した警告をカード�
   expect(result.current.persons[0].isUncertain).toBe(true)
   expect(result.current.registries).toEqual(data.registries)
 })
+
+// ============================================================================
+// 人物を削除しても、残すべき関係を失わない（PR #2 のレビューで見つかった不具合）
+// ============================================================================
+describe('人物の削除で、残すべき関係を失わない', () => {
+  const human = (id: string) => ({
+    id,
+    generation: 1,
+    sex: 'male' as const,
+    name: { surname: '甲野', given_name: id },
+    birth: { original_date: null, date: null, place: null },
+    death: { original_date: null, date: null, place: null },
+  })
+  const family = (id: string, parents: string[], children: string[], marriage: [string | null, string | null] = [null, null]) => ({
+    id,
+    parents,
+    children,
+    marriage_date: { original_date: marriage[0], date: marriage[1] },
+    divorce_date: { original_date: null, date: null },
+    relation_type: 'blood' as const,
+  })
+
+  async function load(data: FamilyTreeData) {
+    mockedLoad.mockResolvedValue({ data, version: 0 })
+    return setupHook()
+  }
+
+  it('子を削除しても、親夫婦の婚姻（日付・元号の原文）は残る', async () => {
+    const result = await load({
+      people: [human('chichi'), human('haha'), human('ko')],
+      families: [family('f', ['chichi', 'haha'], ['ko'], ['大正拾五年参月拾日', '1926-03-10'])],
+    })
+
+    act(() => { result.current.deletePerson('ko') })
+
+    const exported = result.current.exportFamilyTreeData()
+    expect(exported.families).toHaveLength(1)
+    expect(exported.families[0].parents).toEqual(['chichi', 'haha'])
+    expect(exported.families[0].children).toEqual([])
+    expect(exported.families[0].marriage_date).toEqual({ original_date: '大正拾五年参月拾日', date: '1926-03-10' })
+  })
+
+  it('夫婦の片方を削除すると、子がいれば片親の家族として残り、婚姻日は外れる', async () => {
+    const result = await load({
+      people: [human('chichi'), human('haha'), human('ko')],
+      families: [family('f', ['chichi', 'haha'], ['ko'], ['大正拾五年参月拾日', '1926-03-10'])],
+    })
+
+    act(() => { result.current.deletePerson('haha') })
+
+    const exported = result.current.exportFamilyTreeData()
+    expect(exported.families).toHaveLength(1)
+    expect(exported.families[0].parents).toEqual(['chichi'])
+    expect(exported.families[0].children).toEqual(['ko'])
+    // 1人の「婚姻」は成り立たない
+    expect(exported.families[0].marriage_date).toEqual({ original_date: null, date: null })
+  })
+
+  it('片親と子1人の家族で子を削除すると、関係を表せないので家族は消える', async () => {
+    const result = await load({
+      people: [human('oya'), human('ko')],
+      families: [family('f', ['oya'], ['ko'])],
+    })
+
+    act(() => { result.current.deletePerson('ko') })
+    expect(result.current.exportFamilyTreeData().families).toEqual([])
+  })
+
+  it('削除した人を含まない家族には触らない', async () => {
+    // 配偶者の記載が欠けて片親だけで残った婚姻など。関係のない人の削除で消してはいけない
+    const result = await load({
+      people: [human('hitori'), human('kankei_nai')],
+      families: [family('f', ['hitori'], [], ['昭和参拾年六月壱日', '1955-06-01'])],
+    })
+
+    act(() => { result.current.deletePerson('kankei_nai') })
+
+    const exported = result.current.exportFamilyTreeData()
+    expect(exported.families).toHaveLength(1)
+    expect(exported.families[0].marriage_date.original_date).toBe('昭和参拾年六月壱日')
+  })
+
+  it('戸籍からは構成員として外すだけで、本籍は残る。照合の指摘は指していた人がいなくなったものだけ消える', async () => {
+    const result = await load({
+      people: [human('a'), human('b')],
+      families: [],
+      registries: [
+        { id: 'r1', registered_domicile: '東京都千代田区', head_of_family: '甲野a', registry_type: 'current', member_ids: ['a', 'b'] },
+      ],
+      crossCheckIssues: [
+        { severity: 'error', code: 'cross_date_mismatch', message: 'aの生年', personIds: ['a'] },
+        { severity: 'error', code: 'cross_relation_mismatch', message: 'aとbの続柄', personIds: ['a', 'b'] },
+        { severity: 'warning', code: 'cross_person_missing_in_primary', message: '人物に紐づかない指摘', personIds: [] },
+      ],
+    })
+
+    act(() => { result.current.deletePerson('a') })
+
+    const exported = result.current.exportFamilyTreeData()
+    expect(exported.registries).toEqual([
+      { id: 'r1', registered_domicile: '東京都千代田区', head_of_family: '甲野a', registry_type: 'current', member_ids: ['b'] },
+    ])
+    expect(exported.crossCheckIssues?.map(issue => [issue.message, issue.personIds])).toEqual([
+      ['aとbの続柄', ['b']],
+      ['人物に紐づかない指摘', []],
+    ])
+  })
+})

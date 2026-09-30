@@ -474,15 +474,64 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     const personToDelete = persons.find(p => p.id === id)
     const newPersons = persons.filter(person => person.id !== id)
 
-    // 関連する家族関係も削除
-    const newFamilies = families.filter(family =>
-      !family.parents.some(p => p.id === id) &&
-      !family.children.some(c => c.id === id)
+    // 家族関係からは、その人だけを外す（家族ごと消さない）。
+    // 以前は関わる家族を丸ごと消しており、**子を1人消すと親夫婦の婚姻（婚姻日・
+    // 元号の原文を含む）まで消えていた。**その人を含まない家族には触らない
+    const newFamilies = families.flatMap(family => {
+      const wasParent = family.parents.some(p => p.id === id)
+      const wasChild = family.children.some(c => c.id === id)
+      if (!wasParent && !wasChild) return [family]
+
+      const parents = family.parents.filter(p => p.id !== id)
+      const children = family.children.filter(c => c.id !== id)
+      // 親が残らない、または親1人だけで子もいない「家族」は、関係を表せないので消す
+      if (parents.length === 0) return []
+      if (parents.length === 1 && children.length === 0) return []
+
+      // 夫婦の片方を消したら、婚姻・離婚の日付は残った1人の家族には当てはまらない
+      const spouseRemoved = wasParent && parents.length === 1
+      return [{
+        ...family,
+        parents,
+        children,
+        ...(spouseRemoved
+          ? {
+              marriageDate: undefined,
+              divorceDate: undefined,
+              marriageOriginalDate: null,
+              divorceOriginalDate: null,
+            }
+          : {}),
+      }]
+    })
+
+    // 戸籍からは構成員として外すだけ（本籍・筆頭者の情報は残す）。
+    // 照合の指摘は、指していた人がいなくなったものだけを消す
+    // （もともと人物に紐づかない指摘は残す）
+    const newRegistries = registries.map(registry =>
+      registry.member_ids.includes(id)
+        ? { ...registry, member_ids: registry.member_ids.filter(memberId => memberId !== id) }
+        : registry
     )
+    const newCrossCheckIssues = crossCheckIssues
+      ?.map(issue =>
+        issue.personIds.includes(id)
+          ? { ...issue, personIds: issue.personIds.filter(personId => personId !== id) }
+          : issue
+      )
+      .filter((issue, index) => issue.personIds.length > 0 || crossCheckIssues[index].personIds.length === 0)
 
     const actionName = personToDelete ? `${personToDelete.displayName}を削除` : '人物を削除'
-    pushEditedState({ persons: newPersons, families: newFamilies }, actionName)
-  }, [persons, families, pushEditedState])
+    pushEditedState(
+      {
+        persons: newPersons,
+        families: newFamilies,
+        registries: newRegistries,
+        crossCheckIssues: newCrossCheckIssues,
+      },
+      actionName
+    )
+  }, [persons, families, registries, crossCheckIssues, pushEditedState])
 
   // 人物の統合。取り込み時の名寄せは保守的に別人として残すため、
   // 婚姻改姓などをあとから人の判断でまとめられるようにする
