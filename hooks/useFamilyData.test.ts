@@ -103,6 +103,66 @@ describe('useFamilyData', () => {
     expect(result.current.families).toHaveLength(0)
   })
 
+  it('子を削除しても、親夫婦の家族関係（婚姻）は残る', async () => {
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    act(() => { result.current.addPerson({ id: 'p2' }) })
+    act(() => { result.current.addPerson({ id: 'c1' }) })
+    act(() => {
+      result.current.addFamily({ parentIds: ['p1', 'p2'], childrenIds: ['c1'], relationType: 'blood' })
+    })
+    expect(result.current.families[0].children).toHaveLength(1)
+
+    act(() => { result.current.deletePerson('c1') })
+    // 家族自体は残り、子の参照だけが外れる（婚姻記録を失わない）
+    expect(result.current.families).toHaveLength(1)
+    expect(result.current.families[0].children).toHaveLength(0)
+    expect(result.current.families[0].parents).toHaveLength(2)
+  })
+
+  it('編集しても戸籍・照合情報がエクスポートから失われない', async () => {
+    const stored: FamilyTreeData = {
+      people: [
+        {
+          id: 'p1',
+          generation: 1,
+          sex: 'male',
+          name: { surname: '山田', given_name: '太郎' },
+          birth: { original_date: null, date: null, place: null },
+          death: { original_date: null, date: null, place: null },
+        },
+      ],
+      families: [],
+      registries: [
+        {
+          id: 'r1',
+          registered_domicile: '東京都千代田区',
+          head_of_family: '山田太郎',
+          registry_type: 'current',
+          member_ids: ['p1'],
+        },
+      ],
+      crossCheckIssues: [
+        { severity: 'error', code: 'cross_date_mismatch', message: '生年が食い違い', personIds: ['p1'] },
+      ],
+    }
+    mockedLoad.mockResolvedValue({ data: stored, version: 0 })
+    const result = await setupHook()
+
+    // 人物を編集しただけで保存対象の戸籍・照合情報が消えないことを確認
+    act(() => { result.current.updatePerson('p1', { sex: 'female' }) })
+    const exported = result.current.exportFamilyTreeData()
+    expect(exported.registries).toHaveLength(1)
+    expect(exported.crossCheckIssues).toHaveLength(1)
+
+    // 人物削除では戸籍の構成員参照だけが外れる（戸籍そのものは残る）
+    act(() => { result.current.deletePerson('p1') })
+    const exportedAfterDelete = result.current.exportFamilyTreeData()
+    expect(exportedAfterDelete.registries).toHaveLength(1)
+    expect(exportedAfterDelete.registries![0].member_ids).toHaveLength(0)
+  })
+
   it('変更するとデバウンス後に自動保存される', async () => {
     const result = await setupHook()
 
