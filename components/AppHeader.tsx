@@ -33,7 +33,7 @@ export function AppHeader({ ctx }: AppHeaderProps) {
             </Button>
           </Link>
           {canManageMembers(ctx.role) && (
-            <Link href="/settings/members">
+            <Link data-manage-members href="/settings/members">
               <Button variant="ghost" size="sm">
                 <Users className="w-4 h-4 mr-1" />
                 メンバー管理

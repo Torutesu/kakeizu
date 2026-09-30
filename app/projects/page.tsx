@@ -128,21 +128,31 @@ export default function ProjectsPage() {
     )
   }
 
+  const assignedOnly = ctx.role !== 'admin' && ctx.workerAccessMode === 'assigned_only'
+  const scopeLabel = assignedOnly ? '担当案件のみ' : '組織の全案件'
+  const listColumns = ctx.role === 'admin'
+    ? 'lg:grid-cols-[minmax(0,1fr)_180px_280px]'
+    : 'lg:grid-cols-[minmax(0,1fr)_180px_100px]'
+
   return (
     <div className="min-h-screen bg-muted">
       <AppHeader ctx={ctx} />
 
-      <main className="max-w-[1440px] mx-auto px-5 sm:px-12 py-10">
+      <main data-project-list data-role={ctx.role} data-access-scope={assignedOnly ? 'assigned_only' : 'all_projects'} className="max-w-[1440px] mx-auto px-5 sm:px-12 py-10">
         <div className="flex flex-wrap items-center justify-between gap-5 mb-6">
-          <div><div className="flex items-center gap-3"><h1 className="text-[28px] font-bold text-foreground">案件一覧</h1><span className="rounded-full border bg-white px-3 py-1 text-sm tabular-nums text-muted-foreground">{projects.length}件</span></div><p className="mt-2 text-sm text-muted-foreground">戸籍の取り込みから家系図の確認まで、案件ごとに管理します。</p></div>
+          <div><div className="flex items-center gap-3"><h1 className="text-[28px] font-bold text-foreground">案件一覧</h1><span className="rounded-full border bg-white px-3 py-1 text-sm tabular-nums text-muted-foreground">{projects.length}件</span></div><p className="mt-2 text-sm text-muted-foreground">{ctx.role === 'viewer' ? '閲覧できる案件の家系図と資料を確認できます。' : '戸籍の取り込みから家系図の確認まで、案件ごとに管理します。'}</p></div>
           {canCreateProject(ctx.role) && (
-            <Button onClick={() => setIsCreateOpen(true)}>
+            <Button data-create-project onClick={() => setIsCreateOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
               新しい案件
             </Button>
           )}
         </div>
 
+        <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+          <span data-project-scope className="rounded-md border bg-white px-2.5 py-1 font-medium text-foreground">{scopeLabel}</span>
+          <p>{assignedOnly ? '担当に設定された案件を表示しています。見つからない案件は管理者に担当者の設定を依頼してください。' : 'この組織でアクセスできるすべての案件を表示しています。'}{ctx.role === 'viewer' && ' 閲覧専用のため、作成・編集はできません。'}</p>
+        </div>
         <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3">
           <div className="relative min-w-0 basis-60 flex-1">
             <Search className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -156,19 +166,17 @@ export default function ProjectsPage() {
         </div>
         {projects.length === 0 ? (
           <Card>
-            <CardContent className="py-16 text-center text-muted-foreground">
+            <CardContent data-project-empty className="py-16 text-center text-muted-foreground">
               <FolderOpen className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>アクセスできる案件がありません。</p>
-              {canCreateProject(ctx.role) ? (
-                <p className="text-sm mt-1">「新しい案件」から最初の家系図を作成してください。</p>
-              ) : (
-                <p className="text-sm mt-1">管理者に案件へのアサインを依頼してください。</p>
-              )}
+              <p className="font-medium text-foreground">{assignedOnly ? '担当案件はまだありません' : '表示できる案件はまだありません'}</p>
+              {ctx.role !== 'admin' && <p className="mt-2 text-sm">{assignedOnly ? '既存の案件で作業する場合は、管理者に担当者の設定を依頼してください。' : '案件が見つからない場合は、管理者に確認してください。'}</p>}
+              {canCreateProject(ctx.role) && <><p className="mt-2 text-sm">新しく始める場合は、案件を作成して戸籍を取り込めます。</p><Button className="mt-5" onClick={() => setIsCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />最初の案件を作成</Button></>}
+
             </CardContent>
           </Card>
         ) : (
           <div className="overflow-hidden rounded-xl border bg-white">
-            <div aria-hidden="true" className="hidden lg:grid grid-cols-[minmax(0,1fr)_180px_280px] gap-6 border-b bg-secondary/40 px-6 py-3 text-xs font-medium text-muted-foreground"><span>案件名・顧客名</span><span>最終更新</span><span className="text-right">操作</span></div>
+            <div aria-hidden="true" className={`hidden lg:grid ${listColumns} gap-6 border-b bg-secondary/40 px-6 py-3 text-xs font-medium text-muted-foreground`}><span>案件名・顧客名</span><span>最終更新</span><span className="text-right">操作</span></div>
             {visibleProjects.length === 0 && <div className="rounded-2xl border bg-white px-6 py-16 text-center"><p>一致する案件が見つかりませんでした。</p><Button className="mt-4" variant="outline" onClick={() => setQuery('')}>検索をクリア</Button></div>}
             {visibleProjects.map(project => (
               <article
@@ -177,7 +185,7 @@ export default function ProjectsPage() {
                 data-project-card
                 data-project-id={project.id}
               >
-                <div className="grid gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_180px_280px] lg:items-center lg:gap-6">
+                <div className={`grid gap-4 px-4 py-5 sm:px-6 ${listColumns} lg:items-center lg:gap-6`}>
                   <Link href={`/projects/${project.id}`} className="flex min-w-0 items-center gap-4 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-4">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border bg-secondary/50 text-primary"><FolderOpen size={20} aria-hidden="true" /></span>
                     <div className="min-w-0">
@@ -194,12 +202,12 @@ export default function ProjectsPage() {
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-1 border-t pt-3 lg:border-0 lg:pt-0">
                     {canAssignProjectMembers(ctx.role) && (
-                      <Button size="sm" variant="ghost" title="担当者のアサイン" onClick={() => setAssignTarget(project)}>
+                      <Button data-assign-project size="sm" variant="ghost" title="担当者のアサイン" onClick={() => setAssignTarget(project)}>
                         <Users className="mr-1.5 h-4 w-4" aria-hidden="true" />担当者
                       </Button>
                     )}
                     {canDeleteProject(ctx.role) && (
-                      <Button size="icon" variant="ghost" title="案件を削除" aria-label={`案件「${project.name}」を削除`} className="text-muted-foreground hover:bg-red-50 hover:text-red-700" onClick={() => handleDelete(project)}>
+                      <Button data-delete-project size="icon" variant="ghost" title="案件を削除" aria-label={`案件「${project.name}」を削除`} className="text-muted-foreground hover:bg-red-50 hover:text-red-700" onClick={() => handleDelete(project)}>
                         <Trash2 className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     )}
