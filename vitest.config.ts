@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config'
 import path from 'path'
 
 export default defineConfig({
+  // Next.jsの自動JSXランタイムに合わせる（ページ/コンポーネントがReactを
+  // 明示importしていなくてもテストでレンダリングできるようにする）
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'jsdom',
     include: ['**/*.test.{ts,tsx}'],
