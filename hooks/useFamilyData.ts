@@ -155,6 +155,53 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     loadData()
   }, [loadData])
 
+  // 保存処理の本体。同時に複数の保存を飛ばさず直列化する:
+  // 遅い保存が後発の保存を追い越して誤ってconflictになるのを防ぐため、
+  // 飛行中に保存要求が来たらsaveAgainRefを立て、完了後に最新stateで保存し直す。
+  // 保存ペイロードも送信時点のcurrentStateRefから組み立て、常に最新状態を送る。
+  const savingRef = useRef(false)
+  const saveAgainRef = useRef(false)
+  const performSaveRef = useRef<() => Promise<void>>(async () => {})
+  performSaveRef.current = async () => {
+    if (savingRef.current) {
+      saveAgainRef.current = true
+      return
+    }
+    savingRef.current = true
+    setSaveStatus('saving')
+    try {
+      const s = currentStateRef.current
+      const result = await saveTreeRevision(
+        projectId,
+        toFamilyTreeData(s.persons, s.families, s.crossCheckIssues, s.registries ?? []),
+        versionRef.current
+      )
+      if (result.ok) {
+        versionRef.current = result.version
+        setSaveStatus('saved')
+        if (saveAgainRef.current) {
+          // 保存中に変更が積まれた場合は最新状態でもう1回保存
+          saveAgainRef.current = false
+          savingRef.current = false
+          await performSaveRef.current()
+          return
+        }
+      } else {
+        saveAgainRef.current = false
+        setSaveStatus('conflict')
+      }
+    } catch (err) {
+      // 通信エラー等。積まれた再保存要求は捨て、次の変更で再試行される
+      saveAgainRef.current = false
+      console.error('保存に失敗:', err)
+      setSaveStatus('error')
+    }
+    savingRef.current = false
+  }
+  const requestSave = useCallback(() => {
+    void performSaveRef.current()
+  }, [])
+
   // 自動保存（デバウンス付き）。conflict状態では再読み込みまで保存を止める
   const isFirstRenderRef = useRef(true)
   useEffect(() => {
@@ -166,49 +213,15 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     if (!canEdit) return
     if (saveStatusRef.current === 'conflict') return
 
-    const timeoutId = setTimeout(async () => {
-      setSaveStatus('saving')
-      try {
-        const result = await saveTreeRevision(
-          projectId,
-          toFamilyTreeData(persons, families, crossCheckIssues, registries),
-          versionRef.current
-        )
-        if (result.ok) {
-          versionRef.current = result.version
-          setSaveStatus('saved')
-        } else {
-          setSaveStatus('conflict')
-        }
-      } catch (err) {
-        console.error('自動保存に失敗:', err)
-        setSaveStatus('error')
-      }
-    }, AUTOSAVE_DEBOUNCE_MS)
+    const timeoutId = setTimeout(requestSave, AUTOSAVE_DEBOUNCE_MS)
     return () => clearTimeout(timeoutId)
-  }, [persons, families, crossCheckIssues, registries, isLoading, canEdit, projectId])
+  }, [persons, families, crossCheckIssues, registries, isLoading, canEdit, projectId, requestSave])
 
   // 明示的な保存（保存ボタン用）
   const saveNow = useCallback(async () => {
     if (!canEdit || saveStatusRef.current === 'conflict') return
-    setSaveStatus('saving')
-    try {
-      const result = await saveTreeRevision(
-        projectId,
-        toFamilyTreeData(persons, families, crossCheckIssues, registries),
-        versionRef.current
-      )
-      if (result.ok) {
-        versionRef.current = result.version
-        setSaveStatus('saved')
-      } else {
-        setSaveStatus('conflict')
-      }
-    } catch (err) {
-      console.error('保存に失敗:', err)
-      setSaveStatus('error')
-    }
-  }, [canEdit, projectId, persons, families, crossCheckIssues, registries])
+    await performSaveRef.current()
+  }, [canEdit])
 
   // 人物追加
   const addPerson = useCallback((personData: Partial<ProcessedPerson>) => {
