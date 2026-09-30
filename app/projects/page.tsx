@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Loader2, Plus, Trash2, Users, FolderOpen, Search, ArrowRight } from 'lucide-react'
+import { Loader2, Plus, Trash2, Users, FolderOpen, Search, ArrowRight, X } from 'lucide-react'
 import { fetchOrgContext, OrgContext } from '@/lib/db/org'
 import {
   fetchProjects,
@@ -134,7 +134,7 @@ export default function ProjectsPage() {
 
       <main className="max-w-[1440px] mx-auto px-5 sm:px-12 py-10">
         <div className="flex flex-wrap items-center justify-between gap-5 mb-6">
-          <div><h1 className="text-[28px] font-bold text-foreground">案件一覧</h1><p className="mt-2 text-sm text-muted-foreground">戸籍の取り込みから家系図の確認まで、案件ごとに管理します。</p></div>
+          <div><div className="flex items-center gap-3"><h1 className="text-[28px] font-bold text-foreground">案件一覧</h1><span className="rounded-full border bg-white px-3 py-1 text-sm tabular-nums text-muted-foreground">{projects.length}件</span></div><p className="mt-2 text-sm text-muted-foreground">戸籍の取り込みから家系図の確認まで、案件ごとに管理します。</p></div>
           {canCreateProject(ctx.role) && (
             <Button onClick={() => setIsCreateOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
@@ -143,12 +143,13 @@ export default function ProjectsPage() {
           )}
         </div>
 
-        <div className="mb-7 flex flex-wrap items-center gap-4 rounded-xl border bg-white p-4">
-          <div className="relative min-w-48 flex-1">
+        <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3">
+          <div className="relative min-w-0 basis-60 flex-1">
             <Search className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            <Input aria-label="案件を検索" placeholder="案件名・顧客名で検索" value={query} onChange={e => setQuery(e.target.value)} className="border-0 bg-transparent pl-10 shadow-none" />
+            <Input aria-label="案件を検索" placeholder="案件名・顧客名で検索" value={query} onChange={e => setQuery(e.target.value)} className="border-0 bg-transparent pl-10 pr-12 shadow-none" />
+            {query && <Button type="button" size="icon" variant="ghost" aria-label="検索をクリア" className="absolute right-0 top-0" onClick={() => setQuery('')}><X size={16} /></Button>}
           </div>
-          <span className="text-sm tabular-nums" aria-live="polite">{visibleProjects.length}件</span>
+          <span className="text-sm tabular-nums text-muted-foreground" role="status">{query.trim() ? `${projects.length}件中 ${visibleProjects.length}件` : `全${projects.length}件`}</span>
           <select aria-label="案件の並び順" value={sort} onChange={e => setSort(e.target.value as 'updated' | 'name')} className="h-11 rounded-lg bg-white px-3 text-sm focus-visible:outline-primary">
             <option value="updated">更新が新しい順</option><option value="name">案件名順</option>
           </select>
@@ -166,56 +167,48 @@ export default function ProjectsPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4">
+          <div className="overflow-hidden rounded-xl border bg-white">
+            <div aria-hidden="true" className="hidden lg:grid grid-cols-[minmax(0,1fr)_180px_280px] gap-6 border-b bg-secondary/40 px-6 py-3 text-xs font-medium text-muted-foreground"><span>案件名・顧客名</span><span>最終更新</span><span className="text-right">操作</span></div>
             {visibleProjects.length === 0 && <div className="rounded-2xl border bg-white px-6 py-16 text-center"><p>一致する案件が見つかりませんでした。</p><Button className="mt-4" variant="outline" onClick={() => setQuery('')}>検索をクリア</Button></div>}
             {visibleProjects.map(project => (
-              <Card
+              <article
                 key={project.id}
-                className="rounded-2xl shadow-sm hover:shadow-md transition-shadow"
+                className="group border-b last:border-b-0 transition-colors hover:bg-secondary/30 focus-within:bg-secondary/30"
                 data-project-card
                 data-project-id={project.id}
               >
-                <CardContent className="p-5 sm:p-7">
-                  <div className="flex flex-wrap items-center gap-5">
-                    <div className="hidden sm:flex h-14 w-14 items-center justify-center rounded-xl bg-secondary text-primary"><FolderOpen size={24} /></div>
-                    <Link href={`/projects/${project.id}`} className="flex-1 min-w-0">
-                      <h2 className="text-xl font-bold text-foreground truncate hover:text-primary">
-                        {project.name}
-                      </h2>
-                      {project.clientName && (
-                        <p className="text-sm text-muted-foreground truncate">顧客: {project.clientName}</p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-2">
-                        更新: {new Date(project.updatedAt).toLocaleString('ja-JP')}
-                      </p>
-                    </Link>
-                    <div className="flex items-center gap-2">
-                      <Button asChild><Link href={`/projects/${project.id}`}><ArrowRight size={16} />家系図を開く</Link></Button>
-                      {canAssignProjectMembers(ctx.role) && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="担当者のアサイン"
-                          onClick={() => setAssignTarget(project)}
-                        >
-                          <Users className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {canDeleteProject(ctx.role) && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="案件を削除"
-                          className="text-red-500 hover:text-red-700"
-                          onClick={() => handleDelete(project)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
+                <div className="grid gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_180px_280px] lg:items-center lg:gap-6">
+                  <Link href={`/projects/${project.id}`} className="flex min-w-0 items-center gap-4 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-4">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border bg-secondary/50 text-primary"><FolderOpen size={20} aria-hidden="true" /></span>
+                    <div className="min-w-0">
+                      <h2 className="break-words text-base font-bold leading-6 text-foreground group-hover:text-primary">{project.name}</h2>
+                      <p className="mt-1 break-words text-sm text-muted-foreground">{project.clientName ? `顧客：${project.clientName}` : '顧客名の登録なし'}</p>
                     </div>
+                  </Link>
+                  <div className="pl-[60px] text-xs leading-5 text-muted-foreground lg:pl-0">
+                    <span className="mr-2 lg:hidden">最終更新</span>
+                    <time dateTime={project.updatedAt} title={new Date(project.updatedAt).toLocaleString('ja-JP')}>
+                      {new Date(project.updatedAt).toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                      <span className="ml-2">{new Date(project.updatedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </time>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="flex flex-wrap items-center justify-end gap-1 border-t pt-3 lg:border-0 lg:pt-0">
+                    {canAssignProjectMembers(ctx.role) && (
+                      <Button size="sm" variant="ghost" title="担当者のアサイン" onClick={() => setAssignTarget(project)}>
+                        <Users className="mr-1.5 h-4 w-4" aria-hidden="true" />担当者
+                      </Button>
+                    )}
+                    {canDeleteProject(ctx.role) && (
+                      <Button size="icon" variant="ghost" title="案件を削除" aria-label={`案件「${project.name}」を削除`} className="text-muted-foreground hover:bg-red-50 hover:text-red-700" onClick={() => handleDelete(project)}>
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    )}
+                    <Button asChild variant="outline" size="sm" className="ml-2 bg-white">
+                      <Link href={`/projects/${project.id}`} aria-label={`案件「${project.name}」の家系図を開く`}>開く<ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /></Link>
+                    </Button>
+                  </div>
+                </div>
+              </article>
             ))}
           </div>
         )}
