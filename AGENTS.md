@@ -52,7 +52,7 @@ E2E の Chromium が見つからない環境では `PLAYWRIGHT_CHROMIUM_PATH` �
 ## 読むべき文書
 
 - `docs/HANDOFF.md` … **いまの作業の指示**
-- `docs/INTERNAL_SPEC.md` … 要件との差分と、これまでに直した不具合（G-01〜G-71）の経緯
+- `docs/INTERNAL_SPEC.md` … 要件との差分と、これまでに直した不具合（G-01〜G-72）の経緯
 - `docs/DEPLOY.md` / `docs/KEYS_SETUP.md` … 公開の手順と、鍵の取り方
 - `docs/QA_CHECKLIST.md` / `docs/HANDS_ON_TEST.md` … 実機確認
 - `docs/SECURITY_DESIGN.md` / `docs/AI_DATA_POLICY.md` … 個人情報の扱い

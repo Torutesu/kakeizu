@@ -122,10 +122,16 @@ test.describe('2. 戸籍の取り込み', () => {
       await page.getByRole('menuitem', { name: /JSON/ }).click()
       const file = await downloaded
       const data = JSON.parse(fs.readFileSync((await file.path())!, 'utf8')) as FamilyTreeData
+      const births: Record<string, string> = {
+        太郎: '1927-10-06', 春子: '1930-01-20', 一郎: '1957-02-02', 愛子: '1960-12-24',
+        義太郎: '1902-05-10', 梅子: '1907-02-03', 花子: '1930-04-15', 次郎: '1933-08-08',
+      }
       const id = (given: string) => {
-        const person = data.people.find(p => p.name.given_name === given)
-        expect(person, `${given}が取り込まれていません`).toBeTruthy()
-        return person!.id
+        // 甲野一郎と乙野一郎を抽出順に依存せず区別する。婚姻前後で姓が変わるため、
+        // 見本の名と生年月日で一意に特定する。姓の読み違いは手動の正解表照合で別途記録する。
+        const people = data.people.filter(p => p.name.given_name === given && p.birth.date === births[given])
+        expect(people, `${given}（${births[given]}）を一意に特定できません`).toHaveLength(1)
+        return people[0].id
       }
       const parentsFamily = data.families.find(f => f.parents.includes(id('太郎')) && f.parents.includes(id('春子')))
       expect(parentsFamily?.children).toEqual(expect.arrayContaining([id('一郎'), id('愛子')]))
