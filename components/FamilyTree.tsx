@@ -173,13 +173,15 @@ export function FamilyTree({
 
     const canvasRect = canvasRef.current.getBoundingClientRect()
     const bounds = getBounds()
+    // 上部のズーム操作と人物カードを重ねないための余白。
     const padding = 50
+    const toolbarHeight = 64
 
     const contentWidth = Math.max(1, bounds.maxX - bounds.minX)
     const contentHeight = Math.max(1, bounds.maxY - bounds.minY)
 
     const availableWidth = Math.max(1, canvasRect.width - padding * 2)
-    const availableHeight = Math.max(1, canvasRect.height - padding * 2)
+    const availableHeight = Math.max(1, canvasRect.height - padding * 2 - toolbarHeight)
 
     const scaleX = availableWidth / contentWidth
     const scaleY = availableHeight / contentHeight
@@ -191,7 +193,7 @@ export function FamilyTree({
     const centerX = (bounds.minX + bounds.maxX) / 2
     const centerY = (bounds.minY + bounds.maxY) / 2
     const viewCenterX = canvasRect.width / 2
-    const viewCenterY = canvasRect.height / 2
+    const viewCenterY = (canvasRect.height + toolbarHeight) / 2
 
     setZoom(newZoom)
     const nextPanX = viewCenterX - centerX * newZoom
@@ -514,13 +516,13 @@ export function FamilyTree({
   const contentBounds = getBounds()
 
   return (
-    <div className="relative w-full h-full bg-gray-100">
+    <div className="relative w-full h-full bg-muted">
       {/* ズーム・パンコントロール */}
-      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
+      <div className="absolute top-5 left-5 z-10 flex gap-1 rounded-xl border bg-white p-1.5 shadow-sm">
         <Button 
           size="sm" 
           variant="outline" 
-          className="bg-white shadow-md hover:shadow-lg"
+          className="bg-white border-0 shadow-none hover:bg-secondary"
           onClick={handleZoomIn}
           title="ズームイン"
         >
@@ -529,7 +531,7 @@ export function FamilyTree({
         <Button 
           size="sm" 
           variant="outline" 
-          className="bg-white shadow-md hover:shadow-lg"
+          className="bg-white border-0 shadow-none hover:bg-secondary"
           onClick={handleZoomOut}
           title="ズームアウト"
         >
@@ -538,7 +540,7 @@ export function FamilyTree({
         <Button 
           size="sm" 
           variant="outline" 
-          className="bg-white shadow-md hover:shadow-lg"
+          className="bg-white border-0 shadow-none hover:bg-secondary"
           onClick={handleFitToView}
           title="全体表示"
         >
@@ -547,7 +549,7 @@ export function FamilyTree({
         <Button 
           size="sm" 
           variant="outline" 
-          className="bg-white shadow-md hover:shadow-lg"
+          className="bg-white border-0 shadow-none hover:bg-secondary"
           onClick={handleResetView}
           title="リセット"
         >
@@ -558,16 +560,16 @@ export function FamilyTree({
       {/* ズーム倍率表示 */}
       <div className="absolute top-4 right-4 z-10">
         <div className="bg-white px-3 py-1 rounded-full shadow-sm border">
-          <span className="text-sm font-medium text-gray-600">{Math.round(zoom * 100)}%</span>
+          <span className="text-sm font-medium text-muted-foreground">{Math.round(zoom * 100)}%</span>
         </div>
       </div>
 
       {/* 空状態: 最初の1人を追加するまでの案内 */}
       {persons.length === 0 && (
         <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center pointer-events-auto max-w-sm">
-            <p className="text-lg font-semibold text-gray-900 mb-2">家系図はまだ空です</p>
-            <p className="text-sm text-gray-500 mb-5">
+          <div className="bg-white rounded-xl border border-border shadow-sm p-8 text-center pointer-events-auto max-w-sm">
+            <p className="text-lg font-semibold text-foreground mb-2">家系図はまだ空です</p>
+            <p className="text-sm text-muted-foreground mb-5">
               戸籍書類を解析して自動作成するか、手動で人物を追加して始めましょう。
             </p>
             {(onUploadKoseki || onAddPerson) && (
@@ -590,7 +592,7 @@ export function FamilyTree({
           カードが絶対に入り込まない専用の帯を別途用意して確実に重ならないようにする */}
       <div className="absolute inset-0 flex">
         {(isDragging || zoomSettings.alwaysShowGenerationGuides) && (
-          <div className="relative w-20 flex-shrink-0 bg-gray-50 border-r border-gray-200 overflow-hidden pointer-events-none">
+          <div className="relative w-20 flex-shrink-0 bg-muted border-r border-border overflow-hidden pointer-events-none">
             {generations.map(generation => {
               const modelY = getGenerationY(generation)
               const screenY = modelY * zoom + panY
@@ -598,7 +600,7 @@ export function FamilyTree({
               return (
                 <div
                   key={generation}
-                  className="absolute left-2 bg-blue-500 text-white px-2 py-1 rounded text-sm font-medium whitespace-nowrap shadow"
+                  className="absolute left-2 bg-primary text-white px-2 py-1 rounded text-sm font-medium whitespace-nowrap shadow"
                   style={{ top: screenY - 12 }}
                 >
                   第{generation}世代

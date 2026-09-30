@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { filterProjects } from '@/utils/projectList'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -17,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Loader2, Plus, Trash2, Users, FolderOpen } from 'lucide-react'
+import { Loader2, Plus, Trash2, Users, FolderOpen, Search, ArrowRight } from 'lucide-react'
 import { fetchOrgContext, OrgContext } from '@/lib/db/org'
 import {
   fetchProjects,
@@ -34,6 +35,10 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<'updated' | 'name'>('updated')
+  const visibleProjects = filterProjects(projects, query, sort)
 
   // 新規作成ダイアログ
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -106,15 +111,15 @@ export default function ProjectsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="min-h-screen flex items-center justify-center bg-muted">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     )
   }
 
   if (error || !ctx) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-muted">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error ?? '読み込みに失敗しました'}</p>
           <Button onClick={load}>再試行</Button>
@@ -124,12 +129,12 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-muted">
       <AppHeader ctx={ctx} />
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">案件一覧</h1>
+      <main className="max-w-[1440px] mx-auto px-5 sm:px-12 py-10">
+        <div className="flex flex-wrap items-center justify-between gap-5 mb-6">
+          <div><h1 className="text-[28px] font-bold text-foreground">案件一覧</h1><p className="mt-2 text-sm text-muted-foreground">戸籍の取り込みから家系図の確認まで、案件ごとに管理します。</p></div>
           {canCreateProject(ctx.role) && (
             <Button onClick={() => setIsCreateOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
@@ -138,9 +143,19 @@ export default function ProjectsPage() {
           )}
         </div>
 
+        <div className="mb-7 flex flex-wrap items-center gap-4 rounded-xl border bg-white p-4">
+          <div className="relative min-w-48 flex-1">
+            <Search className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Input aria-label="案件を検索" placeholder="案件名・顧客名で検索" value={query} onChange={e => setQuery(e.target.value)} className="border-0 bg-transparent pl-10 shadow-none" />
+          </div>
+          <span className="text-sm tabular-nums" aria-live="polite">{visibleProjects.length}件</span>
+          <select aria-label="案件の並び順" value={sort} onChange={e => setSort(e.target.value as 'updated' | 'name')} className="h-11 rounded-lg bg-white px-3 text-sm focus-visible:outline-primary">
+            <option value="updated">更新が新しい順</option><option value="name">案件名順</option>
+          </select>
+        </div>
         {projects.length === 0 ? (
           <Card>
-            <CardContent className="py-16 text-center text-gray-500">
+            <CardContent className="py-16 text-center text-muted-foreground">
               <FolderOpen className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p>アクセスできる案件がありません。</p>
               {canCreateProject(ctx.role) ? (
@@ -151,28 +166,31 @@ export default function ProjectsPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {projects.map(project => (
+          <div className="grid gap-4">
+            {visibleProjects.length === 0 && <div className="rounded-2xl border bg-white px-6 py-16 text-center"><p>一致する案件が見つかりませんでした。</p><Button className="mt-4" variant="outline" onClick={() => setQuery('')}>検索をクリア</Button></div>}
+            {visibleProjects.map(project => (
               <Card
                 key={project.id}
-                className="hover:shadow-md transition-shadow"
+                className="rounded-2xl shadow-sm hover:shadow-md transition-shadow"
                 data-project-card
                 data-project-id={project.id}
               >
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between">
+                <CardContent className="p-5 sm:p-7">
+                  <div className="flex flex-wrap items-center gap-5">
+                    <div className="hidden sm:flex h-14 w-14 items-center justify-center rounded-xl bg-secondary text-primary"><FolderOpen size={24} /></div>
                     <Link href={`/projects/${project.id}`} className="flex-1 min-w-0">
-                      <h2 className="font-semibold text-gray-900 truncate hover:text-blue-600">
+                      <h2 className="text-xl font-bold text-foreground truncate hover:text-primary">
                         {project.name}
                       </h2>
                       {project.clientName && (
-                        <p className="text-sm text-gray-500 truncate">顧客: {project.clientName}</p>
+                        <p className="text-sm text-muted-foreground truncate">顧客: {project.clientName}</p>
                       )}
-                      <p className="text-xs text-gray-400 mt-2">
+                      <p className="text-xs text-muted-foreground mt-2">
                         更新: {new Date(project.updatedAt).toLocaleString('ja-JP')}
                       </p>
                     </Link>
-                    <div className="flex gap-1 ml-3">
+                    <div className="flex items-center gap-2">
+                      <Button asChild><Link href={`/projects/${project.id}`}><ArrowRight size={16} />家系図を開く</Link></Button>
                       {canAssignProjectMembers(ctx.role) && (
                         <Button
                           size="sm"
@@ -201,6 +219,7 @@ export default function ProjectsPage() {
             ))}
           </div>
         )}
+        <p className="mt-8 text-xs text-muted-foreground">案件の権限は管理者が設定します。戸籍は担当する案件にだけ取り込んでください。</p>
       </main>
 
       {/* 新規作成ダイアログ */}

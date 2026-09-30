@@ -41,7 +41,7 @@ test.describe('7. 権限', () => {
     await expect(header).toHaveAttribute('data-can-edit', 'false')
     await expect(header).toContainText('閲覧のみ')
     await expect(page.getByRole('button', { name: '保存' })).toHaveCount(0)
-    await expect(page.getByText('戸籍PDFをアップロード', { exact: true })).toHaveCount(0)
+    await expect(page.locator('[data-open-koseki-upload]')).toHaveCount(0)
   })
 
   test('未ログインでは業務画面に入れない', async ({ page }) => {

@@ -31,22 +31,22 @@ export function RegistriesPanel({ registries, persons, onFocusPerson }: Registri
   if (registries.length === 0) return null
 
   return (
-    <div className="border-b border-gray-200" data-testid="registries">
+    <div className="border-b border-border" data-testid="registries">
       <button
         type="button"
         onClick={() => setIsOpen(v => !v)}
-        className="w-full flex items-center justify-between px-6 py-3 hover:bg-gray-50"
+        className="w-full flex items-center justify-between px-6 py-3 hover:bg-muted"
         aria-expanded={isOpen}
       >
-        <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
-          <FileText className="w-4 h-4 text-gray-400" />
+        <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <FileText className="w-4 h-4 text-muted-foreground" />
           戸籍
-          <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold bg-gray-100 text-gray-600">
+          <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold bg-muted text-muted-foreground">
             {registries.length}
           </span>
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? '' : '-rotate-90'}`}
+          className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? '' : '-rotate-90'}`}
         />
       </button>
 
@@ -61,21 +61,21 @@ export function RegistriesPanel({ registries, persons, onFocusPerson }: Registri
               <li
                 key={registry.id}
                 data-registry
-                className="border border-gray-200 rounded px-3 py-2"
+                className="border border-border rounded px-3 py-2"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-medium text-gray-900 leading-relaxed" data-registry-domicile>
+                  <p className="text-xs font-medium text-foreground leading-relaxed" data-registry-domicile>
                     {registry.registered_domicile ?? '本籍の記載なし'}
                   </p>
                   {registry.registry_type && (
-                    <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-gray-200 text-gray-500">
+                    <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">
                       {REGISTRY_TYPE_LABELS[registry.registry_type]}
                     </span>
                   )}
                 </div>
 
                 {registry.head_of_family && (
-                  <p className="mt-0.5 text-[11px] text-gray-500">
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
                     筆頭者: {registry.head_of_family}
                   </p>
                 )}
@@ -87,7 +87,7 @@ export function RegistriesPanel({ registries, persons, onFocusPerson }: Registri
                         key={person.id}
                         type="button"
                         onClick={() => onFocusPerson?.(person)}
-                        className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
+                        className="text-[11px] px-1.5 py-0.5 rounded bg-muted hover:bg-gray-200 text-muted-foreground"
                       >
                         {person.displayName}
                       </button>

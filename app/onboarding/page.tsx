@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, MailQuestion, RefreshCw } from 'lucide-react'
+import { AuthShell } from '@/components/AuthShell'
 
 export default function OnboardingPage() {
   const router = useRouter()
@@ -60,8 +61,8 @@ export default function OnboardingPage() {
 
   if (isChecking) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="min-h-screen flex items-center justify-center bg-muted">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     )
   }
@@ -69,11 +70,11 @@ export default function OnboardingPage() {
   // 招待待ちの状態（組織は既に存在し、まだどこにも所属していない）
   if (!canCreateOrg) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <Card className="w-full max-w-md">
+      <AuthShell>
+        <Card className="auth-card border-0 shadow-none">
           <CardHeader>
-            <div className="w-11 h-11 rounded-lg bg-blue-50 flex items-center justify-center mb-3">
-              <MailQuestion className="w-5 h-5 text-blue-600" />
+            <div className="w-11 h-11 rounded-lg bg-secondary flex items-center justify-center mb-3">
+              <MailQuestion className="w-5 h-5 text-primary" />
             </div>
             <CardTitle>招待をお待ちください</CardTitle>
             <CardDescription>
@@ -96,14 +97,14 @@ export default function OnboardingPage() {
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </AuthShell>
     )
   }
 
   // 最初の管理者のみ: 組織を作成できる
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-md">
+    <AuthShell>
+      <Card className="auth-card border-0 shadow-none">
         <CardHeader>
           <CardTitle>組織のセットアップ</CardTitle>
           <CardDescription>
@@ -138,6 +139,6 @@ export default function OnboardingPage() {
           </Button>
         </CardContent>
       </Card>
-    </div>
+    </AuthShell>
   )
 }

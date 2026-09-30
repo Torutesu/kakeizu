@@ -58,7 +58,7 @@ test.describe('2. 戸籍の取り込み', () => {
   })
 
   async function openUpload(): Promise<void> {
-    await page.getByText('戸籍PDFをアップロード', { exact: true }).click()
+    await page.locator('[data-open-koseki-upload]').click()
     await expect(page.getByRole('dialog').filter({ hasText: 'クリックして選択' })).toBeVisible()
   }
 

@@ -38,12 +38,12 @@ export function IssuesPanel({ issues, persons, onFocusPerson }: IssuesPanelProps
 
   if (issues.length === 0) {
     return (
-      <div className="px-6 py-4 border-b border-gray-200">
-        <div className="flex items-center gap-2 text-sm text-gray-500">
+      <div className="px-6 py-4 border-b border-border">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
           <span>要確認の指摘はありません</span>
         </div>
-        <p className="mt-1 text-xs text-gray-400 leading-relaxed">
+        <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
           指摘がないことは正しさの証明にはなりません。すべての人物をご確認ください。
         </p>
       </div>
@@ -78,10 +78,10 @@ export function IssuesPanel({ issues, persons, onFocusPerson }: IssuesPanelProps
               <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
             )}
             <div className="min-w-0">
-              <p className="text-xs leading-relaxed text-gray-800">{issue.message}</p>
+              <p className="text-xs leading-relaxed text-foreground">{issue.message}</p>
               {targets.length === 0 && (
                 // 移動先がないことを明示しないと、押しても反応しない不具合に見える
-                <p className="mt-1 text-[11px] text-gray-500">
+                <p className="mt-1 text-[11px] text-muted-foreground">
                   家系図に該当する人物がいないため、移動できません
                 </p>
               )}
@@ -93,14 +93,14 @@ export function IssuesPanel({ issues, persons, onFocusPerson }: IssuesPanelProps
   }
 
   return (
-    <div className="border-b border-gray-200">
+    <div className="border-b border-border">
       <button
         type="button"
         onClick={() => setIsOpen(v => !v)}
-        className="w-full flex items-center justify-between px-6 py-3 hover:bg-gray-50"
+        className="w-full flex items-center justify-between px-6 py-3 hover:bg-muted"
         aria-expanded={isOpen}
       >
-        <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
+        <span className="flex items-center gap-2 text-sm font-medium text-foreground">
           要確認
           {errors.length > 0 && (
             <span
@@ -120,7 +120,7 @@ export function IssuesPanel({ issues, persons, onFocusPerson }: IssuesPanelProps
           )}
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? '' : '-rotate-90'}`}
+          className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? '' : '-rotate-90'}`}
         />
       </button>
 

@@ -26,7 +26,7 @@ test.describe('1. 設定の確認', () => {
       expect(live.admin).toBeTruthy()
       await login(page, live.admin!)
       await ensureProject(page, '見本限定の拒否検証')
-      await page.getByText('戸籍PDFをアップロード', { exact: true }).click()
+      await page.locator('[data-open-koseki-upload]').click()
       const dialog = page.getByRole('dialog').filter({ hasText: 'クリックして選択' })
       const sample = fs.readFileSync(path.join(live.kosekiDir, 'a_zenbu_jiko.png'))
       await dialog.locator('input[type="file"]').setInputFiles({

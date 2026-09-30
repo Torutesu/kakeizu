@@ -1,11 +1,14 @@
 import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
+import { Noto_Sans_JP } from 'next/font/google'
+
+const notoSans = Noto_Sans_JP({ subsets: ['latin'], weight: ['400', '500', '700'], display: 'swap', variable: '--font-japanese' })
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: '家系図ジェネレーター',
+  title: 'Kakeizu | 戸籍・家系図ワークスペース',
+  icons: { icon: '/brand/kakeizu.svg' },
   description: '戸籍謄本PDFをAIで解析し、家系図を作成・編集できるアプリ',
 }
 
@@ -15,16 +18,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ja">
-      <head>
-        <style>{`
-html {
-  font-family: ${GeistSans.style.fontFamily};
-  --font-sans: ${GeistSans.variable};
-  --font-mono: ${GeistMono.variable};
-}
-        `}</style>
-      </head>
+    <html lang="ja" className={`${notoSans.variable} ${GeistSans.variable}`}>
       <body>
         {process.env.AI_SAMPLE_ONLY === 'true' && (
           <div role="note" className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950">

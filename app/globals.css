@@ -11,38 +11,25 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --foreground: 172 33% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 172 33% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --popover-foreground: 172 33% 14%;
+    --primary: 164 64% 24%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 147 27% 94%;
+    --secondary-foreground: 164 64% 24%;
+    --muted: 120 14% 96%;
+    --muted-foreground: 162 11% 38%;
+    --accent: 147 27% 94%;
+    --accent-foreground: 164 64% 24%;
+    --destructive: 0 54% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 14% 86%;
+    --input: 157 9% 52%;
+    --ring: 164 64% 24%;
+    --radius: 0.75rem;
   }
   .dark {
     --background: 0 0% 3.9%;
@@ -86,5 +73,55 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-japanese), "Hiragino Sans", "Yu Gothic", sans-serif;
+    line-height: 1.7;
   }
+}
+
+@layer components {
+  .auth-shell { @apply min-h-dvh grid bg-white lg:grid-cols-[5fr_7fr]; }
+  .auth-story { @apply flex flex-col justify-between gap-10 bg-secondary p-6 lg:p-16; }
+  .auth-story-copy { @apply hidden lg:block; }
+  .auth-story-copy h1 { @apply text-4xl font-bold leading-[1.5] tracking-tight; }
+  .auth-story-copy > p { @apply mt-10 text-sm leading-7 text-muted-foreground; }
+  .auth-story-card { @apply mt-10 rounded-2xl bg-white p-8; }
+  .auth-story > p { @apply hidden lg:block; }
+  .auth-form { @apply flex items-center justify-center px-6 py-12 lg:p-16; }
+  .auth-card { @apply border-0 shadow-none; }
+  .auth-card > div { @apply px-0; }
+  .auth-card form { @apply space-y-6; }
+  .auth-card form label { @apply mb-2 inline-block; }
+  .auth-card > div:first-child { @apply pb-8; }
+  .global-header > div { @apply gap-4; }
+  .members-layout { @apply grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] items-start; }
+  .members-layout > * { @apply min-w-0; }
+  .members-heading { @apply lg:col-span-2; }
+  .members-access { @apply lg:col-start-2 lg:row-start-2 lg:row-span-3; }
+  .members-layout > div:not(.members-heading):not(.members-access) { @apply lg:col-start-1; }
+  .members-access [role=switch] { @apply shrink-0; }
+  .workspace-header > div { @apply flex-wrap; }
+  .workspace-header { @apply min-h-[72px] shrink-0; }
+  .workspace-toolbar { @apply flex min-h-[60px] shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white px-5 py-2; }
+  .workspace-toolbar-actions { @apply flex flex-wrap items-center gap-2; }
+  .workspace-panel { @apply shrink-0; }
+  .workspace-panel > .p-6 { @apply p-5; }
+  .workspace-panel-right { @apply overflow-y-auto; }
+  .workspace-panel-right > .flex-1 { @apply min-h-[260px] overflow-visible; }
+  .workspace-panel-right > .flex-1 > div > .flex { @apply flex-wrap gap-3; }
+  .workspace-panel-right > .flex-1 > div > .flex > .flex { @apply flex-wrap; }
+}
+
+@media (max-width: 767px) {
+  .global-header > div { flex-wrap: wrap; }
+  .global-header > div > div:last-child { width: 100%; justify-content: space-between; gap: 4px; }
+  .global-header button { padding-left: 8px; padding-right: 8px; }
+  .workspace-header > div > div { flex-wrap: wrap; }
+  .workspace-header h1 { max-width: 180px; }
+  .workspace-panel { max-width: calc(100vw - 32px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+@media (max-width: 359px) {
+  .global-header > div > div:last-child { flex-wrap: wrap; }
 }

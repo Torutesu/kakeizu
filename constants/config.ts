@@ -73,8 +73,8 @@ export const COLORS = {
   },
 
   // 線の色
-  marriageLine: '#dc2626',        // 結婚関係線（赤）
-  parentChildLine: '#6b7280',     // 親子関係線（グレー）
+  marriageLine: '#688B7E',        // 結婚関係線（赤）
+  parentChildLine: '#80958D',     // 親子関係線（グレー）
 
   // 状態色
   uncertain: {
@@ -92,8 +92,8 @@ export const DATA_CONFIG = {
 
 export const UI_CONFIG = {
   // サイドバー設定
-  leftSidebarWidth: 320,
-  rightSidebarWidth: 320,
+  leftSidebarWidth: 264,
+  rightSidebarWidth: 352,
 
   // アニメーション設定
   transitionDuration: '0.1s',

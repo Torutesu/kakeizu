@@ -173,7 +173,7 @@ export async function cancelPersonEdit(page: Page): Promise<void> {
  * 原本や読み取り済みの人物が要る確認（保管期間・出典・書き出し）の下ごしらえに使う
  */
 export async function uploadSample(page: Page, files: string[]): Promise<void> {
-  await page.getByText('戸籍PDFをアップロード', { exact: true }).click()
+  await page.locator('[data-open-koseki-upload]').click()
   const dialog = page.getByRole('dialog').filter({ hasText: 'クリックして選択' })
   await expect(dialog).toBeVisible()
   await dialog.locator('input[type="file"]').setInputFiles(files)

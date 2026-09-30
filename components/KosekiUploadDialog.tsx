@@ -232,7 +232,7 @@ export function KosekiUploadDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={open => !open && handleClose()}>
-      <DialogContent className="max-w-2xl" onPaste={handlePaste}>
+      <DialogContent className="max-w-[800px]" onPaste={handlePaste}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileUp className="h-5 w-5" />
@@ -247,18 +247,26 @@ export function KosekiUploadDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <ol className="mb-5 grid grid-cols-3 gap-2 text-center text-xs" aria-label="取り込みの手順">
+            {['ファイルを選択', 'AIで読み取る', '原文と照合する'].map((label, index) => <li key={label} aria-current={(isDone ? 2 : isProcessing ? 1 : 0) === index ? 'step' : undefined} className="rounded-lg bg-muted px-2 py-3 aria-[current=step]:bg-secondary aria-[current=step]:text-primary"><span className="mr-1 font-bold">{index + 1}</span>{label}</li>)}
+          </ol>
           {/* ドロップゾーン */}
           <div
-            className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors cursor-pointer"
+            className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer"
+            role="button"
+            tabIndex={isProcessing ? -1 : 0}
+            aria-disabled={isProcessing}
+            aria-label="戸籍のPDF・画像を選択"
+            onKeyDown={event => { if (!isProcessing && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); fileInputRef.current?.click() } }}
             onClick={() => !isProcessing && fileInputRef.current?.click()}
             onDragOver={e => e.preventDefault()}
             onDrop={handleDrop}
           >
-            <Upload className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-            <p className="text-sm font-medium text-gray-900">
+            <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
+            <p className="text-sm font-medium text-foreground">
               クリックして選択、ドラッグ＆ドロップ、または貼り付け（Ctrl/⌘+V）
             </p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               PDF / JPEG / PNG / WebP（各20MBまで・複数可）
             </p>
             <input
@@ -274,7 +282,7 @@ export function KosekiUploadDialog({
 
           {/* どう束ねて読み取るかを先に見せる。押してから分かる形にしない */}
           {queue.length > 1 && (
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-muted-foreground">
               {documentCount === 1
                 ? `${queue.length}枚をまとめて通しで読み取ります。`
                 : `${documentCount}回に分けて読み取ります（続けて並んだ画像はまとめて、PDFは1件ずつ）。`}
@@ -290,25 +298,25 @@ export function KosekiUploadDialog({
                 return (
                 <div
                   key={`${item.file.name}-${index}`}
-                  className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg"
+                  className="flex items-center gap-3 p-3 border border-border rounded-lg"
                   data-upload-item={index}
                   data-upload-status={item.status}
                   data-document-index={position?.documentIndex}
                   data-page-number={position?.pageNumber}
                   data-page-count={position?.pages}
                 >
-                  <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-gray-900 truncate">
+                    <p className="text-sm text-foreground truncate">
                       {position && position.pages > 1 && (
-                        <span className="text-xs text-blue-600 mr-1">
+                        <span className="text-xs text-primary mr-1">
                           {documentCount > 1 && `${position.documentIndex + 1}通目・`}
                           {position.pageNumber}/{position.pages}枚目
                         </span>
                       )}
                       {item.file.name}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       {Math.round(item.file.size / 1024)}KB
                       {item.status === 'success' && item.personCount !== undefined && (
                         <span className="text-green-700"> ・{item.personCount}人を抽出</span>
@@ -320,7 +328,7 @@ export function KosekiUploadDialog({
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {(item.status === 'uploading' || item.status === 'analyzing') && (
-                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
                     )}
                     {item.status === 'success' && (
                       <CheckCircle className="w-4 h-4 text-green-600" />
@@ -328,7 +336,7 @@ export function KosekiUploadDialog({
                     {item.status === 'failed' && (
                       <AlertCircle className="w-4 h-4 text-red-600" />
                     )}
-                    <span className="text-xs text-gray-500 w-24 text-right">
+                    <span className="text-xs text-muted-foreground w-24 text-right">
                       {STATUS_LABELS[item.status]}
                     </span>
                     {/* 並び順がそのままページ順になるため、入れ替えられるようにする */}
@@ -374,8 +382,8 @@ export function KosekiUploadDialog({
           )}
 
           {isProcessing && (
-            <Alert className="border-blue-200 bg-blue-50">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+            <Alert className="border-blue-200 bg-secondary">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
               <AlertDescription className="text-blue-800 text-sm">
                 順番に処理しています。枚数によっては1通あたり1〜2分かかることがあります。
               </AlertDescription>

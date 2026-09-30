@@ -81,14 +81,14 @@ export function MergePersonsDialog({
         </DialogHeader>
 
         <div className="space-y-6 py-2">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             複数の書類にまたがる同一人物のうち、自動では判断できなかったものを1人にまとめます。
             まとめると、空欄の項目が補われ、家族関係と戸籍の記載もまとめ先へ付け替わります。
             誤ってまとめた場合は「元に戻す」で取り消せます。
           </p>
 
           <section className="space-y-2">
-            <h4 className="text-sm font-semibold text-gray-900">
+            <h4 className="text-sm font-semibold text-foreground">
               同一人物の可能性がある組
               {sortedCandidates.length > 0 && (
                 <Badge variant="secondary" className="ml-2">{sortedCandidates.length}件</Badge>
@@ -96,7 +96,7 @@ export function MergePersonsDialog({
             </h4>
 
             {sortedCandidates.length === 0 ? (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 候補は見つかりませんでした。下の検索から直接指定できます。
               </p>
             ) : (
@@ -108,19 +108,19 @@ export function MergePersonsDialog({
                   return (
                     <li
                       key={`${candidate.keepId}:${candidate.dropId}`}
-                      className="border border-gray-200 rounded-lg p-3"
+                      className="border border-border rounded-lg p-3"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-sm text-gray-900">
+                          <p className="text-sm text-foreground">
                             <span className="font-medium">{keep.displayName}</span>
-                            <span className="text-gray-400"> ← </span>
+                            <span className="text-muted-foreground"> ← </span>
                             <span className="font-medium">{drop.displayName}</span>
                           </p>
-                          <p className="text-xs text-gray-500 mt-0.5">
+                          <p className="text-xs text-muted-foreground mt-0.5">
                             {describe(keep)} ／ {describe(drop)}
                           </p>
-                          <p className="text-xs text-gray-600 mt-1">{candidate.reason}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{candidate.reason}</p>
                         </div>
                         <Button
                           size="sm"
@@ -141,11 +141,11 @@ export function MergePersonsDialog({
 
           {basePerson && (
             <section className="space-y-2">
-              <h4 className="text-sm font-semibold text-gray-900">
+              <h4 className="text-sm font-semibold text-foreground">
                 「{basePerson.displayName}」にまとめる相手を探す
               </h4>
               <div className="relative">
-                <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="merge-person-search"
                   value={query}
@@ -160,11 +160,11 @@ export function MergePersonsDialog({
                   {searchResults.map(person => (
                     <li
                       key={person.id}
-                      className="flex items-center justify-between gap-3 border border-gray-200 rounded-lg p-3"
+                      className="flex items-center justify-between gap-3 border border-border rounded-lg p-3"
                     >
                       <div className="min-w-0">
-                        <p className="text-sm text-gray-900 truncate">{person.displayName}</p>
-                        <p className="text-xs text-gray-500">{describe(person)}</p>
+                        <p className="text-sm text-foreground truncate">{person.displayName}</p>
+                        <p className="text-xs text-muted-foreground">{describe(person)}</p>
                       </div>
                       <Button
                         size="sm"

@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Eye, EyeOff } from 'lucide-react'
+import { AuthShell } from '@/components/AuthShell'
 
 type Mode = 'signin' | 'signup'
 
@@ -30,6 +31,7 @@ function LoginForm() {
   const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(
@@ -80,13 +82,13 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-md">
+    <AuthShell>
+      <Card className="auth-card border-0 shadow-none">
         <CardHeader>
-          <CardTitle className="text-2xl">家系図ジェネレーター</CardTitle>
+          <CardTitle className="text-[28px] leading-[42px]">{mode === 'signin' ? 'おかえりなさい' : 'アカウントを作成'}</CardTitle>
           <CardDescription>
             {mode === 'signin'
-              ? 'アカウントにログインしてください'
+              ? '登録したメールアドレスでログインしてください。'
               : '招待制です。管理者から招待を受けたメールアドレスでご登録ください'}
           </CardDescription>
         </CardHeader>
@@ -107,16 +109,20 @@ function LoginForm() {
               <Label htmlFor="password">パスワード</Label>
               <Input
                 id="password"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
                 minLength={8}
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
               />
+              <button type="button" className="flex min-h-10 items-center gap-2 text-xs text-muted-foreground" aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                パスワードを{showPassword ? '隠す' : '表示'}
+              </button>
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</p>}
             {message && <p className="text-sm text-green-700">{message}</p>}
 
             <Button type="submit" className="w-full" disabled={isSubmitting}>
@@ -125,13 +131,13 @@ function LoginForm() {
             </Button>
           </form>
 
-          <p className="text-sm text-center text-gray-600">
+          <p className="text-sm text-center text-muted-foreground">
             {mode === 'signin' ? (
               <>
                 招待を受けている方は{' '}
                 <button
                   type="button"
-                  className="text-blue-600 hover:underline"
+                  className="text-primary hover:underline"
                   onClick={() => { setMode('signup'); setError(null); setMessage(null) }}
                 >
                   新規登録
@@ -142,7 +148,7 @@ function LoginForm() {
                 既にアカウントをお持ちの場合は{' '}
                 <button
                   type="button"
-                  className="text-blue-600 hover:underline"
+                  className="text-primary hover:underline"
                   onClick={() => { setMode('signin'); setError(null); setMessage(null) }}
                 >
                   ログイン
@@ -152,7 +158,7 @@ function LoginForm() {
           </p>
         </CardContent>
       </Card>
-    </div>
+    </AuthShell>
   )
 }
 

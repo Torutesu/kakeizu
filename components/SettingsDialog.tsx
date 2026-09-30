@@ -52,7 +52,7 @@ export function SettingsDialog({
               <Label htmlFor="wheel-sensitivity">
                 ズーム・ピンチ感度
               </Label>
-              <span className="text-sm text-gray-500 tabular-nums">
+              <span className="text-sm text-muted-foreground tabular-nums">
                 {zoomSettings.wheelSensitivity.toFixed(1)}
               </span>
             </div>
@@ -64,7 +64,7 @@ export function SettingsDialog({
               step={wheelSensitivity.step}
               onValueChange={([value]) => onWheelSensitivityChange(value)}
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               マウスホイールやトラックパッドのピンチ操作でのズームの効き具合です。値を大きくすると少ない操作で大きく拡大・縮小されます。
             </p>
           </div>
@@ -74,7 +74,7 @@ export function SettingsDialog({
               <Label htmlFor="button-zoom-step">
                 ズームボタンの拡大率
               </Label>
-              <span className="text-sm text-gray-500 tabular-nums">
+              <span className="text-sm text-muted-foreground tabular-nums">
                 {Math.round((zoomSettings.buttonZoomStep - 1) * 100)}%
               </span>
             </div>
@@ -86,7 +86,7 @@ export function SettingsDialog({
               step={buttonZoomStep.step}
               onValueChange={([value]) => onButtonZoomStepChange(value)}
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               画面左上の「＋」「－」ボタンを1回押した際に拡大・縮小される割合です。
             </p>
           </div>
@@ -96,7 +96,7 @@ export function SettingsDialog({
               <Label htmlFor="always-show-generation-guides">
                 世代ガイドを常に表示
               </Label>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 青い「第N世代」ラインを、人物カードをドラッグしている間だけでなく常に表示します。
               </p>
             </div>

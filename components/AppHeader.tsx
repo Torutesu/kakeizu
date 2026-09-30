@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { Brand } from './Brand'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,13 +17,13 @@ export function AppHeader({ ctx }: AppHeaderProps) {
   const router = useRouter()
 
   return (
-    <header className="bg-white border-b border-gray-200 px-6 py-3">
+    <header className="global-header bg-white border-b px-5 sm:px-8 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/projects" className="text-lg font-bold text-gray-900">
-            家系図ジェネレーター
+          <Link href="/projects" className="text-lg font-bold text-foreground">
+            <Brand />
           </Link>
-          <span className="text-sm text-gray-500">{ctx.orgName}</span>
+          <span className="hidden xl:block text-xs text-muted-foreground">{ctx.orgName}</span>
         </div>
         <div className="flex items-center gap-3">
           <Link href="/projects">
@@ -39,8 +40,8 @@ export function AppHeader({ ctx }: AppHeaderProps) {
               </Button>
             </Link>
           )}
-          <div className="flex items-center gap-2 border-l border-gray-200 pl-3">
-            <span className="text-sm text-gray-600">{ctx.email}</span>
+          <div className="flex items-center gap-2 border-l border-border pl-3">
+            <span className="hidden 2xl:block max-w-48 truncate text-sm text-muted-foreground">{ctx.email}</span>
             <Badge variant="secondary">{ORG_ROLE_LABELS[ctx.role]}</Badge>
             <Button
               variant="ghost"

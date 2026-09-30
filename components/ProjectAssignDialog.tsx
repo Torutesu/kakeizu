@@ -88,27 +88,27 @@ export function ProjectAssignDialog({ ctx, project, onClose }: ProjectAssignDial
 
         {isLoading ? (
           <div className="py-8 flex justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
           </div>
         ) : (
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {members.map(member => (
               <div
                 key={member.userId}
-                className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                className="flex items-center justify-between p-3 border border-border rounded-lg"
                 data-assign-member={member.email}
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-medium text-foreground truncate">
                     {member.displayName || member.email}
                   </p>
                   <div className="flex items-center gap-2">
-                    <p className="text-xs text-gray-500 truncate">{member.email}</p>
+                    <p className="text-xs text-muted-foreground truncate">{member.email}</p>
                     <Badge variant="secondary">{ORG_ROLE_LABELS[member.role]}</Badge>
                   </div>
                 </div>
                 {member.role === 'admin' ? (
-                  <span className="text-xs text-gray-400">常にアクセス可</span>
+                  <span className="text-xs text-muted-foreground">常にアクセス可</span>
                 ) : (
                   <Switch
                     checked={assignedIds.has(member.userId)}

@@ -122,18 +122,18 @@ export function KosekiFilesPanel({
   }
 
   return (
-    <div className="p-6 border-b border-gray-200">
+    <div className="p-5 border-b border-border">
       {confirmDialog}
-      <h3 className="text-sm font-medium text-gray-900 mb-3">
+      <h3 className="text-sm font-medium text-foreground mb-3">
         戸籍ファイル{files.length > 0 && `（${files.length}件）`}
       </h3>
 
       {isLoading ? (
         <div className="flex justify-center py-4">
-          <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
         </div>
       ) : files.length === 0 ? (
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted-foreground">
           アップロードされた戸籍ファイルはまだありません。
         </p>
       ) : (
@@ -149,7 +149,7 @@ export function KosekiFilesPanel({
             return (
             <div
               key={file.id}
-              className="border border-gray-200 rounded-lg p-3"
+              className="border border-border rounded-xl bg-muted p-4"
               data-koseki-file={file.id}
               data-expired={expired ? 'true' : 'false'}
               data-can-open={canOpen ? 'true' : 'false'}
@@ -157,13 +157,13 @@ export function KosekiFilesPanel({
               data-page-number={file.pageNumber}
             >
               <div className="flex items-start gap-2">
-                <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-900 truncate" title={file.fileName}>
+                  <p className="text-sm text-foreground truncate" title={file.fileName}>
                     {file.fileName}
                   </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-gray-400">{formatSize(file.fileSize)}</span>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <span className="text-xs text-muted-foreground">{formatSize(file.fileSize)}</span>
                     {file.analysisStatus === 'success' && (!isGrouped || isFirstOfGroup) && (
                       <Badge
                         variant="secondary"
@@ -192,7 +192,7 @@ export function KosekiFilesPanel({
                     {isGrouped && (
                       <Badge
                         variant="outline"
-                        className="text-xs border-blue-300 text-blue-700"
+                        className="text-xs border-blue-300 text-primary"
                         title={`1通の戸籍として${groupFiles.length}枚まとめて読み取ります`}
                       >
                         1通{groupFiles.length}枚中 {file.pageNumber}枚目

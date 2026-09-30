@@ -154,15 +154,15 @@ export default function MembersSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="min-h-screen flex items-center justify-center bg-muted">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     )
   }
 
   if (error || !ctx) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-muted">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error ?? '読み込みに失敗しました'}</p>
           <Button onClick={load}>再試行</Button>
@@ -172,14 +172,14 @@ export default function MembersSettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-muted">
       <AppHeader ctx={ctx} />
 
-      <main className="max-w-3xl mx-auto px-6 py-8 space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">メンバー管理</h1>
+      <main className="members-layout max-w-[1440px] mx-auto px-5 sm:px-10 py-10">
+        <div className="members-heading"><h1 className="text-[28px] font-bold">メンバー管理</h1><p className="mt-2 text-sm text-muted-foreground">事務所のメンバーと、案件へのアクセス範囲を管理します。</p></div>
 
         {/* アクセスモード設定 */}
-        <Card>
+        <Card className="members-access">
           <CardHeader>
             <CardTitle className="text-lg">アクセス範囲の設定</CardTitle>
             <CardDescription>
@@ -189,8 +189,8 @@ export default function MembersSettingsPage() {
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-900">担当案件のみに制限する</p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm font-medium text-foreground">担当案件のみに制限する</p>
+                <p className="text-sm text-muted-foreground">
                   {ctx.workerAccessMode === 'assigned_only'
                     ? '作業者・閲覧者はアサインされた案件のみ閲覧・編集できます'
                     : '現在は全メンバーが組織内の全案件にアクセスできます'}
@@ -209,12 +209,12 @@ export default function MembersSettingsPage() {
           <CardHeader>
             <CardTitle className="text-lg">メンバーを招待</CardTitle>
             <CardDescription>
-              招待した相手が同じメールアドレスでログイン（Googleまたはメール/パスワードで新規登録）すると、自動的にメンバーになります。
+              招待した相手が同じメールアドレスで新規登録すると、自動的にメンバーになります。
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleInvite} className="flex items-end gap-3">
-              <div className="flex-1 space-y-2">
+            <form onSubmit={handleInvite} className="flex flex-wrap items-end gap-3">
+              <div className="min-w-48 flex-1 space-y-2">
                 <Label htmlFor="invite-email">メールアドレス</Label>
                 <Input
                   id="invite-email"
@@ -262,10 +262,10 @@ export default function MembersSettingsPage() {
               {invitations.map(invitation => (
                 <div
                   key={invitation.id}
-                  className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                  className="flex items-center justify-between p-3 border border-border rounded-lg"
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm text-gray-900 truncate">{invitation.email}</span>
+                    <span className="text-sm text-foreground truncate">{invitation.email}</span>
                     <Badge variant="secondary">{ORG_ROLE_LABELS[invitation.role]}</Badge>
                   </div>
                   <Button
@@ -299,16 +299,16 @@ export default function MembersSettingsPage() {
             {members.map(member => (
               <div
                 key={member.userId}
-                className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                className="flex items-center justify-between p-3 border border-border rounded-lg"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-medium text-foreground truncate">
                     {member.displayName || member.email}
                     {member.userId === ctx.userId && (
-                      <span className="text-xs text-gray-400 ml-2">(自分)</span>
+                      <span className="text-xs text-muted-foreground ml-2">(自分)</span>
                     )}
                   </p>
-                  <p className="text-xs text-gray-500 truncate">{member.email}</p>
+                  <p className="text-xs text-muted-foreground truncate">{member.email}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Select

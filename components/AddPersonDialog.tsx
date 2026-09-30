@@ -1,9 +1,9 @@
-import { useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import React, { useState } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { PersonSexField } from "./PersonSexField"
 import { ProcessedPerson } from '../utils/familyDataProcessor'
 
 interface AddPersonDialogProps {
@@ -20,7 +20,7 @@ export function AddPersonDialog({
   const [formData, setFormData] = useState({
     surname: '',
     givenName: '',
-    sex: 'male' as 'male' | 'female',
+    sex: null as 'male' | 'female' | null,
     birthDate: '',
     birthPlace: '',
     deathDate: '',
@@ -62,7 +62,7 @@ export function AddPersonDialog({
     setFormData({
       surname: '',
       givenName: '',
-      sex: 'male',
+      sex: null,
       birthDate: '',
       birthPlace: '',
       deathDate: '',
@@ -74,9 +74,10 @@ export function AddPersonDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[768px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>新しい人物を追加</DialogTitle>
+          <DialogDescription>戸籍を確認して、人物の情報を入力してください。</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
@@ -84,7 +85,7 @@ export function AddPersonDialog({
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">基本情報</h4>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <Label htmlFor="surname">姓 *</Label>
                 <Input
@@ -107,19 +108,8 @@ export function AddPersonDialog({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="sex">性別</Label>
-                <Select value={formData.sex} onValueChange={(value: 'male' | 'female') => setFormData(prev => ({ ...prev, sex: value }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="male">男性</SelectItem>
-                    <SelectItem value="female">女性</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <PersonSexField value={formData.sex} onChange={sex => setFormData(prev => ({ ...prev, sex }))} />
               <div>
                 <Label htmlFor="generation">世代</Label>
                 <Input
@@ -138,7 +128,7 @@ export function AddPersonDialog({
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">出生情報</h4>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <Label htmlFor="birthDate">生年月日</Label>
                 <Input
@@ -148,7 +138,7 @@ export function AddPersonDialog({
                   onChange={(e) => setFormData(prev => ({ ...prev, birthDate: e.target.value }))}
                   placeholder="1990-05-17"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   形式: YYYY-MM-DD または YYYY-MM-XX
                 </p>
               </div>
@@ -168,7 +158,7 @@ export function AddPersonDialog({
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">死亡情報</h4>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <Label htmlFor="deathDate">没年月日</Label>
                 <Input
@@ -178,7 +168,7 @@ export function AddPersonDialog({
                   onChange={(e) => setFormData(prev => ({ ...prev, deathDate: e.target.value }))}
                   placeholder="2020-12-03"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   空欄の場合は存命として扱われます
                 </p>
               </div>

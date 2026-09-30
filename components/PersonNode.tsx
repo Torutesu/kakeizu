@@ -4,7 +4,7 @@ import { formatDate } from '../utils/familyDataProcessor'
 import { formatKyonen } from '../utils/age'
 import { UNREADABLE_FIELD_LABELS } from '../utils/familyDataProcessor'
 import { COLORS, LAYOUT_CONFIG } from '../constants/config'
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useRef } from 'react'
 
 /** 選択中の人物との関係。無関係な人物を控えめに表示するために使う */
 export type RelationEmphasis = 'selected' | 'related' | 'unrelated' | 'none'
@@ -29,12 +29,6 @@ interface PersonNodeProps {
   onEdit?: (person: ProcessedPerson) => void
 }
 
-const ACCENT_COLORS: Record<string, string> = {
-  male: '#3b82f6',
-  female: '#ec4899',
-  unknown: '#9ca3af',
-}
-
 export function PersonNode({
   person,
   editor,
@@ -46,19 +40,6 @@ export function PersonNode({
 }: PersonNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null)
 
-  // 性別に基づく色の取得
-  const colors = useMemo(() => {
-    switch (person.sex) {
-      case 'male':
-        return COLORS.male
-      case 'female':
-        return COLORS.female
-      default:
-        return COLORS.unknown
-    }
-  }, [person.sex])
-
-  const accentColor = ACCENT_COLORS[person.sex ?? 'unknown']
   const age = formatKyonen(person.birth?.date, person.death?.date)
   // 記載はあるが読み取れなかった項目（要件v1.1 4.4）。空欄のままにせず赤字で示す
   const unreadableLabels = (person.unreadable ?? [])
@@ -113,12 +94,12 @@ export function PersonNode({
         className={`relative rounded-lg border bg-white overflow-hidden transition-shadow duration-150 ${
           person.isUncertain
             ? `${COLORS.uncertain.background} ${COLORS.uncertain.border}`
-            : `${colors.background} ${colors.border}`
+            : `bg-white border-border`
         } ${
           isSelected
-            ? 'ring-2 ring-blue-500 ring-offset-1 shadow-lg'
+            ? 'ring-2 ring-primary ring-offset-1 shadow-lg'
             : emphasis === 'related'
-              ? 'ring-1 ring-blue-300 shadow-md'
+              ? 'ring-1 ring-primary/40 shadow-md'
               : 'shadow-sm hover:shadow-md'
         } ${isDragging ? 'shadow-xl opacity-90' : ''}`}
         // 関係線はこの寸法を基準にカードの上端・下端へ接続するため、
@@ -130,16 +111,10 @@ export function PersonNode({
           ...(editor ? { boxShadow: `0 0 0 2px ${editor.color}` } : {}),
         }}
       >
-        {/* 性別アクセントバー */}
-        <div
-          className="absolute left-0 top-0 bottom-0 w-1"
-          style={{ backgroundColor: accentColor }}
-        />
-
         <div className="h-full px-3 py-2.5 pl-4 flex flex-col">
           {/* 名前と続柄 */}
           <div className="flex items-start justify-between gap-1">
-            <h4 className="font-semibold text-sm text-gray-900 leading-snug line-clamp-2">
+            <h4 className="font-semibold text-sm text-foreground leading-snug line-clamp-2">
               {person.displayName}
             </h4>
             {person.isUncertain && (
@@ -154,24 +129,24 @@ export function PersonNode({
           </div>
 
           {person.relation_to_family_head && (
-            <span className="mt-1 self-start text-[10px] leading-none px-1.5 py-0.5 rounded bg-white/70 border border-gray-200 text-gray-500">
+            <span className="mt-1 self-start text-[10px] leading-none px-1.5 py-0.5 rounded bg-white/70 border border-border text-muted-foreground">
               {person.relation_to_family_head}
             </span>
           )}
 
           {/* 日付・年齢は下寄せにして、カードの高さが揃っても間延びしないようにする */}
-          <div className="mt-auto text-[11px] leading-tight text-gray-600 space-y-0.5">
+          <div className="mt-auto text-[11px] leading-tight text-muted-foreground space-y-0.5">
             {person.birth?.date && (
               <div className="truncate">
-                <span className="text-gray-400">生</span> {formatDate(person.birth.date)}
+                <span className="text-muted-foreground">生</span> {formatDate(person.birth.date)}
               </div>
             )}
             {person.death?.date && (
               <div className="truncate">
-                <span className="text-gray-400">没</span> {formatDate(person.death.date)}
+                <span className="text-muted-foreground">没</span> {formatDate(person.death.date)}
               </div>
             )}
-            {age && <div className="text-gray-500 truncate">{age}</div>}
+            {age && <div className="text-muted-foreground truncate">{age}</div>}
             {unreadableLabels.length > 0 && (
               <div
                 className="text-red-600 font-medium truncate"

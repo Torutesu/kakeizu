@@ -47,9 +47,10 @@ import { useConfirm } from "../hooks/useConfirm"
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog"
 import { IssuesPanel } from "./IssuesPanel"
 import { RegistriesPanel } from "./RegistriesPanel"
+import { JsonImportDialog } from "./JsonImportDialog"
 import { PdfExportDialog } from "./PdfExportDialog"
 import { PdfExportOptions } from "../utils/pdfLayout"
-import { measureTreePdf } from "../utils/exportPdf"
+import { measureTreePdf, buildTreeSvg } from "../utils/exportPdf"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { formatKyonen } from "../utils/age"
@@ -439,6 +440,13 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     [persons, families]
   )
 
+  const pdfPreviewSvg = useMemo(
+    () => isPdfDialogOpen ? buildTreeSvg(persons, families, project?.name || '家系図').svg : undefined,
+    [isPdfDialogOpen, persons, families, project?.name]
+  )
+
+  const [pendingImport, setPendingImport] = useState<FamilyTreeData | null>(null)
+
   // JSON読み込みハンドラー
   const handleLoadFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -454,24 +462,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         return
       }
 
-      const shouldReplace = await confirm({
-        title: '読み込み方法を選んでください',
-        description:
-          `${data.people.length}人分のデータを読み込みます。\n\n` +
-          '「置き換える」: 現在の家系図を消して、ファイルの内容にします。\n' +
-          '「追加でマージ」: 同じ人物は統合し、新しい人物だけ追加します。',
-        confirmLabel: '置き換える',
-        cancelLabel: '追加でマージ',
-      })
-      const { mergedPersonCount, addedPersonCount } = importFamilyTreeData(
-        data,
-        shouldReplace ? 'replace' : 'merge'
-      )
-      toast.success(
-        mergedPersonCount > 0
-          ? `ファイルを読み込みました（追加${addedPersonCount}人・既存と統合${mergedPersonCount}人）`
-          : `ファイルを読み込みました（${addedPersonCount}人）`
-      )
+      setPendingImport(data)
     } catch (err) {
       toast.error(`読み込みエラー: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
@@ -488,7 +479,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
       <div className="h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">家系図データを読み込み中...</p>
+          <p className="text-muted-foreground">家系図データを読み込み中...</p>
         </div>
       </div>
     )
@@ -504,8 +495,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">データの読み込みに失敗しました</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
+          <h2 className="text-xl font-semibold text-foreground mb-2">データの読み込みに失敗しました</h2>
+          <p className="text-muted-foreground mb-4">{error}</p>
           <Button onClick={refreshData}>
             再試行
           </Button>
@@ -515,13 +506,13 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-dvh flex flex-col bg-muted">
       {/* ヘッダー */}
       {/* data-* は実機確認（docs/QA_CHECKLIST.md）を自動で流すための目印。
           表示は文言で行うが、文言はいつ変わってもよいものなので、
           確認する側はこちらを見る */}
       <header
-        className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3"
+        className="workspace-header bg-white border-b border-border px-4 sm:px-6 py-3"
         data-app-header
         data-save-status={saveStatus}
         data-save-version={savedVersion}
@@ -544,7 +535,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             >
               <PanelLeft className="w-4 h-4" />
             </Button>
-            <h1 className="text-xl font-bold text-gray-900 truncate">
+            <h1 className="text-xl font-bold text-foreground truncate">
               {project?.name || '家系図'}
             </h1>
             {canEdit ? (
@@ -552,13 +543,13 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                 className={`text-sm whitespace-nowrap ${
                   saveStatus === 'error'
                     ? 'text-red-600 font-medium'
-                    : 'text-gray-400'
+                    : 'rounded bg-secondary px-2 py-1 text-xs text-primary'
                 }`}
               >
                 {SAVE_STATUS_LABELS[saveStatus]}
               </span>
             ) : (
-              <span className="flex items-center gap-1 text-sm text-gray-400 whitespace-nowrap">
+              <span className="flex items-center gap-1 text-sm text-muted-foreground whitespace-nowrap">
                 <Eye className="w-4 h-4" />
                 閲覧のみ
               </span>
@@ -576,7 +567,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             )}
             {otherEditors.length > 0 && (
               <span
-                className="flex items-center gap-1 text-sm text-gray-500 whitespace-nowrap"
+                className="flex items-center gap-1 text-sm text-muted-foreground whitespace-nowrap"
                 title={otherEditors
                   .map(editor => {
                     const target = editor.editingPersonId
@@ -595,47 +586,6 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             )}
           </div>
           <div className="flex items-center gap-3">
-            {canEdit && (
-              <>
-                {/* アンドゥ・リドゥボタン */}
-                <div className="flex items-center gap-1 border-r border-gray-200 pr-3 mr-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={undo}
-                    disabled={!canUndo}
-                    title="元に戻す (Cmd+Z)"
-                  >
-                    <Undo className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={redo}
-                    disabled={!canRedo}
-                    title="やり直し (Cmd+Shift+Z)"
-                  >
-                    <Redo className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                <Button variant="outline" size="sm" onClick={handleManualSave}>
-                  <Save className="w-4 h-4 mr-2" />
-                  保存
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => loadFileInputRef.current?.click()}>
-                  <Download className="w-4 h-4 mr-2" />
-                  読み込み
-                </Button>
-                <input
-                  ref={loadFileInputRef}
-                  type="file"
-                  accept="application/json"
-                  className="hidden"
-                  onChange={handleLoadFileSelected}
-                />
-              </>
-            )}
             {/* PDFダイアログへ移る際にメニューの操作ロックを残さない */}
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
@@ -685,6 +635,55 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         </div>
       </header>
 
+      <div className="workspace-toolbar">
+        <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="font-medium text-primary">家系図</span><span>人物 {persons.length}人 / 家族関係 {families.length}件</span></div>
+        <div className="workspace-toolbar-actions">
+            {canEdit && (
+              <>
+                {/* アンドゥ・リドゥボタン */}
+                <div className="flex items-center gap-1 border-r border-border pr-3 mr-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={undo}
+                    disabled={!canUndo}
+                    title="元に戻す (Cmd+Z)"
+                  >
+                    <Undo className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={redo}
+                    disabled={!canRedo}
+                    title="やり直し (Cmd+Shift+Z)"
+                  >
+                    <Redo className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                <Button variant="outline" size="sm" onClick={handleManualSave}>
+                  <Save className="w-4 h-4 mr-2" />
+                  保存
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => loadFileInputRef.current?.click()}>
+                  <Download className="w-4 h-4 mr-2" />
+                  読み込み
+                </Button>
+                <input
+                  ref={loadFileInputRef}
+                  type="file"
+                  accept="application/json"
+                  className="hidden"
+                  onChange={handleLoadFileSelected}
+                />
+              </>
+            )}
+
+          {canEdit && <Button size="sm" onClick={() => setIsAddPersonOpen(true)}><Plus size={16} />新しい人物を追加</Button>}
+        </div>
+      </div>
+
       <div className="flex-1 flex overflow-hidden">
         {/* 左サイドバー */}
         {/* 画面が狭いときのドロワー用の背景 */}
@@ -698,48 +697,21 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
         <aside
           style={{ width: UI_CONFIG.leftSidebarWidth }}
-          className={`bg-white border-r border-gray-200 flex flex-col overflow-y-auto
+          className={`workspace-panel bg-white border-r border-border flex flex-col overflow-y-auto
             max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:shadow-xl max-lg:transition-transform
             ${isLeftPanelOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'}`}
         >
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 lg:hidden">
-            <span className="text-sm font-medium text-gray-900">資料</span>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border lg:hidden">
+            <span className="text-sm font-medium text-foreground">資料</span>
             <Button variant="ghost" size="sm" onClick={() => setIsLeftPanelOpen(false)}>
               <X className="w-4 h-4" />
             </Button>
           </div>
-          {canEdit && (
-            <div className="p-6 border-b border-gray-200">
-              <div
-                className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
-                onClick={() => setIsKosekiUploadOpen(true)}
-              >
-                <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-lg font-medium text-gray-900 mb-2">戸籍PDFをアップロード</p>
-                <p className="text-sm text-gray-500">
-                  戸籍謄本PDFをAIで解析
-                  <br />
-                  クリックして開始
-                </p>
-              </div>
-            </div>
-          )}
 
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium text-gray-900">データ状況</span>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-2">
-              <div className="flex items-center gap-2 text-sm text-green-800">
-                <Users className="w-4 h-4 text-green-600" />
-                <span>{persons.length}人の人物</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-green-800">
-                <GitBranch className="w-4 h-4 text-green-600" />
-                <span>{families.length}件の家族関係</span>
-              </div>
-            </div>
+          <div className="p-5">
+            <h2 className="mb-5 flex items-center gap-2 text-base font-bold"><GitBranch size={18} />戸籍・資料 <span className="rounded bg-secondary px-2 text-xs text-primary">{kosekiFiles.length}</span></h2>
+            {canEdit && <Button data-open-koseki-upload onClick={() => setIsKosekiUploadOpen(true)}><Upload size={16} />戸籍を取り込む</Button>}
+            <p className="mt-4 text-xs leading-5 text-muted-foreground">PDF・画像を取り込み、人物と家族関係を読み取ります。</p>
           </div>
 
           <KosekiFilesPanel
@@ -753,20 +725,17 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             onDataExtracted={handleKosekiDataExtracted}
           />
 
-          <div className="p-6">
-            <h3 className="text-sm font-medium text-gray-900 mb-3">使い方</h3>
-            <div className="space-y-3 text-sm text-gray-600">
-              <p>・上の「戸籍PDFをアップロード」から戸籍謄本PDFを解析して家系図に取り込めます。</p>
-              <p>・編集内容は自動的にサーバーへ保存されます（「保存」ボタンで即時保存も可能）。</p>
-              <p>・同じ案件を複数人で同時に編集できます。他の方の変更は自動で画面に反映され、同じ箇所を直した場合はあとの保存が残ります。</p>
-              <p>・「書き出し」で家系図をJSONファイルとしてダウンロードし、「読み込み」で再度読み込めます。</p>
-              <p>・図の上でドラッグして配置を調整、右側のパネルで人物情報や関係を編集できます。</p>
-            </div>
+
+          <div className="p-5 text-xs leading-6 text-muted-foreground">
+            <h3 className="mb-3 text-sm font-medium text-foreground">確認の進め方</h3>
+            <ol className="list-inside list-decimal"><li>戸籍を取り込む</li><li>原文と読み取り結果を確認</li><li>人物・関係を整える</li><li>PDFなどに書き出す</li></ol>
+            <p className="mt-5">編集内容は自動保存されます。同じ箇所を同時に直した場合は、あとからの保存が残ります。</p>
+            <p className="mt-8">原本には保管期限があります。期限後も家系図は保持されます。</p>
           </div>
         </aside>
 
         {/* 中央エリア - 家系図描画エリア */}
-        <main className="flex-1 relative bg-gray-100">
+        <main className="flex-1 min-w-0 relative bg-muted">
           <FamilyTree
             persons={persons}
             families={families}
@@ -787,15 +756,53 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         {/* 右サイドバー - 情報表示・検索 */}
         <aside
           style={{ width: UI_CONFIG.rightSidebarWidth }}
-          className={`bg-white border-l border-gray-200 flex flex-col
+          className={`workspace-panel workspace-panel-right bg-white border-l border-border flex flex-col
             max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:shadow-xl max-lg:transition-transform
             ${isRightPanelOpen ? 'max-lg:translate-x-0' : 'max-lg:translate-x-full'}`}
         >
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 lg:hidden">
-            <span className="text-sm font-medium text-gray-900">人物</span>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border lg:hidden">
+            <span className="text-sm font-medium text-foreground">人物</span>
             <Button variant="ghost" size="sm" onClick={() => setIsRightPanelOpen(false)}>
               <X className="w-4 h-4" />
             </Button>
+          </div>
+
+          {/* 検索機能 */}
+          <div className="p-6 border-b border-border">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                placeholder="人物を検索... (Cmd+K)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            {/* 検索結果 */}
+            {searchQuery.trim() && (
+              <div className="mt-4">
+                <h4 className="text-sm font-medium text-muted-foreground mb-2">
+                  検索結果 ({searchResults.length}件)
+                </h4>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {searchResults.map((person) => (
+                    <div
+                      key={person.id}
+                      className="p-2 border border-border rounded cursor-pointer hover:bg-muted"
+                      onClick={() => {
+                        handleSearchResultSelect(person)
+                        setIsRightPanelOpen(false)
+                      }}
+                    >
+                      <div className="text-sm font-medium">{person.displayName}</div>
+                      <div className="text-xs text-muted-foreground">第{person.generation}世代</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 要確認の指摘一覧（論理矛盾・2モデル照合の食い違い） */}
@@ -818,64 +825,12 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             }}
           />
 
-          {/* 検索機能 */}
-          <div className="p-6 border-b border-gray-200">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                ref={searchInputRef}
-                placeholder="人物を検索... (Cmd+K)"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-
-            {/* 検索結果 */}
-            {searchQuery.trim() && (
-              <div className="mt-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">
-                  検索結果 ({searchResults.length}件)
-                </h4>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {searchResults.map((person) => (
-                    <div
-                      key={person.id}
-                      className="p-2 border border-gray-200 rounded cursor-pointer hover:bg-gray-50"
-                      onClick={() => {
-                        handleSearchResultSelect(person)
-                        setIsRightPanelOpen(false)
-                      }}
-                    >
-                      <div className="text-sm font-medium">{person.displayName}</div>
-                      <div className="text-xs text-gray-500">第{person.generation}世代</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 人物追加ボタン */}
-          {canEdit && (
-            <div className="px-6 py-4 border-b border-gray-200">
-              <Button
-                onClick={() => setIsAddPersonOpen(true)}
-                className="w-full"
-                variant="outline"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                新しい人物を追加
-              </Button>
-            </div>
-          )}
-
           {/* 選択中ノードの情報表示 */}
           <div className="flex-1 p-6 overflow-hidden">
             {selectedPerson ? (
               <div className="h-full flex flex-col">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">人物情報</h3>
+                <div className="flex flex-col items-start gap-3 mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">人物情報</h3>
                   {canEdit && (
                     <div className="flex gap-2">
                       <Button
@@ -902,7 +857,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                         <Merge className="w-4 h-4 mr-1" />
                         統合
                         {mergeCandidates.length > 0 && (
-                          <span className="ml-1 text-xs text-blue-600">
+                          <span className="ml-1 text-xs text-primary">
                             {mergeCandidates.length}
                           </span>
                         )}
@@ -923,14 +878,14 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                   <div className="space-y-4 pr-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-sm font-medium text-gray-700">姓</label>
-                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                        <label className="text-sm font-medium text-muted-foreground">姓</label>
+                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                           {selectedPerson.name.surname}
                         </div>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-gray-700">名</label>
-                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                        <label className="text-sm font-medium text-muted-foreground">名</label>
+                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                           {selectedPerson.name.given_name}
                         </div>
                       </div>
@@ -938,37 +893,37 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-sm font-medium text-gray-700">生年月日</label>
-                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                        <label className="text-sm font-medium text-muted-foreground">生年月日</label>
+                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                           {selectedPerson.birth?.date || '不明'}
                         </div>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-gray-700">没年月日</label>
-                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                        <label className="text-sm font-medium text-muted-foreground">没年月日</label>
+                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                           {selectedPerson.death?.date || '存命'}
                         </div>
                       </div>
                     </div>
 
                     <div>
-                      <label className="text-sm font-medium text-gray-700">世代</label>
-                      <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                      <label className="text-sm font-medium text-muted-foreground">世代</label>
+                      <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                         第{selectedPerson.generation}世代
                       </div>
                     </div>
 
                     <div>
-                      <label className="text-sm font-medium text-gray-700">性別</label>
-                      <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                      <label className="text-sm font-medium text-muted-foreground">性別</label>
+                      <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                         {selectedPerson.sex === 'male' ? '男性' : selectedPerson.sex === 'female' ? '女性' : '不明'}
                       </div>
                     </div>
 
                     {formatKyonen(selectedPerson.birth?.date, selectedPerson.death?.date) && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700">享年</label>
-                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                        <label className="text-sm font-medium text-muted-foreground">享年</label>
+                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                           {formatKyonen(selectedPerson.birth?.date, selectedPerson.death?.date)}
                         </div>
                       </div>
@@ -976,8 +931,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
                     {selectedPerson.name_original && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700">氏名（戸籍の原文）</label>
-                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                        <label className="text-sm font-medium text-muted-foreground">氏名（戸籍の原文）</label>
+                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                           {selectedPerson.name_original}
                         </div>
                       </div>
@@ -985,7 +940,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
                     {selectedPersonSources.length > 0 && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700">出典（読み取り元の書類）</label>
+                        <label className="text-sm font-medium text-muted-foreground">出典（読み取り元の書類）</label>
                         <div className="mt-1 space-y-1">
                           {selectedPersonSources.map(file => (
                             <button
@@ -993,8 +948,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                               type="button"
                               onClick={() => handleOpenSource(file)}
                               disabled={!canOpenKosekiFile(file, isAdmin)}
-                              className="w-full text-left p-2 bg-gray-50 border border-gray-200 rounded text-sm
-                                         hover:bg-gray-100 disabled:opacity-60 disabled:hover:bg-gray-50
+                              className="w-full text-left p-2 bg-muted border border-border rounded text-sm
+                                         hover:bg-muted disabled:opacity-60 disabled:hover:bg-muted
                                          disabled:cursor-not-allowed truncate"
                               title={
                                 canOpenKosekiFile(file, isAdmin)
@@ -1011,8 +966,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
                     {selectedPerson.relation_to_family_head && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700">続柄（戸籍上の表記）</label>
-                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                        <label className="text-sm font-medium text-muted-foreground">続柄（戸籍上の表記）</label>
+                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                           {selectedPerson.relation_to_family_head}
                         </div>
                       </div>
@@ -1020,8 +975,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
                     {selectedPerson.birth?.place && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700">出生地</label>
-                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                        <label className="text-sm font-medium text-muted-foreground">出生地</label>
+                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                           {selectedPerson.birth.place}
                         </div>
                       </div>
@@ -1029,8 +984,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
                     {selectedPerson.death?.place && (
                       <div>
-                        <label className="text-sm font-medium text-gray-700">没地</label>
-                        <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
+                        <label className="text-sm font-medium text-muted-foreground">没地</label>
+                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
                           {selectedPerson.death.place}
                         </div>
                       </div>
@@ -1039,16 +994,22 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                 </ScrollArea>
               </div>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="flex items-center justify-center h-full text-muted-foreground">
                 <div className="text-center">
                   <Search className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>人物を選択してください</p>
+                  <p className="font-medium">人物を選択してください</p><p className="mt-3 text-xs leading-6">家系図のカードを選ぶと、<br />人物情報や関係を確認できます。</p>
                 </div>
               </div>
             )}
           </div>
         </aside>
       </div>
+
+      {pendingImport && <JsonImportDialog count={pendingImport.people.length} onClose={() => setPendingImport(null)} onImport={mode => {
+        const { mergedPersonCount, addedPersonCount } = importFamilyTreeData(pendingImport, mode)
+        setPendingImport(null)
+        toast.success(`${addedPersonCount}人を追加、${mergedPersonCount}人を統合しました`)
+      }} />}
 
       {/* 編集ダイアログ */}
       <MergePersonsDialog
@@ -1122,6 +1083,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         open={isPdfDialogOpen}
         onOpenChange={setIsPdfDialogOpen}
         contentSize={pdfContentSize}
+        previewSvg={pdfPreviewSvg}
         onExport={runPdfExport}
       />
 

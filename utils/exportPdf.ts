@@ -85,8 +85,8 @@ export function buildTreeSvg(
       const [p1, p2] = parentPositions
       const dash = family.divorceDate ? ' stroke-dasharray="6 4"' : ''
       parts.push(
-        `<line x1="${p1.x}" y1="${p1.y - 2}" x2="${p2.x}" y2="${p2.y - 2}" stroke="#dc2626" stroke-width="1.5" opacity="0.8"${dash}/>`,
-        `<line x1="${p1.x}" y1="${p1.y + 2}" x2="${p2.x}" y2="${p2.y + 2}" stroke="#dc2626" stroke-width="1.5" opacity="0.8"${dash}/>`
+        `<line x1="${p1.x}" y1="${p1.y - 2}" x2="${p2.x}" y2="${p2.y - 2}" stroke="#688b7e" stroke-width="1.5" opacity="0.8"${dash}/>`,
+        `<line x1="${p1.x}" y1="${p1.y + 2}" x2="${p2.x}" y2="${p2.y + 2}" stroke="#688b7e" stroke-width="1.5" opacity="0.8"${dash}/>`
       )
     }
 
@@ -101,7 +101,7 @@ export function buildTreeSvg(
         const c = at(childPos)
         const midY = (centerY + c.y - CARD_H / 2) / 2
         parts.push(
-          `<path d="M ${centerX} ${centerY} L ${centerX} ${midY} L ${c.x} ${midY} L ${c.x} ${c.y - CARD_H / 2}" stroke="#6b7280" stroke-width="1.5" fill="none" opacity="0.7"${dash}/>`
+          `<path d="M ${centerX} ${centerY} L ${centerX} ${midY} L ${c.x} ${midY} L ${c.x} ${c.y - CARD_H / 2}" stroke="#687a75" stroke-width="1.5" fill="none" opacity="0.7"${dash}/>`
         )
       })
     }
@@ -115,14 +115,12 @@ export function buildTreeSvg(
     const left = x - CARD_W / 2
     const top = y - CARD_H / 2
 
-    const fill = person.sex === 'male' ? '#eff6ff' : person.sex === 'female' ? '#fdf2f8' : '#ffffff'
-    const accent = person.sex === 'male' ? '#3b82f6' : person.sex === 'female' ? '#ec4899' : '#9ca3af'
+    const fill = '#ffffff'
     const age = formatKyonen(person.birth?.date, person.death?.date)
 
     parts.push(
-      `<rect x="${left}" y="${top}" width="${CARD_W}" height="${CARD_H}" rx="8" fill="${fill}" stroke="#d1d5db"/>`,
-      `<rect x="${left}" y="${top}" width="4" height="${CARD_H}" rx="2" fill="${accent}"/>`,
-      `<text x="${left + 12}" y="${top + 24}" font-size="13" font-weight="bold" fill="#111827">${escapeXml(person.displayName)}</text>`
+      `<rect x="${left}" y="${top}" width="${CARD_W}" height="${CARD_H}" rx="8" fill="${fill}" stroke="#d7e1dc"/>`,
+      `<text x="${left + 12}" y="${top + 24}" font-size="13" font-weight="bold" fill="#172e2b">${escapeXml(person.displayName)}</text>`
     )
     let line = 0
     if (person.birth?.date) {
@@ -139,7 +137,7 @@ export function buildTreeSvg(
     }
     if (age) {
       parts.push(
-        `<text x="${left + 12}" y="${top + 44 + line * 16}" font-size="10" fill="#6b7280">${escapeXml(age)}</text>`
+        `<text x="${left + 12}" y="${top + 44 + line * 16}" font-size="10" fill="#687a75">${escapeXml(age)}</text>`
       )
     }
   })
@@ -147,8 +145,8 @@ export function buildTreeSvg(
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<rect width="${width}" height="${height}" fill="#ffffff"/>` +
-    `<text x="${PADDING}" y="${PADDING - 24}" font-size="20" font-weight="bold" fill="#111827">${escapeXml(projectName)}</text>` +
-    `<text x="${PADDING}" y="${PADDING - 4}" font-size="11" fill="#6b7280">作成日: ${now.toLocaleDateString('ja-JP')}</text>` +
+    `<text x="${PADDING}" y="${PADDING - 24}" font-size="20" font-weight="bold" fill="#172e2b">${escapeXml(projectName)}</text>` +
+    `<text x="${PADDING}" y="${PADDING - 4}" font-size="11" fill="#687a75">作成日: ${now.toLocaleDateString('ja-JP')}</text>` +
     `<g font-family="'Hiragino Sans','Yu Gothic',Meiryo,sans-serif">${parts.join('')}</g>` +
     `</svg>`
 

@@ -15,7 +15,7 @@ interface ShortcutHelpDialogProps {
 }
 
 const KEY_STYLE =
-  'inline-flex items-center justify-center min-w-[26px] h-6 px-1.5 rounded border border-gray-300 bg-gray-50 text-[11px] font-medium text-gray-700'
+  'inline-flex items-center justify-center min-w-[26px] h-6 px-1.5 rounded border border-gray-300 bg-muted text-[11px] font-medium text-muted-foreground'
 
 /** Macかどうかで修飾キーの表記を変える（表示のみ。動作は両対応） */
 function modifierLabel(): string {
@@ -53,7 +53,7 @@ export function ShortcutHelpDialog({ isOpen, onClose, canEdit }: ShortcutHelpDia
             .filter(shortcut => canEdit || !shortcut.editOnly)
             .map(shortcut => (
               <div key={shortcut.description} className="flex items-center justify-between py-2">
-                <span className="text-sm text-gray-700">{shortcut.description}</span>
+                <span className="text-sm text-muted-foreground">{shortcut.description}</span>
                 <span className="flex items-center gap-1">
                   {shortcut.keys.map(key => (
                     <kbd key={key} className={KEY_STYLE}>{key}</kbd>

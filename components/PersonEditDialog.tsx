@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import React, { useState, useEffect } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { PersonSexField } from "./PersonSexField"
 import {
   ProcessedPerson,
   UNREADABLE_FIELD_LABELS,
@@ -28,7 +28,7 @@ function FieldNote({
       {unreadable && (
         <p className="text-xs text-red-600 font-medium">読み取りに失敗しました</p>
       )}
-      {original && <p className="text-xs text-gray-500">原文: {original}</p>}
+      {original && <p className="text-xs text-muted-foreground">原文: {original}</p>}
     </div>
   )
 }
@@ -57,7 +57,7 @@ export function PersonEditDialog({
   const [formData, setFormData] = useState({
     surname: '',
     givenName: '',
-    sex: 'male' as 'male' | 'female',
+    sex: null as 'male' | 'female' | null,
     birthDate: '',
     birthPlace: '',
     deathDate: '',
@@ -73,7 +73,7 @@ export function PersonEditDialog({
       setFormData({
         surname: person.name.surname || '',
         givenName: person.name.given_name || '',
-        sex: person.sex || 'male',
+        sex: person.sex ?? null,
         birthDate: person.birth?.date || '',
         birthPlace: person.birth?.place || '',
         deathDate: person.death?.date || '',
@@ -154,9 +154,10 @@ export function PersonEditDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[768px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>人物情報の編集 - {person.displayName}</DialogTitle>
+          <DialogDescription>戸籍の原文と照合しながら、人物の情報を整えます。</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
@@ -185,7 +186,7 @@ export function PersonEditDialog({
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">基本情報</h4>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <Label htmlFor="surname">姓</Label>
                 <Input
@@ -212,19 +213,8 @@ export function PersonEditDialog({
               unreadable={person?.unreadable?.includes('name')}
             />
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="sex">性別</Label>
-                <Select value={formData.sex} onValueChange={(value: 'male' | 'female') => update({ sex: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="male">男性</SelectItem>
-                    <SelectItem value="female">女性</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <PersonSexField value={formData.sex} onChange={sex => update({ sex })} />
               <div>
                 <Label htmlFor="generation">世代</Label>
                 <Input
@@ -243,7 +233,7 @@ export function PersonEditDialog({
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">出生情報</h4>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <Label htmlFor="birthDate">生年月日</Label>
                 <Input
@@ -253,7 +243,7 @@ export function PersonEditDialog({
                   onChange={(e) => update({ birthDate: e.target.value })}
                   placeholder="1990-05-17"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   形式: YYYY-MM-DD または YYYY-MM-XX
                 </p>
                 <FieldNote
@@ -278,7 +268,7 @@ export function PersonEditDialog({
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">死亡情報</h4>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <Label htmlFor="deathDate">没年月日</Label>
                 <Input
@@ -288,7 +278,7 @@ export function PersonEditDialog({
                   onChange={(e) => update({ deathDate: e.target.value })}
                   placeholder="2020-12-03"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   空欄の場合は存命として扱われます
                 </p>
                 <FieldNote

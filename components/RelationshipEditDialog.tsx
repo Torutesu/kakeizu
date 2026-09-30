@@ -141,7 +141,7 @@ export function RelationshipEditDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[800px] max-h-[90vh] overflow-y-auto">
         {confirmDialog}
         <DialogHeader>
           <DialogTitle>家族関係の編集 - {person.displayName}</DialogTitle>
@@ -153,11 +153,11 @@ export function RelationshipEditDialog({
             <h4 className="text-lg font-semibold">現在の家族関係</h4>
             
             {personFamilies.length === 0 ? (
-              <p className="text-gray-500">家族関係がありません</p>
+              <p className="text-muted-foreground">家族関係がありません</p>
             ) : (
               <div className="space-y-3">
                 {personFamilies.map((family) => (
-                  <div key={family.id} className="border border-gray-200 rounded-lg p-4">
+                  <div key={family.id} className="border border-border rounded-lg p-4">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex gap-2">
                         <Badge variant={family.relationType === 'blood' ? 'default' : 'secondary'}>
@@ -176,14 +176,14 @@ export function RelationshipEditDialog({
                       </Button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                       <div>
                         <h5 className="font-medium mb-2">親</h5>
                         <div className="space-y-1">
                           {family.parents.map(parent => (
                             <div key={parent.id} className="text-sm">
                               {parent.displayName}
-                              {parent.id === person.id && <span className="text-blue-600"> (本人)</span>}
+                              {parent.id === person.id && <span className="text-primary"> (本人)</span>}
                             </div>
                           ))}
                         </div>
@@ -192,12 +192,12 @@ export function RelationshipEditDialog({
                         <h5 className="font-medium mb-2">子供</h5>
                         <div className="space-y-1">
                           {family.children.length === 0 ? (
-                            <span className="text-gray-500 text-sm">なし</span>
+                            <span className="text-muted-foreground text-sm">なし</span>
                           ) : (
                             family.children.map(child => (
                               <div key={child.id} className="text-sm">
                                 {child.displayName}
-                                {child.id === person.id && <span className="text-blue-600"> (本人)</span>}
+                                {child.id === person.id && <span className="text-primary"> (本人)</span>}
                               </div>
                             ))
                           )}
@@ -214,7 +214,7 @@ export function RelationshipEditDialog({
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">配偶者を追加</h4>
             
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <Label>配偶者</Label>
                 <Select value={newSpouse} onValueChange={setNewSpouse}>
@@ -251,7 +251,7 @@ export function RelationshipEditDialog({
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">子供を追加</h4>
             
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <Label>子供</Label>
                 <Select value={newChild} onValueChange={setNewChild}>
@@ -292,7 +292,7 @@ export function RelationshipEditDialog({
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">親を追加</h4>
             
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <Label>親</Label>
                 <Select value={newParent} onValueChange={setNewParent}>
