@@ -36,6 +36,9 @@ import { mergePersonsInState, findMergeCandidates, MergeCandidate } from '../uti
 export type SaveStatus = 'saved' | 'saving' | 'offline' | 'error'
 
 const AUTOSAVE_DEBOUNCE_MS = 800
+// 1回の保存要求で続けて送る上限。送った後の編集が次々に来ても、ここで一度区切る
+// （残りは次の自動保存で送られる）。想定外の応答で送り続けないための歯止めでもある
+const MAX_SAVE_ROUNDS = 5
 
 // 参照を変えないための空配列（毎回新しい配列を作るとuseEffectが無駄に再実行される）
 const EMPTY_REGISTRIES: RegistryData[] = []
@@ -95,7 +98,8 @@ interface UseFamilyDataReturn {
     mode?: 'merge' | 'replace'
   ) => { mergedPersonCount: number; addedPersonCount: number }
   exportFamilyTreeData: () => FamilyTreeData
-  saveNow: () => Promise<void>
+  /** 保存を最後まで待ち、終わったときの状態を返す */
+  saveNow: () => Promise<SaveStatus>
 
   // アンドゥ・リドゥ
   canUndo: boolean
@@ -251,12 +255,6 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     pushState(toState(fromState(next)), label)
   }, [pushState, toState, fromState])
 
-  // サーバー側の内容で画面を置き換える。アンドゥ履歴には1件として積む
-  // （履歴を消すと、取り込み直前の状態へ戻れなくなる）
-  const applyServerData = useCallback((data: FamilyTreeData, label: string) => {
-    pushState(toState(data), label)
-  }, [pushState, toState])
-
   /**
    * 他の利用者の変更を取り込む。
    *
@@ -268,9 +266,10 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     rebaseHistory(state => toState(mergeTreeChanges(baseline, fromState(state), remote)))
   }, [rebaseHistory, toState, fromState])
 
-  // 保存。保存中に加えた変更を取りこぼさないよう、実行時点の最新stateから組み立てる
-  const persistRef = useRef<() => Promise<void>>(async () => {})
-  persistRef.current = async () => {
+  // 保存1回分。保存中に加えた変更を取りこぼさないよう、実行時点の最新stateから組み立てる。
+  // 戻り値は終わったときの状態（保存ボタンが結果を正しく伝えるため）
+  const persistOnceRef = useRef<() => Promise<SaveStatus>>(async () => 'saved')
+  persistOnceRef.current = async () => {
     const state = currentStateRef.current
     const local = toFamilyTreeData(
       state.persons,
@@ -283,7 +282,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       if (userId) clearOfflineDraft(projectId, userId)
       setSaveStatus('saved')
       setRestoredOfflineDraft(false)
-      return
+      return 'saved'
     }
 
     // 送る前に端末へ持ち越す。送信中にタブを閉じても・通信が切れても変更が残る
@@ -299,7 +298,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     // つながっていないと分かっているなら、送らずに持ち越しだけで済ませる
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setSaveStatus('offline')
-      return
+      return 'offline'
     }
 
     setSaveStatus('saving')
@@ -313,22 +312,70 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       if (result.ok) {
         setVersion(result.version)
         baselineRef.current = result.data
-        if (userId) clearOfflineDraft(projectId, userId)
-        setSaveStatus('saved')
-        setRestoredOfflineDraft(false)
         // 保存の直前に他の人の変更が入っていた場合、実際に保存された内容は
-        // 手元と違う。画面を合わせないと、消えたはずの人物が残って見える
-        if (result.mergedRemoteChanges) applyServerData(result.data, '他の利用者の変更を取り込み')
-      } else {
-        console.error('保存に失敗:', result.message)
-        setSaveStatus('error')
+        // 手元と違う。画面を合わせないと、消えたはずの人物が残って見える。
+        // **画面を保存結果で置き換えてはいけない。**送信中に加えた編集が消え、
+        // 次の保存でも送られなくなる。保存結果の上に「送った後の編集」を重ね直す
+        if (result.mergedRemoteChanges) {
+          const rebased = toState(mergeTreeChanges(local, fromState(currentStateRef.current), result.data))
+          applyRemoteChange(result.data, local)
+          // 続けて送る保存は描画を待たずに走る。重ね直した状態を先に反映しておかないと、
+          // 相手の変更が入る前の状態を送り、**相手の変更を消してしまう**
+          currentStateRef.current = rebased
+        }
+        // 送った後の編集が残っていれば、持ち越しは消さない（続けて保存される）
+        const stillPending = !hasNoChanges(result.data, fromState(currentStateRef.current))
+        if (userId && !stillPending) clearOfflineDraft(projectId, userId)
+        setSaveStatus(stillPending ? 'saving' : 'saved')
+        setRestoredOfflineDraft(false)
+        return stillPending ? 'saving' : 'saved'
       }
+      console.error('保存に失敗:', result.message)
+      setSaveStatus('error')
+      return 'error'
     } catch (err) {
       // 通信が切れている場合は異常ではない。持ち越して、つながったら送る
       const offline = typeof navigator !== 'undefined' && navigator.onLine === false
       if (!offline) console.error('保存に失敗:', err)
       setSaveStatus(offline ? 'offline' : 'error')
+      return offline ? 'offline' : 'error'
     }
+  }
+
+  // 保存は1つずつ順番に送る。
+  //
+  // 並べて送ると、保存の前段（認証の確認）の待ち時間しだいで**後から始めた保存が
+  // 先に書き込まれる**ことがある。遅れた方は版数の食い違いから相手の保存として
+  // 重ね直され、古い編集が新しい編集の上に書き戻される（最新の入力が消える）。
+  // 送信中に保存の要求が来たら印だけ付け、終わってから最新の状態でもう一度送る。
+  // 失敗しても印が付いていればもう一度送る（要求を捨てて取りこぼさない）。
+  const inflightSaveRef = useRef<Promise<SaveStatus> | null>(null)
+  const saveAgainRef = useRef(false)
+  const persistRef = useRef<() => Promise<SaveStatus>>(async () => 'saved')
+  persistRef.current = () => {
+    if (inflightSaveRef.current) {
+      saveAgainRef.current = true
+      // 呼んだ側（保存ボタン）は、この要求分の保存が終わるまで待てる
+      return inflightSaveRef.current
+    }
+    const run = (async () => {
+      let status: SaveStatus = 'saved'
+      try {
+        let rounds = 0
+        do {
+          saveAgainRef.current = false
+          status = await persistOnceRef.current()
+          rounds++
+          // 保存結果に重ね直した「送った後の編集」は、印が無くても続けて送る
+          if (status === 'saving') saveAgainRef.current = true
+        } while (saveAgainRef.current && rounds < MAX_SAVE_ROUNDS)
+      } finally {
+        inflightSaveRef.current = null
+      }
+      return status
+    })()
+    inflightSaveRef.current = run
+    return run
   }
 
   // つながったら、持ち越していた変更を送る
@@ -391,10 +438,11 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     return () => window.removeEventListener('pagehide', stash)
   }, [projectId])
 
-  // 明示的な保存（保存ボタン用）
-  const saveNow = useCallback(async () => {
-    if (!canEdit) return
-    await persistRef.current()
+  // 明示的な保存（保存ボタン用）。送信中の保存があれば、その後の保存まで終わるのを待つ。
+  // 結果を返す（未送信なのに「保存しました」と出さないため）
+  const saveNow = useCallback(async (): Promise<SaveStatus> => {
+    if (!canEdit) return saveStatusRef.current
+    return persistRef.current()
   }, [canEdit])
 
   // 他の利用者の保存を受け取って画面へ反映する（要件v1.1 4.5）

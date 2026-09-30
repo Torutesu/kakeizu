@@ -383,9 +383,13 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   }, [canEdit, selectedPerson, confirm, deletePerson])
 
   // 手動保存ハンドラー
+  // 結果に合わせて伝える。未送信・失敗なのに「保存しました」と出すと、
+  // 利用者は保存できたと思って閉じてしまう
   const handleManualSave = async () => {
-    await saveNow()
-    toast.success('保存しました')
+    const status = await saveNow()
+    if (status === 'saved') toast.success('保存しました')
+    else if (status === 'offline') toast.info('通信がつながっていないため、端末に保持しました（つながると自動で送ります）')
+    else if (status === 'error') toast.error('保存できませんでした。通信を確認して、もう一度お試しください')
   }
 
   // 書き出しファイル名のベース（案件名_日付）

@@ -46,12 +46,13 @@ beforeEach(() => {
   // （消さないと、前のテストで加えた人物が次のテストで復元される）
   localStorage.clear()
   mockedLoad.mockResolvedValue({ data: emptyData, version: 0 })
-  mockedSave.mockResolvedValue({
+  // 本物の saveTreeRevision と同じく、書き込んだ内容と進んだ版数を返す
+  mockedSave.mockImplementation(async (_projectId, tree, _baseline, expectedVersion) => ({
     ok: true,
-    version: 1,
-    data: emptyData,
+    version: expectedVersion + 1,
+    data: tree,
     mergedRemoteChanges: false,
-  })
+  }))
   mockedCanEdit.mockResolvedValue(true)
 })
 
@@ -512,5 +513,124 @@ describe('人物の削除で、残すべき関係を失わない', () => {
       ['aとbの続柄', ['b']],
       ['人物に紐づかない指摘', []],
     ])
+  })
+})
+
+// ============================================================================
+// 保存は1つずつ順番に送る（PR #2 のレビューで見つかった不具合）
+// ============================================================================
+describe('保存を並べて送らない', () => {
+  const human = (id: string) => ({
+    id,
+    generation: 1,
+    sex: 'male' as const,
+    name: { surname: '甲野', given_name: id },
+    birth: { original_date: null, date: null, place: null },
+    death: { original_date: null, date: null, place: null },
+  })
+  const ids = (tree: FamilyTreeData) => tree.people.map(person => person.id)
+
+  /** 1回目の保存を止めておき、好きなときに返せるようにする */
+  function holdFirstSave() {
+    let finish: (outcome: 'ok' | 'throw', data?: FamilyTreeData, merged?: boolean) => void = () => {}
+    mockedSave.mockImplementationOnce(
+      (_projectId, tree, _baseline, expectedVersion) =>
+        new Promise((resolve, reject) => {
+          finish = (outcome, data, merged = false) =>
+            outcome === 'throw'
+              ? reject(new Error('通信エラー'))
+              : resolve({ ok: true, version: expectedVersion + 1, data: data ?? tree, mergedRemoteChanges: merged })
+        })
+    )
+    return (outcome: 'ok' | 'throw', data?: FamilyTreeData, merged?: boolean) => finish(outcome, data, merged)
+  }
+
+  /** 自動保存の待ち（デバウンス）を過ぎるまで待つ */
+  const afterDebounce = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 900)) })
+
+  it('送信中に次の保存が来ても並べて送らず、終わってから最新の状態を送る', async () => {
+    const release = holdFirstSave()
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
+
+    // 送信中に編集し、自動保存の待ちが過ぎても、2つ目は送られない
+    act(() => { result.current.addPerson({ id: 'p2' }) })
+    await afterDebounce()
+    expect(mockedSave).toHaveBeenCalledTimes(1)
+
+    await act(async () => { release('ok') })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(2), { timeout: 3000 })
+
+    const [, tree, baseline, expectedVersion] = mockedSave.mock.calls[1]
+    expect(ids(tree)).toEqual(['p1', 'p2'])
+    // 1回目の結果（版数・基準）の上に送る。並べて送ると、古い基準のまま送って重ね直しになる
+    expect(ids(baseline)).toEqual(['p1'])
+    expect(expectedVersion).toBe(1)
+    await waitFor(() => expect(result.current.saveStatus).toBe('saved'))
+  })
+
+  it('保存ボタンは、送信中の保存とその後の保存が終わるまで待ち、結果を返す', async () => {
+    const release = holdFirstSave()
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    act(() => { result.current.addPerson({ id: 'p2' }) })
+
+    let finished: string | null = null
+    let pressed!: Promise<void>
+    act(() => { pressed = result.current.saveNow().then(status => { finished = status }) })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    // まだ送り終わっていないので、「保存しました」とは言えない
+    expect(finished).toBeNull()
+
+    await act(async () => { release('ok'); await pressed })
+    expect(finished).toBe('saved')
+    expect(mockedSave).toHaveBeenCalledTimes(2)
+    expect(ids(mockedSave.mock.calls[1][1])).toEqual(['p1', 'p2'])
+  })
+
+  it('送信中の保存が失敗しても、その間に来た保存の要求を捨てずに送る', async () => {
+    const release = holdFirstSave()
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    act(() => { result.current.addPerson({ id: 'p2' }) })
+    await afterDebounce()
+
+    await act(async () => { release('throw') })
+    // 次の編集を待たずに、最新の状態でもう一度送る
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    expect(ids(mockedSave.mock.calls[1][1])).toEqual(['p1', 'p2'])
+    await waitFor(() => expect(result.current.saveStatus).toBe('saved'))
+  })
+
+  it('保存で他の人の変更が合わさっても、送信中に加えた編集は消えずに続けて送られる', async () => {
+    const release = holdFirstSave()
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    // 送信中に自分がもう1人加える
+    act(() => { result.current.addPerson({ id: 'p2' }) })
+
+    // サーバーでは他の人の追加（other）と合わさって保存された
+    await act(async () => {
+      release('ok', { people: [human('p1'), human('other')], families: [] }, true)
+    })
+
+    // 画面には3人とも残る（保存結果で置き換えると p2 が消えていた）
+    await waitFor(() =>
+      expect(result.current.persons.map(person => person.id).sort()).toEqual(['other', 'p1', 'p2'])
+    )
+    // 続けて送る保存には、相手の追加も自分の追加も入っている（相手の変更を消さない）
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    const [, tree, baseline] = mockedSave.mock.calls[1]
+    expect(ids(tree).sort()).toEqual(['other', 'p1', 'p2'])
+    expect(ids(baseline).sort()).toEqual(['other', 'p1'])
+    await waitFor(() => expect(result.current.saveStatus).toBe('saved'))
   })
 })
