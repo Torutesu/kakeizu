@@ -232,3 +232,4 @@ pnpm qa:live
 | 2026-09-30 | Codex | 確認環境を構築中（公開URL未確定） | 実環境のqa:live 32件・HANDS_ON_TESTは未実施。Supabase/Geminiの有効な環境変数待ち。ローカル: 型・lint・ユニット275件・E2E44件・DB権限19件・ビルド成功。無料APIの見本限定モードを追加（学習不使用確認とは別） |
 
 | 2026-09-30 | Codex | https://kakeizu-five.vercel.app（Vercel Hobby / Supabase Free / 同梱見本限定） | 最新の通し確認は23成功・1再試行成功・2失敗・6未実行・skip 0（Gemini無料枠429）。以前の版では32/32成功。最新修正の個別確認は28/28成功、PDF追加修正後も出力4/4成功。Dia通常＋シークレットでHANDS_ON全操作を実施、正解表との差分4項目。型・lint・ユニット286・E2E46・DB19・build成功。[詳細と未達条件](./HANDS_ON_RESULT_2026-09-30.md) |
+| 2026-09-30 夜 | Codex | https://kakeizu-five.vercel.app（新UI / `4ca9d3e` / 見本専用） | **qa:live 32/32成功、失敗0・skip 0・再試行0（7.0分）**。実AI取り込み、原本の削除と保管期限、共同編集、オフライン、PDF/Excel、権限を検証。型・lint・ユニット294・画面E2E46・DB19・build成功。新UIは45状態×390/1440pxの90組み合わせではみ出し・JS例外0件、主要画面は320/768/1280pxも確認。HANDS_ONの2ブラウザ通しは同日先行記録（差分4項目）を参照し、新UIで通しの手動確認を再実施したとは扱わない。 |
