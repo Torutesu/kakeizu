@@ -36,7 +36,7 @@ interface PdfExportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** 家系図の描画サイズ（pt相当）。倍率とページ数の計算に使う */
-  contentSize: { width: number; height: number }
+  contentSize: { width: number; height: number; trailingPadding?: number }
   previewSvg?: string
   onExport: (options: PdfExportOptions) => Promise<void>
 }

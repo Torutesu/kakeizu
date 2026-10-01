@@ -68,7 +68,7 @@ export interface PdfPagePlan {
  * 図が空（幅か高さが0以下）の場合も1ページ分の計画を返す（呼び出し側で空PDFを作れる）。
  */
 export function planPdfPages(
-  contentSize: { width: number; height: number },
+  contentSize: { width: number; height: number; trailingPadding?: number },
   options: PdfExportOptions
 ): PdfPagePlan {
   const paper = PAPER_SIZES[options.paperSize] ?? PAPER_SIZES.a4
@@ -109,8 +109,11 @@ export function planPdfPages(
 
   // tile: 指定倍率のまま、必要な枚数に分割する
   const scale = Math.max(0.05, options.tileScale)
-  const scaledWidth = width * scale
-  const scaledHeight = height * scale
+  // SVG末尾の装飾用余白だけを次ページへ送ると白紙が増える。
+  // 呼び出し側が保証する無描画領域だけを除き、人物・関係線の範囲は保持する。
+  const trailingPadding = Math.max(0, contentSize.trailingPadding ?? 0)
+  const scaledWidth = Math.max(1, width - trailingPadding) * scale
+  const scaledHeight = Math.max(1, height - trailingPadding) * scale
   const columns = Math.max(1, Math.ceil(scaledWidth / contentWidth))
   const rows = Math.max(1, Math.ceil(scaledHeight / contentHeight))
 

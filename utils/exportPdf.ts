@@ -59,7 +59,7 @@ export function measureTreePdf(persons: ProcessedPerson[], families: FamilyGroup
   const width = Math.ceil(maxX - minX + PADDING * 2)
   const height = Math.ceil(maxY - minY + PADDING * 2 + titleHeight)
 
-  return { positions, offsetX, offsetY, width, height }
+  return { positions, offsetX, offsetY, width, height, trailingPadding: PADDING - 2 }
 }
 
 /** 家系図全体をSVG文字列として組み立てる（純関数） */
@@ -221,7 +221,7 @@ export async function exportTreePdf(
   options: PdfExportOptions = DEFAULT_PDF_OPTIONS
 ): Promise<void> {
   const { svg, width, height } = buildTreeSvg(persons, families, projectName)
-  const plan = planPdfPages({ width, height }, options)
+  const plan = planPdfPages({ width, height, trailingPadding: PADDING - 2 }, options)
 
   // 印刷解像度を確保しつつ、Canvasの上限（辺の長さ）を超えない範囲に抑える。
   // planのscaleはpt単位の配置倍率なので、描画解像度はその2倍を上限に取る

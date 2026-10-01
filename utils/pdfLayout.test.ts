@@ -145,3 +145,13 @@ describe('PAPER_SIZES', () => {
     expect(PAPER_SIZES.a3.width).toBeLessThan(PAPER_SIZES.a2.width)
   })
 })
+
+it('分割時は末尾の余白だけのページを作らず、描画が境界を越える場合は残す', () => {
+  const options = opts({ paperSize: 'a3', orientation: 'landscape', mode: 'tile', tileScale: 1 })
+  const page = planPdfPages({ width: 100, height: 100 }, options)
+  const blankTail = planPdfPages({ width: 1500, height: page.contentHeight + 40, trailingPadding: 78 }, options)
+  expect(blankTail.rows).toBe(1)
+  expect(blankTail.columns).toBe(2)
+  const realContent = planPdfPages({ width: 1500, height: page.contentHeight + 80, trailingPadding: 78 }, options)
+  expect(realContent.rows).toBe(2)
+})
