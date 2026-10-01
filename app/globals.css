@@ -81,11 +81,10 @@
 @layer components {
   .auth-shell { @apply min-h-dvh grid bg-white lg:grid-cols-[5fr_7fr]; }
   .auth-story { @apply flex flex-col justify-between gap-10 bg-secondary p-6 lg:p-16; }
-  .auth-story-copy { @apply hidden lg:block; }
+  .auth-story-copy { @apply hidden lg:my-auto lg:block; }
   .auth-story-copy h1 { @apply text-4xl font-bold leading-[1.5] tracking-tight; }
   .auth-story-copy > p { @apply mt-10 text-sm leading-7 text-muted-foreground; }
   .auth-story-card { @apply mt-10 rounded-2xl bg-white p-8; }
-  .auth-story > p { @apply hidden lg:block; }
   .auth-form { @apply flex items-center justify-center px-6 py-12 lg:p-16; }
   .auth-card { @apply border-0 shadow-none; }
   .auth-card > div { @apply px-0; }

@@ -14,7 +14,6 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           <p className="mt-4 text-xs text-muted-foreground">AIの読み取り結果は、戸籍の原文と照合してご利用ください。</p>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">司法書士事務所の戸籍・家系図ワークスペース</p>
     </aside>
     <section className="auth-form"><div className="w-full max-w-md">{children}</div></section>
   </main>
