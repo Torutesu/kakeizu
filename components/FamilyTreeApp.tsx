@@ -895,6 +895,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                           {selectedPersonSources.map(file => (
                             <button
                               key={file.id}
+                              data-person-source={file.id}
                               type="button"
                               onClick={() => handleOpenSource(file)}
                               disabled={!canOpenKosekiFile(file, isAdmin)}

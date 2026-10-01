@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import * as XLSX from 'xlsx'
 import { test, expect, BrowserContext, Page } from '@playwright/test'
 import { live, missing } from './env'
 import { anyPersonId, ensureProject, loginAs, samplePath, uploadSample } from './actions'
@@ -76,6 +77,10 @@ test.describe('6. 成果物の出力', () => {
     await page.getByRole('menuitem', { name: /Excel/ }).click()
     const file = await download
     expect(file.suggestedFilename()).toMatch(/\.xlsx?$/)
+    const workbook = XLSX.read(await readFile((await file.path())!), { type: 'buffer' })
+    const rows = XLSX.utils.sheet_to_json<string[]>(workbook.Sheets['人物一覧'], { header: 1 })
+    expect(rows[0]).toEqual(expect.arrayContaining(['氏名（原文）', '生年月日（原文）', '読み取り失敗', '本籍']))
+    expect(rows.length - 1).toBe(await page.locator('[data-person-card]').count())
   })
 
   test('6-4 人物を選ぶと、読み取り元の原本を開ける', async () => {
@@ -83,6 +88,18 @@ test.describe('6. 成果物の出力', () => {
     await page.locator(`[data-person-card][data-person-id="${personId}"]`).click()
 
     // 見本から読み取った人物なので、読み取り元の原本がある
-    await expect(page.getByText('出典（読み取り元の書類）')).toBeVisible()
+    const source = page.locator('[data-person-source]').first()
+    await expect(source).toBeEnabled()
+    // ヘッドレスChromiumは新しいタブのPDFを表示せず、元のページのdownloadとして返す。
+    // URLの遷移待ちでは止まるため、クリックで実際に届いた原本を検証する。
+    const downloaded = page.waitForEvent('download')
+    await source.click()
+    const original = await downloaded
+    const url = new URL(original.url())
+    expect(url.protocol).toBe('https:')
+    expect(url.pathname.includes('/storage/v1/object/sign/')).toBe(true)
+    const path = await original.path()
+    expect(path).not.toBeNull()
+    expect((await readFile(path!)).subarray(0, 5).toString()).toBe('%PDF-')
   })
 })

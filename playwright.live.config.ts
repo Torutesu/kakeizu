@@ -26,6 +26,8 @@ const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH ?? ''
 
 export default defineConfig({
   testDir: './e2e/live',
+  // 通常E2Eの起動時に実機確認のトレースを消さないよう、保存先を分ける。
+  outputDir: 'test-results-live',
   testMatch: '**/*.live.spec.ts',
   // 読み取り（AI）の待ち時間を含む項目があるため長めに取る
   timeout: 180_000,
