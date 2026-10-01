@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runKosekiAnalysis } from '@/lib/analysis'
+import { analysisUserMessage } from '@/lib/analysis/userMessage'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { validateFileContent, isAllowedKosekiMimeType } from '@/lib/security/fileValidation'
 import { checkAnalysisRateLimit } from '@/lib/security/rateLimit'
@@ -216,7 +217,7 @@ export async function POST(request: NextRequest) {
       .from('koseki_files')
       .update({
         analysis_status: result.success ? 'success' : 'failed',
-        analysis_error: result.success ? null : result.error,
+        analysis_error: result.success ? null : analysisUserMessage(result.error),
         analyzed_at: new Date().toISOString(),
         person_count: result.success ? result.data.people.length : null,
         family_count: result.success ? result.data.families.length : null,
@@ -228,13 +229,13 @@ export async function POST(request: NextRequest) {
       // 読み取り元の書類（出典）は束の全ファイル。呼び出し側が人物へ記録する
       return NextResponse.json({ success: true, data: result.data, fileIds }, { status: 200 })
     }
-    return NextResponse.json({ success: false, error: result.error }, { status: 422 })
-  } catch (error) {
-    console.error('戸籍解析エラー:', error)
+    return NextResponse.json({ success: false, error: analysisUserMessage(result.error) }, { status: 422 })
+  } catch {
+    console.error('戸籍解析処理で予期しないエラーが発生しました')
     return NextResponse.json(
       {
         success: false,
-        error: `解析処理中にエラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: '解析処理を完了できませんでした。時間をおいて再解析してください。続く場合は管理者にご連絡ください。',
       },
       { status: 500 }
     )

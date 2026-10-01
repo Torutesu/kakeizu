@@ -146,7 +146,7 @@ export async function POST(request: Request) {
     const admin = createSupabaseAdminClient()
     const origin = new URL(request.url).origin
     const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${origin}/auth/callback?next=/projects`,
+      redirectTo: `${origin}/auth/callback?next=/auth/set-password`,
     })
     outcome = classifyInviteMailError(error)
   } catch (error) {

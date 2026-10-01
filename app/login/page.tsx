@@ -9,8 +9,9 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 import { AuthShell } from '@/components/AuthShell'
+import { safeNextPath } from '@/lib/auth/safeNextPath'
 
-type Mode = 'signin' | 'signup'
+type Mode = 'signin' | 'signup' | 'recovery'
 
 // DBの招待制トリガーが返すエラーを、利用者に伝わる文言へ変換する
 function toFriendlyMessage(rawMessage: string): string {
@@ -26,7 +27,7 @@ function toFriendlyMessage(rawMessage: string): string {
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const nextPath = searchParams.get('next') ?? '/projects'
+  const nextPath = safeNextPath(searchParams.get('next'))
 
   const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')
@@ -47,7 +48,16 @@ function LoginForm() {
     try {
       const supabase = getSupabaseBrowserClient()
 
-      if (mode === 'signin') {
+      if (mode === 'recovery') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/callback?next=/auth/set-password`,
+        })
+        if (error) {
+          setError('再設定メールを送信できませんでした。時間をおいて再度お試しください。')
+          return
+        }
+        setMessage('登録済みのメールアドレスであれば、再設定のリンクを送信しました。メールをご確認ください。')
+      } else if (mode === 'signin') {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) {
           setError('ログインに失敗しました。メールアドレスとパスワードを確認してください。')
@@ -85,9 +95,9 @@ function LoginForm() {
     <AuthShell>
       <Card className="auth-card border-0 shadow-none">
         <CardHeader>
-          <CardTitle className="text-[28px] leading-[42px]">{mode === 'signin' ? 'おかえりなさい' : 'アカウントを作成'}</CardTitle>
+          <CardTitle className="text-[28px] leading-[42px]">{mode === 'recovery' ? 'パスワードを再設定' : mode === 'signin' ? 'おかえりなさい' : 'アカウントを作成'}</CardTitle>
           <CardDescription>
-            {mode === 'signin'
+            {mode === 'recovery' ? '登録したメールアドレスへ再設定のリンクを送ります。' : mode === 'signin'
               ? '登録したメールアドレスでログインしてください。'
               : '招待制です。管理者から招待を受けたメールアドレスでご登録ください'}
           </CardDescription>
@@ -105,7 +115,7 @@ function LoginForm() {
                 autoComplete="email"
               />
             </div>
-            <div className="space-y-2">
+            {mode !== 'recovery' && <div className="space-y-2">
               <Label htmlFor="password">パスワード</Label>
               <Input
                 id="password"
@@ -120,16 +130,17 @@ function LoginForm() {
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 パスワードを{showPassword ? '隠す' : '表示'}
               </button>
-            </div>
+            </div>}
 
             {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</p>}
             {message && <p className="text-sm text-green-700">{message}</p>}
 
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {mode === 'signin' ? 'ログイン' : 'アカウント作成'}
+              {mode === 'recovery' ? '再設定メールを送る' : mode === 'signin' ? 'ログイン' : 'アカウント作成'}
             </Button>
           </form>
+          {mode === 'signin' && <button type="button" className="min-h-10 text-sm text-primary hover:underline" onClick={() => { setMode('recovery'); setPassword(''); setError(null); setMessage(null) }}>パスワードをお忘れの方</button>}
 
           <p className="text-sm text-center text-muted-foreground">
             {mode === 'signin' ? (
