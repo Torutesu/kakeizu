@@ -22,7 +22,7 @@
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm typecheck && pnpm lint && pnpm test      # 型・lint・ユニット（308件）
+pnpm typecheck && pnpm lint && pnpm test      # 型・lint・ユニット（316件）
 pnpm e2e                                      # 画面のE2E（46件。本番ビルドを作って流す）
 pnpm verify:db                                # マイグレーション適用とRLSの検証（19件。一時的なPostgresを起動）
 pnpm build
