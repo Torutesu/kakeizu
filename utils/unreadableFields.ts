@@ -8,6 +8,8 @@ import { UnreadableField } from './familyDataProcessor'
  * **開いて保存しただけで印が消える。** 原本にあたる起点が失われてしまう。
  */
 export interface EditedValues {
+  sex?: 'male' | 'female' | null
+  relationToFamilyHead?: string
   surname: string
   givenName: string
   birthDate: string
@@ -17,6 +19,8 @@ export interface EditedValues {
 }
 
 export interface StoredValues {
+  sex?: 'male' | 'female' | null
+  relationToFamilyHead?: string | null
   surname: string | null | undefined
   givenName: string | null | undefined
   birthDate: string | null | undefined
@@ -45,6 +49,9 @@ export function resolveUnreadable(
   if (isFilledIn(stored.deathDate, edited.deathDate)) filled.push('death_date')
   if (isFilledIn(stored.birthPlace, edited.birthPlace)) filled.push('birth_place')
   if (isFilledIn(stored.deathPlace, edited.deathPlace)) filled.push('death_place')
+
+  if (edited.sex && edited.sex !== stored.sex) filled.push('sex')
+  if (edited.relationToFamilyHead !== undefined && isFilledIn(stored.relationToFamilyHead, edited.relationToFamilyHead)) filled.push('relation_to_family_head')
 
   return (current ?? []).filter(key => !filled.includes(key))
 }

@@ -5,7 +5,6 @@ import Link from "next/link"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Upload,
   Save,
@@ -52,7 +51,7 @@ import { PdfExportDialog } from "./PdfExportDialog"
 import { PdfExportOptions } from "../utils/pdfLayout"
 import { measureTreePdf, buildTreeSvg } from "../utils/exportPdf"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
-import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
+import { UNREADABLE_FIELD_LABELS, ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { formatKyonen } from "../utils/age"
 import {
   DropdownMenu,
@@ -199,6 +198,11 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   // 選択はIDで保持し、表示用の人物データは常に最新のpersonsから引く。
   // （人物オブジェクトを直接保持すると、編集・アンドゥ後にサイドバーの表示が古いままになる）
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
+  const personPanelRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    // 指摘・検索から別の人物へ移ったとき、前の人のスクロール位置を持ち越さない。
+    if (personPanelRef.current) personPanelRef.current.scrollTop = 0
+  }, [selectedPersonId])
   const selectedPerson = selectedPersonId
     ? persons.find(p => p.id === selectedPersonId) ?? null
     : null
@@ -510,7 +514,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   }
 
   return (
-    <div className="h-dvh flex flex-col bg-muted">
+    <div className="workspace-shell h-dvh min-h-0 flex flex-col bg-muted">
       {/* ヘッダー */}
       {/* data-* は実機確認（docs/QA_CHECKLIST.md）を自動で流すための目印。
           表示は文言で行うが、文言はいつ変わってもよいものなので、
@@ -688,7 +692,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="min-h-0 flex-1 flex overflow-hidden">
         {/* 左サイドバー */}
         {/* 画面が狭いときのドロワー用の背景 */}
         {(isLeftPanelOpen || isRightPanelOpen) && (
@@ -759,6 +763,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
         {/* 右サイドバー - 情報表示・検索 */}
         <aside
+          ref={personPanelRef}
+          data-person-panel
           style={{ width: UI_CONFIG.rightSidebarWidth }}
           className={`workspace-panel workspace-panel-right bg-white border-l border-border flex flex-col
             max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-40 max-lg:shadow-xl max-lg:transition-transform
@@ -772,7 +778,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
           </div>
 
           {/* 検索機能 */}
-          <div className="p-6 border-b border-border">
+          <div className="shrink-0 p-3 border-b border-border">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -797,7 +803,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                       className="p-2 border border-border rounded cursor-pointer hover:bg-muted"
                       onClick={() => {
                         handleSearchResultSelect(person)
-                        setIsRightPanelOpen(false)
+                        setIsRightPanelOpen(true)
                       }}
                     >
                       <div className="text-sm font-medium">{person.displayName}</div>
@@ -809,34 +815,19 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
             )}
           </div>
 
-          {/* 要確認の指摘一覧（論理矛盾・2モデル照合の食い違い） */}
-          <IssuesPanel
-            issues={issues}
-            persons={persons}
-            onFocusPerson={(person: ProcessedPerson) => {
-              handleSearchResultSelect(person)
-              setIsRightPanelOpen(false)
-            }}
-          />
-
-          {/* 読み取った戸籍（本籍・筆頭者） */}
-          <RegistriesPanel
-            registries={registries}
-            persons={persons}
-            onFocusPerson={(person: ProcessedPerson) => {
-              handleSearchResultSelect(person)
-              setIsRightPanelOpen(false)
-            }}
-          />
-
+          {persons.some(person => person.unreadable?.length) && <div data-review-queue className="shrink-0 border-b bg-amber-50 px-4 py-3"><div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold text-amber-900">読み取り未完了 {persons.filter(person => person.unreadable?.length).length}人</p><Button data-review-next size="sm" variant="outline" onClick={() => {
+            const pending = persons.filter(person => person.unreadable?.length)
+            const index = pending.findIndex(person => person.id === selectedPersonId)
+            handleSearchResultSelect(pending[(index + 1) % pending.length])
+          }}>{selectedPerson?.unreadable?.length ? '次の人物' : '確認を始める'}</Button></div><p className="mt-1 text-xs text-amber-800">原本と照合し、読めなかった項目から修正できます。</p></div>}
           {/* 選択中ノードの情報表示 */}
-          <div className="flex-1 p-6 overflow-hidden">
+          <div data-person-details className="shrink-0 border-b p-4">
             {selectedPerson ? (
               <div className="h-full flex flex-col">
                 <div className="flex flex-col items-start gap-3 mb-4">
-                  <h3 className="text-lg font-semibold text-foreground">人物情報</h3>
+                  <div><p className="text-xs text-muted-foreground">人物情報</p><h3 data-person-detail-name className="mt-1 break-words text-lg font-semibold text-foreground">{selectedPerson.displayName}</h3></div>
                   {canEdit && (
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Button
                         size="sm"
                         variant="outline"
@@ -878,38 +869,52 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                   )}
                 </div>
 
-                <ScrollArea className="flex-1">
-                  <div className="space-y-4 pr-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">姓</label>
-                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
-                          {selectedPerson.name.surname}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">名</label>
-                        <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
-                          {selectedPerson.name.given_name}
-                        </div>
-                      </div>
-                    </div>
+                <div>
+                  <div className="space-y-3">
+                    {!!selectedPerson.unreadable?.length && <div data-person-unreadable className="rounded-lg border border-red-200 bg-red-50 p-3"><p className="text-sm font-semibold text-red-800">読み取れなかった項目</p><p className="mt-1 text-xs text-red-700">{selectedPerson.unreadable.map(key => UNREADABLE_FIELD_LABELS[key]).join('・')}</p>{canEdit && <Button data-review-edit size="sm" className="mt-2" onClick={() => setIsPersonEditOpen(true)}>原本を確認して修正</Button>}</div>}
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div data-person-vitals className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">生年月日</label>
                         <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
-                          {selectedPerson.birth?.date || '不明'}
+                          {selectedPerson.unreadable?.includes('birth_date') ? '読み取り失敗' : selectedPerson.birth?.date || '記載なし'}
                         </div>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">没年月日</label>
                         <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
-                          {selectedPerson.death?.date || '存命'}
+                          {selectedPerson.unreadable?.includes('death_date') ? '読み取り失敗' : selectedPerson.death?.date || '記載なし'}
                         </div>
                       </div>
                     </div>
 
+                    {selectedPersonSources.length > 0 && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">出典（読み取り元の書類）</label>
+                        <div className="mt-1 space-y-1">
+                          {selectedPersonSources.map(file => (
+                            <button
+                              key={file.id}
+                              type="button"
+                              onClick={() => handleOpenSource(file)}
+                              disabled={!canOpenKosekiFile(file, isAdmin)}
+                              className="w-full text-left p-2 bg-muted border border-border rounded text-sm
+                                         hover:bg-muted disabled:opacity-60 disabled:hover:bg-muted
+                                         disabled:cursor-not-allowed truncate"
+                              title={
+                                canOpenKosekiFile(file, isAdmin)
+                                  ? `${file.fileName} を開く`
+                                  : '保管期間を過ぎているため開けません'
+                              }
+                            >
+                              {file.fileName}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <details data-person-more><summary className="cursor-pointer py-2 text-sm font-medium text-primary">続柄・性別・原文などの詳細</summary><div className="space-y-3 pt-2">
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">世代</label>
                       <div className="mt-1 p-2 bg-muted border border-border rounded text-sm">
@@ -942,32 +947,6 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                       </div>
                     )}
 
-                    {selectedPersonSources.length > 0 && (
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">出典（読み取り元の書類）</label>
-                        <div className="mt-1 space-y-1">
-                          {selectedPersonSources.map(file => (
-                            <button
-                              key={file.id}
-                              type="button"
-                              onClick={() => handleOpenSource(file)}
-                              disabled={!canOpenKosekiFile(file, isAdmin)}
-                              className="w-full text-left p-2 bg-muted border border-border rounded text-sm
-                                         hover:bg-muted disabled:opacity-60 disabled:hover:bg-muted
-                                         disabled:cursor-not-allowed truncate"
-                              title={
-                                canOpenKosekiFile(file, isAdmin)
-                                  ? `${file.fileName} を開く`
-                                  : '保管期間を過ぎているため開けません'
-                              }
-                            >
-                              {file.fileName}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
                     {selectedPerson.relation_to_family_head && (
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">続柄（戸籍上の表記）</label>
@@ -994,8 +973,9 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                         </div>
                       </div>
                     )}
+                    </div></details>
                   </div>
-                </ScrollArea>
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -1006,6 +986,27 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
               </div>
             )}
           </div>
+          {/* 要確認の指摘一覧（論理矛盾・2モデル照合の食い違い） */}
+          <IssuesPanel
+            issues={issues}
+            persons={persons}
+            onFocusPerson={(person: ProcessedPerson) => {
+              handleSearchResultSelect(person)
+              setIsRightPanelOpen(true)
+            }}
+          />
+
+          {/* 読み取った戸籍（本籍・筆頭者） */}
+          <RegistriesPanel
+            registries={registries}
+            persons={persons}
+            onFocusPerson={(person: ProcessedPerson) => {
+              handleSearchResultSelect(person)
+              setIsRightPanelOpen(true)
+            }}
+          />
+
+
         </aside>
       </div>
 
@@ -1030,6 +1031,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
       />
 
       <PersonEditDialog
+        sourceActions={selectedPersonSources.length ? selectedPersonSources.map(file => <Button key={file.id} size="sm" variant="outline" className="max-w-full" disabled={!canOpenKosekiFile(file, isAdmin)} title={canOpenKosekiFile(file, isAdmin) ? file.fileName : '保管期間を過ぎているため開けません'} onClick={() => handleOpenSource(file)}><span className="truncate">{file.fileName}</span></Button>) : undefined}
         onLiveDraft={canEdit ? (personId, draft) => publishLiveEdit(personId, { draft }) : undefined}
         editingBy={
           otherEditors.find(editor => editor.editingPersonId === selectedPersonId)?.label ?? null

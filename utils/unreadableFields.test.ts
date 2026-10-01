@@ -49,3 +49,18 @@ describe('resolveUnreadable', () => {
     expect(resolveUnreadable(undefined, stored, asEdited({ birthDate: '1881-06-29' }))).toEqual([])
   })
 })
+
+it('性別と続柄を直した場合だけ、その指摘を解消する', () => {
+  expect(resolveUnreadable(['sex', 'relation_to_family_head', 'death_date'],
+    { ...stored, sex: null, relationToFamilyHead: null },
+    asEdited({ sex: 'female', relationToFamilyHead: '長女' }))).toEqual(['death_date'])
+})
+it('性別と続柄を変えない保存では指摘を残す', () => {
+  expect(resolveUnreadable(['sex', 'relation_to_family_head'],
+    { ...stored, sex: 'female', relationToFamilyHead: '長女' },
+    asEdited({ sex: 'female', relationToFamilyHead: '長女' }))).toEqual(['sex', 'relation_to_family_head'])
+})
+it('性別不明・続柄の空白では指摘を消さない', () => {
+  expect(resolveUnreadable(['sex', 'relation_to_family_head'], stored,
+    asEdited({ sex: null, relationToFamilyHead: ' ' }))).toEqual(['sex', 'relation_to_family_head'])
+})

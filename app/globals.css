@@ -106,7 +106,7 @@
   .workspace-panel { @apply shrink-0; }
   .workspace-panel > .p-6 { @apply p-5; }
   .workspace-panel-right { @apply overflow-y-auto; }
-  .workspace-panel-right > .flex-1 { @apply min-h-[260px] overflow-visible; }
+  .workspace-panel-right > * { flex-shrink: 0; }
   .workspace-panel-right > .flex-1 > div > .flex { @apply flex-wrap gap-3; }
   .workspace-panel-right > .flex-1 > div > .flex > .flex { @apply flex-wrap; }
 }
@@ -125,3 +125,8 @@
 @media (max-width: 359px) {
   .global-header > div > div:last-child { flex-wrap: wrap; }
 }
+
+/* 見本環境の注意書きも含めて画面内に収め、各資料・人物欄の中だけでスクロールする。 */
+body:has(.workspace-shell) { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+body:has(.workspace-shell) > [role="note"] { flex-shrink: 0; }
+.workspace-shell { flex: 1; min-height: 0; }

@@ -42,6 +42,7 @@ interface PersonEditDialogProps {
   /** 入力中の値をその場で他の利用者へ流す（保存はしない） */
   onLiveDraft?: (personId: string, draft: LiveEditDraft) => void
   /** いま他の利用者がこの人物を編集中なら、その名前 */
+  sourceActions?: React.ReactNode
   editingBy?: string | null
 }
 
@@ -52,7 +53,8 @@ export function PersonEditDialog({
   onSave,
   availablePersons,
   onLiveDraft,
-  editingBy
+  editingBy,
+  sourceActions
 }: PersonEditDialogProps) {
   const [formData, setFormData] = useState({
     surname: '',
@@ -63,6 +65,7 @@ export function PersonEditDialog({
     deathDate: '',
     deathPlace: '',
     generation: 1,
+    relationToFamilyHead: '',
   })
 
   // 別の人物を開いたとき、または開き直したときだけフォームを作り直す。
@@ -79,6 +82,7 @@ export function PersonEditDialog({
         deathDate: person.death?.date || '',
         deathPlace: person.death?.place || '',
         generation: person.generation || 1,
+        relationToFamilyHead: person.relation_to_family_head || '',
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,6 +120,8 @@ export function PersonEditDialog({
         deathDate: person.death?.date,
         birthPlace: person.birth?.place,
         deathPlace: person.death?.place,
+        sex: person.sex,
+        relationToFamilyHead: person.relation_to_family_head,
       },
       formData
     )
@@ -128,6 +134,7 @@ export function PersonEditDialog({
       name_original: person.name_original ?? null,
       unreadable: remainingUnreadable,
       sex: formData.sex,
+      relation_to_family_head: formData.relationToFamilyHead || null,
       birth: {
         original_date: person.birth?.original_date ?? null,
         date: formData.birthDate || null,
@@ -177,11 +184,20 @@ export function PersonEditDialog({
                 {person.unreadable.map(key => UNREADABLE_FIELD_LABELS[key] ?? key).join('・')}
               </p>
               <p className="text-xs text-red-600 mt-0.5">
-                原本を確認して入力してください。入力すると、この表示は消えます。
+                原本を確認し、該当項目を選んで修正してください。変更して保存した項目の指摘が解消されます。
               </p>
+              <div className="mt-2 flex flex-wrap gap-2">{person.unreadable.map(key => <Button key={key} type="button" variant="outline" size="sm" data-review-field={key} onClick={() => {
+                const ids = { name: 'surname', sex: 'review-sex', birth_date: 'birthDate', death_date: 'deathDate', birth_place: 'birthPlace', death_place: 'deathPlace', relation_to_family_head: 'relationToFamilyHead' }
+                const field = document.getElementById(ids[key])
+                field?.scrollIntoView({ block: 'center' })
+                if (key === 'sex') field?.querySelector('input')?.focus()
+                else field?.focus()
+              }}>{UNREADABLE_FIELD_LABELS[key]}</Button>)}</div>
             </div>
           )}
+          {sourceActions && <div className="rounded-lg border p-3"><p className="mb-2 text-sm font-medium">原本を開いて照合</p><div className="flex flex-wrap gap-2">{sourceActions}</div></div>}
 
+          <div className="space-y-2"><Label htmlFor="relationToFamilyHead">続柄（戸籍上の表記）</Label><Input id="relationToFamilyHead" value={formData.relationToFamilyHead} onChange={e => update({ relationToFamilyHead: e.target.value })} /><FieldNote unreadable={person.unreadable?.includes('relation_to_family_head')} /></div>
           {/* 基本情報 */}
           <div className="space-y-4">
             <h4 className="text-lg font-semibold">基本情報</h4>
@@ -214,7 +230,7 @@ export function PersonEditDialog({
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <PersonSexField value={formData.sex} onChange={sex => update({ sex })} />
+              <div id="review-sex"><PersonSexField value={formData.sex} onChange={sex => update({ sex })} /></div>
               <div>
                 <Label htmlFor="generation">世代</Label>
                 <Input
