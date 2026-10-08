@@ -608,6 +608,27 @@ describe('保存を並べて送らない', () => {
     await waitFor(() => expect(result.current.saveStatus).toBe('saved'))
   })
 
+  it('続けて送る上限で区切っても、送り残しは次の編集を待たずに送られる', async () => {
+    // サーバーの保存結果が毎回手元と食い違う（送った後の編集が残っている扱い）状態を上限まで続ける
+    let calls = 0
+    mockedSave.mockImplementation(async (_projectId, tree, _baseline, expectedVersion) => {
+      calls++
+      return {
+        ok: true,
+        version: expectedVersion + 1,
+        data: calls <= 5 ? { people: [], families: [] } : tree,
+        mergedRemoteChanges: false,
+      }
+    })
+    const result = await setupHook()
+
+    act(() => { result.current.addPerson({ id: 'p1' }) })
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledTimes(5), { timeout: 3000 })
+    // 上限で区切られたあとも、少し置いて続きが送られ、保存済みになる（「保存中」で止まらない）
+    await waitFor(() => expect(mockedSave.mock.calls.length).toBeGreaterThanOrEqual(6), { timeout: 3000 })
+    await waitFor(() => expect(result.current.saveStatus).toBe('saved'), { timeout: 3000 })
+  })
+
   it('保存で他の人の変更が合わさっても、送信中に加えた編集は消えずに続けて送られる', async () => {
     const release = holdFirstSave()
     const result = await setupHook()

@@ -393,6 +393,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   const handleManualSave = async () => {
     const status = await saveNow()
     if (status === 'saved') toast.success('保存しました')
+    else if (status === 'saving') toast.info('続けて加えた変更を保存しています')
     else if (status === 'offline') toast.info('通信がつながっていないため、端末に保持しました（つながると自動で送ります）')
     else if (status === 'error') toast.error('保存できませんでした。通信を確認して、もう一度お試しください')
   }

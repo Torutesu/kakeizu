@@ -372,6 +372,12 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       } finally {
         inflightSaveRef.current = null
       }
+      // 上限で区切ったときに送り残しがあれば、少し置いてから続きを送る。
+      // ここで何もしないと、次の編集が来るまで送られず「保存中」のまま止まる
+      if (saveAgainRef.current || status === 'saving') {
+        saveAgainRef.current = false
+        setTimeout(() => { void persistRef.current() }, AUTOSAVE_DEBOUNCE_MS)
+      }
       return status
     })()
     inflightSaveRef.current = run
