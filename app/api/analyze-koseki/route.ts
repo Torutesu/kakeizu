@@ -230,8 +230,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, data: result.data, fileIds }, { status: 200 })
     }
     return NextResponse.json({ success: false, error: analysisUserMessage(result.error) }, { status: 422 })
-  } catch {
-    console.error('戸籍解析処理で予期しないエラーが発生しました')
+  } catch (error) {
+    // 調べる手掛かりは残す。ただしメッセージは書かない（戸籍の内容や氏名が混ざりうるため）。
+    // 種類・コードと、投げた場所（スタックの先頭のファイルと行）だけを出す
+    const name = error instanceof Error ? error.name : typeof error
+    const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined
+    const at = error instanceof Error ? error.stack?.split('\n')[1]?.trim() : undefined
+    console.error('戸籍解析処理で予期しないエラーが発生しました', { name, code, at })
     return NextResponse.json(
       {
         success: false,
