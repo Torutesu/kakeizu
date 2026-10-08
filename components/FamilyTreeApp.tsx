@@ -443,10 +443,13 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     }
   }
 
-  // ダイアログでページ数・倍率を計算するため、実際の描画サイズを求める
+  // ダイアログでページ数・倍率を計算するため、実際の描画サイズを求める。
+  // 配置計算を伴うため、ダイアログを開いている間だけ求める（編集のたびに走らせない）
   const pdfContentSize = useMemo(
-    () => measureTreePdf(persons, families),
-    [persons, families]
+    () => isPdfDialogOpen
+      ? measureTreePdf(persons, families, project?.name || '家系図')
+      : { width: 1, height: 1, trailingPadding: 0 },
+    [isPdfDialogOpen, persons, families, project?.name]
   )
 
   const pdfPreviewSvg = useMemo(

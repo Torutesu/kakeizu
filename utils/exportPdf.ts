@@ -29,6 +29,20 @@ function escapeXml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
+// 見出し（案件名）の文字サイズ。幅の見積もりと描画で同じ値を使う
+const TITLE_FONT_SIZE = 20
+
+/**
+ * 見出しの幅の見積もり。SVGは描く前に文字幅を測れないため、全角は1文字＝文字サイズ、
+ * 半角は0.6倍で見積もる（太字の分を少し足す）。
+ * 図の幅に見出しを含めないと、人数の少ない家系図で長い案件名が右端で切れる。
+ */
+export function estimateTitleWidth(text: string): number {
+  let width = 0
+  for (const char of text) width += char.charCodeAt(0) > 0xff ? 1 : 0.6
+  return Math.ceil(width * TITLE_FONT_SIZE * 1.05)
+}
+
 interface TreeGeometry {
   svg: string
   width: number
@@ -36,7 +50,7 @@ interface TreeGeometry {
 }
 
 /** 予告と実際のPDFで同じ配置・余白・見出し寸法を使う。 */
-export function measureTreePdf(persons: ProcessedPerson[], families: FamilyGroup[]) {
+export function measureTreePdf(persons: ProcessedPerson[], families: FamilyGroup[], projectName = '') {
   const getGenerationY = (generation: number) =>
     LAYOUT_CONFIG.initialY + (generation - 1) * LAYOUT_CONFIG.generationSpacing
   const positions = calculateTreeLayout(persons, families, getGenerationY)
@@ -56,7 +70,8 @@ export function measureTreePdf(persons: ProcessedPerson[], families: FamilyGroup
   const titleHeight = 48
   const offsetX = PADDING - minX
   const offsetY = PADDING + titleHeight - minY
-  const width = Math.ceil(maxX - minX + PADDING * 2)
+  // 見出しが右の余白（無描画の保証領域）に入らない幅を確保する
+  const width = Math.ceil(Math.max(maxX - minX, estimateTitleWidth(projectName)) + PADDING * 2)
   const height = Math.ceil(maxY - minY + PADDING * 2 + titleHeight)
 
   return { positions, offsetX, offsetY, width, height, trailingPadding: PADDING - 2 }
@@ -69,7 +84,7 @@ export function buildTreeSvg(
   projectName: string,
   now: Date = new Date()
 ): TreeGeometry {
-  const { positions, offsetX, offsetY, width, height } = measureTreePdf(persons, families)
+  const { positions, offsetX, offsetY, width, height } = measureTreePdf(persons, families, projectName)
   const at = (pos: Point): Point => ({ x: pos.x + offsetX, y: pos.y + offsetY })
 
   const parts: string[] = []
@@ -145,7 +160,7 @@ export function buildTreeSvg(
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<rect width="${width}" height="${height}" fill="#ffffff"/>` +
-    `<text x="${PADDING}" y="${PADDING - 24}" font-size="20" font-weight="bold" fill="#172e2b">${escapeXml(projectName)}</text>` +
+    `<text x="${PADDING}" y="${PADDING - 24}" font-size="${TITLE_FONT_SIZE}" font-weight="bold" fill="#172e2b">${escapeXml(projectName)}</text>` +
     `<text x="${PADDING}" y="${PADDING - 4}" font-size="11" fill="#687a75">作成日: ${now.toLocaleDateString('ja-JP')}</text>` +
     `<g font-family="'Hiragino Sans','Yu Gothic',Meiryo,sans-serif">${parts.join('')}</g>` +
     `</svg>`
@@ -239,11 +254,15 @@ export async function exportTreePdf(
   if (plan.pageCount === 1) {
     const drawWidth = width * plan.scale
     const drawHeight = height * plan.scale
+    // 1枚に収める場合は中央に置く。分割で1枚に収まった場合は、予告と複数枚の
+    // ときと同じく左上の余白位置に置く（中央に置くと予告と食い違い、末尾の余白を
+    // 除いて収めた図が、はみ出した分だけ余白に食い込む）
+    const centered = options.mode === 'fit'
     pdf.addImage(
       canvas.toDataURL('image/png'),
       'PNG',
-      (plan.pageWidth - drawWidth) / 2,
-      (plan.pageHeight - drawHeight) / 2,
+      centered ? (plan.pageWidth - drawWidth) / 2 : margin,
+      centered ? (plan.pageHeight - drawHeight) / 2 : margin,
       drawWidth,
       drawHeight
     )

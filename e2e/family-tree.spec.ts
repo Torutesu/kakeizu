@@ -181,6 +181,10 @@ test.describe('PDF書き出しの設定', () => {
     await page.getByTestId('mode-tile').click()
     await expect(page.getByTestId('pdf-plan')).toContainText('ページ（横')
     await expect(page.getByTestId('too-small-warning')).toHaveCount(0)
+    // 実機確認はページ数を文言ではなく目印から読む。表示と目印が一致していること
+    const count = Number(await page.getByTestId('pdf-plan').getAttribute('data-page-count'))
+    expect(count).toBeGreaterThan(1)
+    await expect(page.getByTestId('pdf-plan')).toContainText(`${count}ページ`)
   })
 
   test('分割の大きさを変えるとページ数が変わる', async ({ page }) => {

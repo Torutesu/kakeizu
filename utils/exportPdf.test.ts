@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildTreeSvg, measureTreePdf, formatPdfTileLabel } from './exportPdf'
+import { buildTreeSvg, measureTreePdf, formatPdfTileLabel, estimateTitleWidth } from './exportPdf'
 import { processFamilyData, FamilyTreeData } from './familyDataProcessor'
 
 const NOW = new Date('2026-08-22T00:00:00Z')
@@ -83,4 +83,16 @@ it('PDFの予告は配置前の座標ではなく出力と同じ寸法を使う'
 it('分割PDFの貼り合わせ位置は標準フォントで読める文字だけを使う', () => {
   expect(formatPdfTileLabel(1, 4, 2, 5)).toBe('Page 10/10 | Row 2/2 | Column 5/5')
   expect(formatPdfTileLabel(0, 0, 2, 5)).toMatch(/^[\x20-\x7E]+$/)
+})
+
+it('人数の少ない家系図でも、長い案件名が右端で切れない幅になる', () => {
+  const { persons, families } = processFamilyData({ people: [data.people[0]], families: [] })
+  const longName = '甲野太郎 相続登記（令和七年 第一二三号）見本'
+  const short = buildTreeSvg(persons, families, '甲野家', NOW)
+  const long = buildTreeSvg(persons, families, longName, NOW)
+  // 見出しは左の余白から描くので、右の余白（無描画の保証領域）に入らない幅が要る
+  expect(long.width).toBeGreaterThanOrEqual(estimateTitleWidth(longName) + 80 * 2)
+  expect(long.width).toBeGreaterThan(short.width)
+  // 予告（ダイアログ）と出力で同じ寸法になる
+  expect(measureTreePdf(persons, families, longName).width).toBe(long.width)
 })

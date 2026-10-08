@@ -196,7 +196,11 @@ export function PdfExportDialog({
 
         </div>
           {/* 出力結果の要約。設定を変えるたびに更新される */}
-          <div className="self-start rounded-xl bg-muted p-5" data-testid="pdf-plan">
+          <div
+            className="self-start rounded-xl bg-muted p-5"
+            data-testid="pdf-plan"
+            data-page-count={plan.pageCount}
+          >
             <h3 className="mb-4 text-sm font-medium">仕上がりの目安</h3>
             <div className="mb-5 grid gap-2" data-testid="pdf-preview" style={{ gridTemplateColumns: `repeat(${Math.min(plan.columns, 6)}, minmax(0, 1fr))` }}>
               {Array.from({ length: Math.min(plan.pageCount, 36) }, (_, index) => {

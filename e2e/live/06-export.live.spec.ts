@@ -57,8 +57,8 @@ test.describe('6. 成果物の出力', () => {
     await page.getByTestId('mode-tile').click()
     await expect(page.getByTestId('pdf-plan')).toContainText(/ページ|枚/)
 
-    const preview = await page.getByTestId('pdf-plan').innerText()
-    const expectedPages = Number(preview.match(/(\d+)ページ/)?.[1])
+    // 予告のページ数は文言ではなく目印から読む（AGENTS.md 6）
+    const expectedPages = Number(await page.getByTestId('pdf-plan').getAttribute('data-page-count'))
     expect(expectedPages).toBeGreaterThan(0)
     const download = page.waitForEvent('download', { timeout: 60_000 })
     await page.getByTestId('confirm-export').click()
