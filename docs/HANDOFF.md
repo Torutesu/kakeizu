@@ -27,11 +27,23 @@
 
 ## いまの状態（ここまでで済んでいること）
 
+**2026-10-08 時点**
+
 - 要件定義書 v1.2 の全項目を実装済み（対応表: [ACCEPTANCE_CHECKLIST.md](./ACCEPTANCE_CHECKLIST.md)）
-- 自動の確認はすべて通る: ユニット269件 / E2E 44件 / RLS 19件 / 型・lint・ビルド
-- **本物の環境では一度も動かしていない。**前の作業環境には Supabase・Vercel の鍵がなく、
-  Docker も外部のダウンロードも使えなかったため。`pnpm qa:live` の中身は読み直して
-  直してあるが（INTERNAL_SPEC G-49〜G-52）、**初回は確認手順側のずれが出る前提**で臨むこと
+- 自動の確認はすべて通る: ユニット318件 / E2E 46件 / RLS 19件 / 型・lint・ビルド
+- **確認用の公開環境:** https://kakeizu-five.vercel.app（東京 hnd1・Realtime 有効）。
+  **見本限定（`AI_SAMPLE_ONLY=true`）**で、同梱の見本（全バイトのハッシュで照合）以外はAIへ送らない。
+  無料の Gemini キーのため `noTrainingConfirmed: false`。**本物の戸籍は入れない**
+- `pnpm qa:live` は 2026-10-02 のクライアントレビュー前の版で **32/32 成功**（[QA_CHECKLIST.md](./QA_CHECKLIST.md) 結果の記録）
+- 2026-10-08 のコードレビューで直した5件（INTERNAL_SPEC G-79〜G-82）は、まだ公開環境に反映・実機確認していない
+
+**残っていること**
+
+- 新しい画面での [HANDS_ON_TEST.md](./HANDS_ON_TEST.md) の通し（ブラウザ2つ）
+- G-79〜G-82 を反映して `pnpm qa:live` を通しで再実行
+- 本番化: Vercel・Supabase の Pro 化、課金を有効にした Gemini キーと `AI_NO_TRAINING_CONFIRMED=true`、
+  `AI_SAMPLE_ONLY` を外す、独自ドメインと SMTP（招待メールの到達・初回登録・再設定の確認）
+- 依頼者の判断待ち: モデル選定（実データのベンチマーク）、要件定義書 v1.3、費用説明書の相談事項
 
 ### 決まっていること（変えないこと）
 
