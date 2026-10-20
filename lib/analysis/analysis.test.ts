@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { resolveProviderChain, resolveCrossCheckCandidate, DEFAULT_MODELS } from './chain'
+import { KOSEKI_RESPONSE_SCHEMA, KOSEKI_SYSTEM_INSTRUCTION } from '../koseki-prompt'
 import { kosekiResultSchema } from './schema'
 import { sanitizeFamilyTreeData } from './sanitize'
 import { FamilyTreeData } from '../../utils/familyDataProcessor'
@@ -418,5 +419,27 @@ describe('sanitizeFamilyTreeData: ログに戸籍の中身を出さない', () =
     expect(logged).toContain('idが空の人物 1件')
     expect(logged).toContain('idが空の戸籍 1件')
     warn.mockRestore()
+  })
+})
+
+describe('続柄の定義が、指示・各社のスキーマで食い違わない', () => {
+  // 続柄を「父母との続柄」と「夫婦・戸主としての立場」のどちらで読むかが曖昧だと、
+  // 同じ書類でも人によって「長女」と「妻」に割れる（見本の甲野春子で実際に起きた）。
+  // 指示文・Gemini 用スキーマ・共通スキーマ（Claude・GPT と検証に使う）の説明を揃える
+  const geminiPeople = KOSEKI_RESPONSE_SCHEMA.properties?.people?.items?.properties
+  const zodPerson = kosekiResultSchema.shape.people.element.shape
+
+  it('Gemini 用と共通スキーマの説明が同じ', () => {
+    expect(geminiPeople?.relation_to_family_head?.description).toBe(
+      zodPerson.relation_to_family_head.description
+    )
+  })
+
+  it('父母との続柄として定義し、夫・妻・筆頭者・戸主を例に挙げない', () => {
+    const description = zodPerson.relation_to_family_head.description ?? ''
+    expect(description).toContain('父母との続柄')
+    const examples = description.match(/例:([^）]*)）/)?.[1] ?? ''
+    for (const role of ['"夫"', '"妻"', '"筆頭者"', '"戸主"']) expect(examples).not.toContain(role)
+    expect(KOSEKI_SYSTEM_INSTRUCTION).toContain('**relation_to_family_head**: 父母との続柄')
   })
 })

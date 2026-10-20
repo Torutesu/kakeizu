@@ -63,7 +63,7 @@ export const kosekiPersonSchema = z.object({
   relation_to_family_head: z
     .string()
     .nullable()
-    .describe('戸籍上の続柄表記（例: "夫", "妻", "長男", "二女", "養子"）。不明なら null。'),
+    .describe('父母との続柄の表記をそのまま（例: "長男", "二女", "養子"）。全部事項証明の【続柄】欄、旧い様式では父母欄に並ぶ続柄。夫・妻・筆頭者・戸主といった立場は入れない。記載が無ければ null。'),
 })
 
 export const kosekiFamilySchema = z.object({
