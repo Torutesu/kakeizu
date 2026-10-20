@@ -249,6 +249,32 @@ describe('useFamilyData', () => {
     expect(result.current.persons.map(p => p.id)).toEqual(['other'])
   })
 
+  it('同じ人物を相手があとから保存したら、アンドゥしても相手の値に戻る（自分の古い値を保存し直さない）', async () => {
+    const person = (surname: string) => ({
+      id: 'p1',
+      generation: 1,
+      sex: null,
+      name: { surname, given_name: '太郎' },
+      birth: { original_date: null, date: null, place: null },
+      death: { original_date: null, date: null, place: null },
+    })
+    mockedLoad.mockResolvedValue({ data: { people: [person('初期')], families: [] }, version: 1 })
+    const result = await setupHook()
+
+    // 自分が直して保存する
+    act(() => { result.current.updatePerson('p1', { name: { surname: '自分', given_name: '太郎' } }) })
+    await waitFor(() => expect(result.current.savedVersion).toBe(2), { timeout: 3000 })
+
+    // そのあと相手が同じ人物を直して保存した（あとから保存した相手が正）
+    const onRemoteSave = mockedSubscribe.mock.calls.at(-1)![1]
+    act(() => { onRemoteSave({ data: { people: [person('相手')], families: [] }, version: 3 }) })
+    expect(result.current.persons[0].name.surname).toBe('相手')
+
+    // 自分の操作を戻しても、相手より前の値（初期）へは戻さない。戻すと、それが保存されて相手の作業が消える
+    act(() => { result.current.undo() })
+    expect(result.current.persons[0].name.surname).toBe('相手')
+  })
+
   it('編集権限がない場合は自動保存しない', async () => {
     mockedCanEdit.mockResolvedValue(false)
     const result = await setupHook()

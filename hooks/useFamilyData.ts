@@ -261,9 +261,23 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
    * **現在の状態だけでなく、アンドゥ履歴のすべての地点にも重ねる。**
    * 現在の状態にしか反映しないと、アンドゥしたときに相手の変更まで巻き戻り、
    * それがそのまま保存されてしまう（相手の作業を消すことになる）。
+   *
+   * 重ね方は地点によって変える。
+   * - 現在の地点: 自分の未保存の変更を相手の内容に重ねる（これから保存する自分が、あとの保存として勝つ）
+   * - それ以外（アンドゥ・リドゥの先）: 相手が変えた要素は相手の値にする。
+   *   過去の地点と baseline の差は「自分が既に保存した操作の手前」であって未保存の変更ではない。
+   *   これを自分の変更として重ねると、同じ人物を相手があとから直していた場合に、
+   *   アンドゥで相手より前の値へ戻り、それが保存されて相手の作業が消えていた
    */
   const applyRemoteChange = useCallback((remote: FamilyTreeData, baseline: FamilyTreeData) => {
-    rebaseHistory(state => toState(mergeTreeChanges(baseline, fromState(state), remote)))
+    const remoteDelta = computeTreeDelta(baseline, remote)
+    rebaseHistory((state, isCurrent) =>
+      toState(
+        isCurrent
+          ? mergeTreeChanges(baseline, fromState(state), remote)
+          : applyTreeDelta(fromState(state), remoteDelta)
+      )
+    )
   }, [rebaseHistory, toState, fromState])
 
   // 保存1回分。保存中に加えた変更を取りこぼさないよう、実行時点の最新stateから組み立てる。

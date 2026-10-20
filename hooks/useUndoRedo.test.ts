@@ -92,4 +92,20 @@ describe('rebaseHistory', () => {
     act(() => { result.current.undo() })
     expect(result.current.currentState).toEqual({ value: 0, shared: '相手の変更' })
   })
+
+  it('変換には、その地点がいま表示している状態かどうかを渡す（アンドゥした後も）', () => {
+    const { result } = renderHook(() => useUndoRedo(0))
+    act(() => { result.current.pushState(1, '1へ') })
+    act(() => { result.current.pushState(2, '2へ') })
+    act(() => { result.current.undo() })
+
+    const seen: Array<[number, boolean]> = []
+    act(() => {
+      result.current.rebaseHistory((state, isCurrent) => {
+        seen.push([state, isCurrent])
+        return state
+      })
+    })
+    expect(seen).toEqual([[0, false], [1, true], [2, false]])
+  })
 })
