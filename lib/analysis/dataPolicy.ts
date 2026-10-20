@@ -51,9 +51,16 @@ export const AI_DATA_POLICIES: Record<AnalysisProviderName, ProviderDataPolicy> 
   },
 }
 
-/** 本番環境かどうか（Vercelの環境変数を優先して判定） */
-export function isProductionEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
-  return env.VERCEL_ENV === 'production' || (!env.VERCEL_ENV && env.NODE_ENV === 'production')
+/**
+ * 手元の開発環境かどうか。確認フラグなしで解析を通してよいのはここだけ。
+ *
+ * 「本番かどうか」で判定すると、Vercel の Preview（VERCEL_ENV=preview）が本番扱いに
+ * ならず、確認フラグなしで戸籍をAIへ送れてしまった。Preview も本番と同じDB・同じ
+ * 鍵につながりうるため、安全側に倒して「開発環境と確かに言えるとき」だけ通す。
+ * ローカルでも本番ビルド（NODE_ENV=production）で動かすときはフラグが要る。
+ */
+export function isLocalDevelopment(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
+  return env.NODE_ENV !== 'production' && (!env.VERCEL_ENV || env.VERCEL_ENV === 'development')
 }
 
 /** 学習不使用の確認フラグが設定されているか */
@@ -71,15 +78,15 @@ export interface PolicyCheck {
 
 /**
  * 解析を実行してよいかをデータポリシーの観点から判定する。
- * 本番環境で確認フラグが無い場合は実行を止める（機微情報を無確認で送らないため）。
- * 開発環境では警告のみで通す。
+ * 確認フラグが無い場合は実行を止める（機微情報を無確認で送らないため）。
+ * 手元の開発環境（isLocalDevelopment）だけは警告のみで通す。
  */
 export function checkDataPolicy(
   env: NodeJS.ProcessEnv | Record<string, string | undefined>
 ): PolicyCheck {
   if (isNoTrainingConfirmed(env)) return { ok: true }
 
-  if (isProductionEnv(env)) {
+  if (!isLocalDevelopment(env)) {
     return {
       ok: false,
       error:

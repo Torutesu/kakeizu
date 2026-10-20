@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   checkDataPolicy,
   isNoTrainingConfirmed,
-  isProductionEnv,
+  isLocalDevelopment,
   AI_DATA_POLICIES,
   NO_TRAINING_ENV_VAR,
 } from './dataPolicy'
@@ -11,13 +11,15 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('isProductionEnv', () => {
-  it('VercelのproductionをNODE_ENVより優先して判定する', () => {
-    expect(isProductionEnv({ VERCEL_ENV: 'production', NODE_ENV: 'development' })).toBe(true)
-    // プレビュー環境は本番ではない
-    expect(isProductionEnv({ VERCEL_ENV: 'preview', NODE_ENV: 'production' })).toBe(false)
-    expect(isProductionEnv({ NODE_ENV: 'production' })).toBe(true)
-    expect(isProductionEnv({ NODE_ENV: 'development' })).toBe(false)
+describe('isLocalDevelopment', () => {
+  it('手元の開発サーバーだけを開発環境とみなす', () => {
+    expect(isLocalDevelopment({ NODE_ENV: 'development' })).toBe(true)
+    expect(isLocalDevelopment({ NODE_ENV: 'development', VERCEL_ENV: 'development' })).toBe(true)
+    expect(isLocalDevelopment({ NODE_ENV: 'production' })).toBe(false)
+    expect(isLocalDevelopment({ VERCEL_ENV: 'production', NODE_ENV: 'development' })).toBe(false)
+    // Preview も本番と同じDB・鍵につながりうるため、開発環境ではない
+    expect(isLocalDevelopment({ VERCEL_ENV: 'preview', NODE_ENV: 'production' })).toBe(false)
+    expect(isLocalDevelopment({ VERCEL_ENV: 'preview', NODE_ENV: 'development' })).toBe(false)
   })
 })
 
@@ -33,6 +35,12 @@ describe('isNoTrainingConfirmed', () => {
 describe('checkDataPolicy', () => {
   it('本番で未確認なら解析を止める', () => {
     const result = checkDataPolicy({ VERCEL_ENV: 'production' })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain(NO_TRAINING_ENV_VAR)
+  })
+
+  it('Vercel の Preview でも、未確認なら解析を止める', () => {
+    const result = checkDataPolicy({ VERCEL_ENV: 'preview', NODE_ENV: 'production' })
     expect(result.ok).toBe(false)
     expect(result.error).toContain(NO_TRAINING_ENV_VAR)
   })
