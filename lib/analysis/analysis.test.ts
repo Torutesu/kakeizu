@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { resolveProviderChain, resolveCrossCheckCandidate, DEFAULT_MODELS } from './chain'
 import { kosekiResultSchema } from './schema'
 import { sanitizeFamilyTreeData } from './sanitize'
@@ -379,5 +379,44 @@ describe('sanitizeFamilyTreeData: 戸籍', () => {
     const result = sanitizeFamilyTreeData({ people: [person], families: [] })
     expect(result.registries).toBeUndefined()
     expect(result.people).toHaveLength(1)
+  })
+})
+
+describe('sanitizeFamilyTreeData: ログに戸籍の中身を出さない', () => {
+  it('除外した人物・戸籍の氏名・本籍・id をログに出さず、件数だけを出す', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const person = (id: string, given: string) => ({
+      id,
+      generation: 1,
+      sex: null,
+      name: { surname: '甲野', given_name: given },
+      birth: { original_date: null, date: null, place: '東京都千代田区' },
+      death: { original_date: null, date: null, place: null },
+    })
+    sanitizeFamilyTreeData({
+      people: [person('', '太郎'), person('kono_hanako', '花子'), person('kono_hanako', '花子')],
+      families: [
+        {
+          id: 'kono_family',
+          parents: ['kono_ichiro'],
+          children: ['kono_hanako'],
+          marriage_date: { original_date: null, date: null },
+          divorce_date: { original_date: null, date: null },
+          relation_type: 'blood',
+        },
+      ],
+      registries: [
+        { id: '', registered_domicile: '東京都千代田区一番町1番地', head_of_family: '甲野 一郎', registry_type: null, member_ids: [] },
+        { id: 'kono_reg', registered_domicile: '東京都千代田区一番町1番地', head_of_family: null, registry_type: null, member_ids: ['kono_jiro'] },
+      ],
+    })
+    const logged = warn.mock.calls.map(call => call.map(part => (typeof part === 'string' ? part : JSON.stringify(part))).join(' ')).join('\n')
+    expect(warn).toHaveBeenCalledTimes(1)
+    for (const secret of ['甲野', '太郎', '花子', '一郎', '千代田', 'kono']) {
+      expect(logged).not.toContain(secret)
+    }
+    expect(logged).toContain('idが空の人物 1件')
+    expect(logged).toContain('idが空の戸籍 1件')
+    warn.mockRestore()
   })
 })
