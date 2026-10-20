@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { detectMimeType, validateFileContent, isAllowedKosekiMimeType } from './fileValidation'
 import {
   parseRateLimitRow,
+  ANALYSIS_MAX_REQUESTS,
   ANALYSIS_WINDOW_SECONDS,
   INVITE_MAX_PER_USER,
   INVITE_USER_WINDOW_SECONDS,
@@ -120,5 +123,21 @@ describe('招待の回数制限の設定値', () => {
   it('1事務所での利用として妥当な範囲に収まっている', () => {
     expect(INVITE_MAX_PER_USER).toBeLessThanOrEqual(20)
     expect(INVITE_MAX_PER_ORG_PER_DAY).toBeLessThanOrEqual(50)
+  })
+})
+
+describe('回数制限の設定値がDBと一致する', () => {
+  // 上限と時間幅の正はDB側（RPCの引数は使われない）。画面の「何分後に」の表示と
+  // 実際の制限がずれないよう、マイグレーションの値と突き合わせる
+  const sql = readFileSync(join(__dirname, '../../supabase/migrations/0016_fixed_rate_limits.sql'), 'utf8')
+  const config = (action: string) => {
+    const match = sql.match(new RegExp(`\\('${action}',\\s*(\\d+),\\s*(\\d+)\\)`))
+    return match ? [Number(match[1]), Number(match[2])] : null
+  }
+  it('解析', () => {
+    expect(config('analysis')).toEqual([ANALYSIS_MAX_REQUESTS, ANALYSIS_WINDOW_SECONDS])
+  })
+  it('招待', () => {
+    expect(config('invitation')).toEqual([INVITE_MAX_PER_USER, INVITE_USER_WINDOW_SECONDS])
   })
 })

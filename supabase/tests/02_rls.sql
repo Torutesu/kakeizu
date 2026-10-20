@@ -205,6 +205,26 @@ insert into rls_results
 select '他の案件の保存場所を指す行は作れない', count(*) = 0
   from koseki_files where id = 'dddddddd-0000-0000-0000-000000000004';
 
+-- ---- 24〜25) 0016: 回数制限は呼び出し側から変えられない ----
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+do $$ begin
+  perform public.check_rate_limit('invitation', 10, 3600) from generate_series(1, 10);
+  -- 1秒幅を指定して呼ぶと、以前は1時間幅のカウンタが掃除で消えた
+  perform public.check_rate_limit('invitation', 1000000, 1);
+end $$;
+insert into rls_results
+select '上限・時間幅を指定して呼んでも、招待の回数制限は戻らない', not allowed
+  from public.check_rate_limit('invitation', 10, 3600);
+
+-- 知らない種類名では、制限のかからない窓を作れない
+do $$ begin
+  perform public.check_rate_limit('anything', 1000000, 1);
+  insert into rls_results values ('知らない種類の回数制限は使えない', false);
+exception when others then
+  insert into rls_results values ('知らない種類の回数制限は使えない', true);
+end $$;
+
 reset role;
 
 -- ---- 結果の出力 ----
@@ -223,7 +243,7 @@ from rls_results;
 do $$
 declare
   -- 上の検証の数と一致させること。検証を増やしたらこの値も更新する
-  c_expected constant integer := 23;
+  c_expected constant integer := 25;
   v_failed integer;
   v_total integer;
 begin

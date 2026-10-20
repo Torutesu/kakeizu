@@ -3,6 +3,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // レート制限。カウンタはPostgres（rate_limits）に置き、security definer関数で
 // 原子的にインクリメントする。サーバーレスでインスタンスが複数あっても
 // 同一の上限が効く（プロセス内メモリ方式はすり抜けるため廃止した）。
+//
+// 上限と時間幅の正はDB側（0016 の rate_limit_config）。RPC は利用者が直接呼べるため、
+// 引数で渡した値は使われない。下の定数を変えるときは、マイグレーションも合わせて直すこと。
 
 // 解析: 大量ページの案件でも足り、かつAPIキーの浪費を実質的に防げる値
 export const ANALYSIS_MAX_REQUESTS = 20
