@@ -156,6 +156,55 @@ select '行が無くても、担当外の案件のオブジェクトは扱えな
 
 reset role;
 
+-- ---- 20〜23) 0015: 書き換えてはいけない列 ----
+-- WITH CHECK の関数は文の開始時点を読むため、ポリシーだけでは列の付け替えを止められない
+
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+-- 担当している案件でも、他の事務所へは移せない（移すと他事務所の管理者に見え、自分の事務所から消える）
+update projects set org_id = 'bbbbbbbb-0000-0000-0000-000000000002'
+ where id = 'cccccccc-0000-0000-0000-000000000001';
+reset role;
+insert into rls_results
+select '作業者は案件を他の事務所へ移せない', org_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+  from projects where id = 'cccccccc-0000-0000-0000-000000000001';
+-- 移せてしまった場合も元に戻す（以降の検証が「担当を外れた」ことで巻き添えに落ちないように）
+update projects set org_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+ where id = 'cccccccc-0000-0000-0000-000000000001';
+set role authenticated;
+
+-- 取り込み日時をずらして、30日の閲覧期間を自分で延ばせない
+update koseki_files set created_at = now() + interval '100 years'
+ where id = 'dddddddd-0000-0000-0000-000000000001';
+reset role;
+insert into rls_results
+select '作業者は取り込み日時を書き換えて閲覧期間を延ばせない', created_at <= now()
+  from koseki_files where id = 'dddddddd-0000-0000-0000-000000000001';
+set role authenticated;
+
+-- 登録時に未来の取り込み日時を渡しても、DBの時刻になる
+insert into koseki_files (id, project_id, storage_path, file_name, file_size, created_at)
+values ('dddddddd-0000-0000-0000-000000000003', 'cccccccc-0000-0000-0000-000000000001',
+        'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/future.pdf',
+        '未来.pdf', 1024, now() + interval '100 years');
+reset role;
+insert into rls_results
+select '登録時の取り込み日時はDBの時刻になる', count(*) = 1
+  from koseki_files
+ where id = 'dddddddd-0000-0000-0000-000000000003' and created_at <= now();
+set role authenticated;
+
+-- 保存場所に他の案件のパスを書いた行は作れない（原本の閲覧判定は保存場所との一致で行うため）
+insert into koseki_files (id, project_id, storage_path, file_name, file_size)
+values ('dddddddd-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000001',
+        'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000002/other.pdf',
+        '他案件.pdf', 1024);
+reset role;
+insert into rls_results
+select '他の案件の保存場所を指す行は作れない', count(*) = 0
+  from koseki_files where id = 'dddddddd-0000-0000-0000-000000000004';
+
 reset role;
 
 -- ---- 結果の出力 ----
@@ -174,7 +223,7 @@ from rls_results;
 do $$
 declare
   -- 上の検証の数と一致させること。検証を増やしたらこの値も更新する
-  c_expected constant integer := 19;
+  c_expected constant integer := 23;
   v_failed integer;
   v_total integer;
 begin
