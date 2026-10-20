@@ -256,3 +256,66 @@ test('PDF出力後に書き出しメニューをもう一度開ける', async ({
   await page.getByRole('button', { name: '書き出しメニュー', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: 'PDF書き出し', exact: true })).toBeVisible()
 })
+
+// HANDS_ON_TEST 2-2「人物をダブルクリックして編集」。Computer Use では開いた確証が
+// 得られなかったため、人の操作に近い形（クリックの間に間がある・わずかに手がぶれる）で確かめる。
+// Playwright の dblclick は2回の押下を間を置かずに送るため、それだけでは人の操作と違う
+test.describe('ダブルクリックで編集を開く', () => {
+  const editRequests = (page: import('@playwright/test').Page) => page.getByTestId('edit-requests')
+
+  // 読み込み直後は全体表示への寄せが続き、カードの画面上の位置が動く。
+  // 動いている最中に押すと、押した位置と離した位置の対応がずれて結果が定まらないため、止まるのを待つ
+  async function settledCenter(page: import('@playwright/test').Page, id: string, fromLeft?: number) {
+    let previous = ''
+    for (let i = 0; i < 50; i++) {
+      const box = await card(page, id).boundingBox()
+      const current = box ? `${box.x.toFixed(1)},${box.y.toFixed(1)}` : ''
+      if (box && current === previous) {
+        return { x: fromLeft === undefined ? box.x + box.width / 2 : box.x + fromLeft, y: box.y + box.height / 2 }
+      }
+      previous = current
+      await page.waitForTimeout(100)
+    }
+    throw new Error('カードの位置が落ち着きません')
+  }
+
+  async function humanDoubleClick(page: import('@playwright/test').Page, id: string, jitter: number, fromLeft?: number) {
+    const { x, y } = await settledCenter(page, id, fromLeft)
+    await page.mouse.move(x, y)
+    for (const clickCount of [1, 2]) {
+      await page.mouse.down({ clickCount })
+      // 押している間に手がぶれる（人の手でも、操作ツールでも起きる）
+      if (jitter > 0) await page.mouse.move(x + jitter, y + jitter)
+      await page.mouse.up({ clickCount })
+      if (jitter > 0) await page.mouse.move(x, y)
+      if (clickCount === 1) await page.waitForTimeout(150)
+    }
+  }
+
+  test('間を置いた2回の押下で、その人物の編集が開く', async ({ page }) => {
+    await humanDoubleClick(page, 'ko1', 0)
+    await expect(editRequests(page)).toHaveAttribute('data-edit-requests', 'ko1')
+    await expect(editRequests(page)).toHaveAttribute('data-position-updates', '0')
+  })
+
+  test('カードの左寄りを押しても編集が開く（押した瞬間にカードが動かない）', async ({ page }) => {
+    // 以前は押すたびに世代の帯がキャンバスを右へ押し出し、カードが帯の幅だけ動いた。
+    // 左寄りを押すと、2回目に離した位置がカードから外れ、ダブルクリックがカードに届かなかった
+    await settledCenter(page, 'ko1')
+    const before = await card(page, 'ko1').boundingBox()
+    await humanDoubleClick(page, 'ko1', 0, 12)
+    await expect(editRequests(page)).toHaveAttribute('data-edit-requests', 'ko1')
+    const after = await card(page, 'ko1').boundingBox()
+    expect(after?.x).toBeCloseTo(before?.x ?? NaN, 0)
+  })
+
+  test('しきい値を超えて動かせば、これまでどおりドラッグで位置が確定する', async ({ page }) => {
+    const { x, y } = await settledCenter(page, 'ko1')
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 80, y, { steps: 8 })
+    await page.mouse.up()
+    await expect(editRequests(page)).toHaveAttribute('data-position-updates', '1')
+    await expect(editRequests(page)).toHaveAttribute('data-edit-requests', '')
+  })
+})

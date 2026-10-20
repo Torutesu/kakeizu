@@ -515,6 +515,25 @@ export function FamilyTree({
   const generations = Array.from(new Set(layoutPersons.map(p => p.generation))).sort((a, b) => a - b)
   const contentBounds = getBounds()
 
+  const renderGenerationGutter = (placement: string) => (
+    <div className={`${placement} w-20 bg-muted border-r border-border overflow-hidden pointer-events-none`}>
+      {generations.map(generation => {
+        const modelY = getGenerationY(generation)
+        const screenY = modelY * zoom + panY
+
+        return (
+          <div
+            key={generation}
+            className="absolute left-2 bg-primary text-white px-2 py-1 rounded text-sm font-medium whitespace-nowrap shadow"
+            style={{ top: screenY - 12 }}
+          >
+            第{generation}世代
+          </div>
+        )
+      })}
+    </div>
+  )
+
   return (
     <div className="relative w-full h-full bg-muted">
       {/* ズーム・パンコントロール */}
@@ -586,29 +605,20 @@ export function FamilyTree({
         </div>
       )}
 
-      {/* 世代ガイドが必要な間だけ、専用のガター（帯）を左に確保する。
+      {/* 世代ガイドのラベルは、カードが絶対に入り込まない専用の帯（ガター）に置く。
           ラベルを人物カードと同じパン対象領域に置くと、パン位置によっては
-          必ずどこかのタイミングで一番左のカードと重なってしまうため、
-          カードが絶対に入り込まない専用の帯を別途用意して確実に重ならないようにする */}
+          必ずどこかのタイミングで一番左のカードと重なってしまうため。
+          常時表示の設定では帯の幅をキャンバスの左に確保する。ドラッグ中だけ出すときは
+          キャンバスの上に重ねる。確保すると押した瞬間にキャンバスが帯の幅（80px）だけ右へずれ、
+          - 横方向のドラッグが、離した位置から帯の幅だけずれて確定する
+          - 押すたびに家系図全体が左右に跳ねる
+          - ダブルクリックの2回目の押下でカードが動き、離した位置がカードから外れると
+            編集が開かない（カードの左寄りを押したとき・縮小表示でカードが小さいとき）
+          という不具合になっていた */}
       <div className="absolute inset-0 flex">
-        {(isDragging || zoomSettings.alwaysShowGenerationGuides) && (
-          <div className="relative w-20 flex-shrink-0 bg-muted border-r border-border overflow-hidden pointer-events-none">
-            {generations.map(generation => {
-              const modelY = getGenerationY(generation)
-              const screenY = modelY * zoom + panY
-
-              return (
-                <div
-                  key={generation}
-                  className="absolute left-2 bg-primary text-white px-2 py-1 rounded text-sm font-medium whitespace-nowrap shadow"
-                  style={{ top: screenY - 12 }}
-                >
-                  第{generation}世代
-                </div>
-              )
-            })}
-          </div>
-        )}
+        {zoomSettings.alwaysShowGenerationGuides && renderGenerationGutter('relative flex-shrink-0')}
+        {isDragging && !zoomSettings.alwaysShowGenerationGuides &&
+          renderGenerationGutter('absolute left-0 top-0 bottom-0 z-[5]')}
 
         {/* 家系図キャンバス */}
         <div

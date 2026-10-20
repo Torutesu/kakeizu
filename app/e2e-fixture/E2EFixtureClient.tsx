@@ -109,6 +109,9 @@ export function E2EFixtureClient() {
   // 他の利用者の「保存前の編集」。実際はRealtimeで届くが、E2Eでは手元で起こして
   // 表示の側だけを検証する（検出できていても画面に出ない、という不具合はここでしか防げない）
   const [presenceEditing, setPresenceEditing] = useState(false)
+  // ダブルクリックで編集を開く・カードを動かす操作を数える（DBにつながないため、呼ばれたことだけを見る）
+  const [editRequests, setEditRequests] = useState<string[]>([])
+  const [positionUpdates, setPositionUpdates] = useState(0)
   const [liveEdits, setLiveEdits] = useState<Map<string, LiveEdit>>(new Map())
   const startLiveEdit = () =>
     setLiveEdits(
@@ -135,6 +138,8 @@ export function E2EFixtureClient() {
           families={initial.families}
           selectedPerson={selected}
           onPersonSelect={setSelected}
+          onPersonEdit={person => setEditRequests(prev => [...prev, person.id])}
+          onPersonPositionUpdate={() => setPositionUpdates(count => count + 1)}
           focusPerson={focus}
           liveEdits={liveEdits}
           editors={presenceEditing ? [{ userId: 'other-user', label: '花子', canEdit: true, editingPersonId: 'ko1' }] : []}
@@ -182,6 +187,14 @@ export function E2EFixtureClient() {
         </div>
         <div className="px-6 pb-3 text-xs text-gray-500" data-testid="exported-options">
           {exported ?? '未書き出し'}
+        </div>
+        <div
+          className="px-6 text-xs text-gray-500"
+          data-testid="edit-requests"
+          data-edit-requests={editRequests.join(',')}
+          data-position-updates={positionUpdates}
+        >
+          編集の要求: {editRequests.length}件 / 位置の確定: {positionUpdates}回
         </div>
         <div className="px-6 py-3 text-xs text-gray-500" data-testid="selected-person">
           {selected ? `選択中: ${selected.displayName}` : '未選択'}
