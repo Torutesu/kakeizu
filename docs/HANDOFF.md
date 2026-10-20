@@ -1,9 +1,32 @@
 # 引き継ぎ：公開して、実機で確かめて、触れる状態にする
 
 **対象:** Codex（Computer Use を使って、ブラウザと管理画面を操作できるエージェント）
-**作成:** 2026-09-29　**ブランチ:** `claude/charming-dijkstra-rdoe0o`（最新コミットから続ける）
+**作成:** 2026-09-29（2026-10-20 更新）　**ブランチ:** `claude/charming-dijkstra-rdoe0o`（最新コミットから続ける）
 
 先に [AGENTS.md](../AGENTS.md) を読むこと（守ること・コマンド・構成）。
+
+**いま頼んでいるのは下の「今回の作業」。**確認用の環境は既にあるので、作り直さずに最新へ更新する。
+「作業の手順」（手順1〜6）は新しく作るときの手順で、今回は必要な箇所だけ参照する。
+
+### Codex への依頼文（コピペ用）
+
+```
+このリポジトリ（https://github.com/Torutesu/kakeizu）の作業を引き継いでください。
+ブランチは claude/charming-dijkstra-rdoe0o（main ではない）。最新を取得してから始める。
+
+最初に AGENTS.md と docs/HANDOFF.md を読み、HANDOFF の「今回の作業」を A から順に進めてください。
+ブラウザと管理画面（Supabase・Vercel）の操作は Computer Use で行ってよい。
+
+- 支払い情報の入力・プランの変更・利用規約への同意・2段階認証・CAPTCHA・メールの確認コードは、
+  その画面で止まって私に代わってください（入力しない）
+- 鍵やトークンは管理画面から .env.qa.local に直接貼る。チャット・コミット・ログ・報告の画面写しに出さない
+- 本物の戸籍は使わない。見本（e2e/live/fixtures/koseki-sample/、架空の甲野家）だけを使う
+- モデル・思考の深さの既定は変えない
+- 確認を弱めて通さない。落ちたら、アプリの不具合か確認手順の誤りかを見極めて直す
+- アプリを直したら typecheck / lint / test / e2e / verify:db / build をすべて通してから、
+  日本語で理由を書いてコミットし、同じブランチに push する
+- 終わったら HANDOFF の「今回の作業」F の形式で報告する
+```
 
 ---
 
@@ -48,6 +71,109 @@
 - 本番化: Vercel・Supabase の Pro 化、課金を有効にした Gemini キーと `AI_NO_TRAINING_CONFIRMED=true`、
   `AI_SAMPLE_ONLY` を外す、独自ドメインと SMTP（招待メールの到達・初回登録・再設定の確認）
 - 依頼者の判断待ち: モデル選定（実データのベンチマーク）、要件定義書 v1.3、費用説明書の相談事項
+
+### 今回の作業：既存の確認用環境を最新にして、実機で確かめる（2026-10-20）
+
+確認用の環境（https://kakeizu-five.vercel.app と、その Supabase プロジェクト）は既にある。
+2026-10-20 時点で `/api/health` の `realtimeEnabled` が null（DBにつながっていない）。
+Supabase の無料枠が使われない期間に止まったものと見ている。これを戻し、G-79〜G-91 を反映して確かめる。
+
+**順序を守ること。**DB（0015〜0017）→ Realtime の設定 → アプリのデプロイ、の順。
+アプリが先だと、private チャンネルの購読が拒まれて同時編集の配信が止まる（保存はできるため気づきにくい）。
+
+#### A. 手元の準備（ターミナル）
+
+```bash
+git fetch origin claude/charming-dijkstra-rdoe0o && git checkout claude/charming-dijkstra-rdoe0o
+git pull origin claude/charming-dijkstra-rdoe0o
+pnpm install --frozen-lockfile
+cp .env.qa.example .env.qa.local     # 値は B・C の途中で、管理画面から貼って埋める
+```
+
+#### B. Supabase（Computer Use）
+
+1. https://supabase.com/dashboard で確認用のプロジェクト（既定の名前 `kakeizu`）を開く
+   - 「Paused」なら **Restore project** を押し、状態が Healthy になるまで待つ（数分）
+   - Restore が出ない・できない（長く止まっていた場合など）なら、**作り直さずに止めて報告する**
+     （作り直すとテスト用の利用者・案件も作り直しになる。どうするかは依頼者が決める）
+   - Pro にするかどうかは依頼者が決める。確認だけなら無料枠のままでよい（支払い画面は依頼者に代わる）
+2. Project Settings → API の `Project URL`・`anon`・`service_role` を `.env.qa.local` の
+   `SUPABASE_URL`・`SUPABASE_ANON_KEY`・`SUPABASE_SERVICE_ROLE_KEY` に貼る。
+   Account → Access Tokens でトークンを発行し `SUPABASE_ACCESS_TOKEN` に貼る（有効期限は最短）
+3. **SQL Editor で、次の3つを番号順に1つずつ実行する。**ファイルの中身をまるごと貼って Run。
+   どれも何度流しても壊れない作り（`create or replace` / `drop ... if exists`）なので、
+   途中で失敗したら、直してからそのファイルを最初から流し直してよい
+   - `supabase/migrations/0015_immutable_columns.sql`
+   - `supabase/migrations/0016_fixed_rate_limits.sql`
+   - `supabase/migrations/0017_realtime_private_channels.sql`
+   - 0014 より前が未適用の様子（関数やテーブルが無いという誤り）なら、止めて報告する
+4. **適用できたかを SQL Editor で確かめる。**期待と違えば先へ進まない
+   ```sql
+   -- 3行（guard_project_columns / guard_tree_revision_columns / guard_koseki_file_columns）
+   select tgname from pg_trigger where tgname like 'guard_%' order by tgname;
+   -- 1行: 10 | 3600
+   select * from public.rate_limit_config('invitation');
+   -- 2行（project members can send realtime / project viewers can receive realtime）
+   select policyname from pg_policies where schemaname = 'realtime' and tablename = 'messages' order by policyname;
+   -- true（他の人の保存を配信する設定）
+   select public.realtime_enabled_for_trees();
+   ```
+   最後が false なら、Database → Publications の `supabase_realtime` で `tree_revisions` を有効にする
+5. **Realtime の設定で「Allow public access」を切る**（画面の場所は Realtime → Settings、
+   または Project Settings → Realtime。見つからなければ画面の写しを添えて報告）
+6. Authentication → Sign In / Providers で Google が無効であることを確かめる
+
+#### C. Vercel（ターミナル＋Computer Use）
+
+1. Vercel の Account Settings → Tokens でトークンを発行し（有効期限は最短）、`.env.qa.local` の `VERCEL_TOKEN` に貼る。
+   `GEMINI_API_KEY` は依頼者から受け取るか、いま Vercel に入っている値を Project Settings → Environment Variables から写す
+2. デプロイする。provision は既存のプロジェクトを再利用し、スキーマには触らず、
+   環境変数を設定して**手元のこのブランチを**本番へデプロイする
+   ```bash
+   set -a; . ./.env.qa.local; set +a
+   pnpm provision
+   ```
+   - `AI_SAMPLE_ONLY` は毎回この値で上書きされる。`.env.qa.local` で true のままにしておく（空だと false になり見本限定が外れる）
+   - Vercel の Production Branch は `main` のまま。**main へのマージ・push はしない**（main はこのブランチより古い）
+3. `https://<本番URL>/api/health` を開き、`supabaseConfigured: true` / `realtimeEnabled: true` / `region: "hnd1"` を確かめる。
+   見本限定のままなら `noTrainingConfirmed: false` でよい（完了の条件のうち、この1項目だけは依頼者が課金済みのキーを用意するまで満たせない）
+4. Project Settings → Deployment Protection で本番が公開になっていること（保護が有効だと401）
+
+#### D. 実機確認（ターミナル）
+
+```bash
+set -a; . ./.env.qa.local; set +a
+pnpm qa:accounts     # 既にいる利用者は飛ばす。パスワードは書き換えない
+pnpm qa:live         # 32件。読み取りを含むので10分前後
+```
+
+今回特に見るところ（G-87 の private チャンネルが本物の環境で動くか）:
+4-2〜4-5（編集中の表示・入力中の反映）、4-9（ほぼ同時の保存）、他の人の保存の反映。
+ここが落ちて、トレースで購読が拒まれている（`CHANNEL_ERROR` など）なら、B-3〜B-5 の順序と適用を見直す。
+落ちたときの進め方は「手順4」のとおり（確認を弱めて通さない）。
+
+#### E. 人の目で触る（Computer Use）
+
+[HANDS_ON_TEST.md](./HANDS_ON_TEST.md) を、通常のウィンドウ（管理者）とシークレットウィンドウ（作業者）の2つで通す。
+在席表示と、相手が入力中の値がその場で見えること（private チャンネルの確認）を必ず含める。
+
+#### F. 仕上げと報告
+
+1. 見つけた不具合を直して push（「手順6」のとおり。INTERNAL_SPEC は **G-92** から追記）
+2. `docs/QA_CHECKLIST.md` の「結果の記録」に1行追加し、このファイルの「いまの状態」を書き換える
+3. `.env.qa.local` を消す
+4. 依頼者に報告する
+
+```
+■ URL: https://...
+■ /api/health: supabaseConfigured / realtimeEnabled / region / noTrainingConfirmed の値
+■ マイグレーション: 0015〜0017 の適用と B-4 の確認結果（「Allow public access」を切ったか）
+■ 自動の実機確認: 32件中 成功N / 失敗0 / skip M（skip の理由）
+■ 人の目での確認: HANDS_ON_TEST の結果（在席・入力中の反映が届いたか、見本の読み取りで正解と違った箇所 N件）
+■ 直した不具合: …（コミット）
+■ 残った課題・依頼者の判断が要ること: …
+■ お願い: SUPABASE_ACCESS_TOKEN と VERCEL_TOKEN を失効させてください
+```
 
 ### 決まっていること（変えないこと）
 
@@ -173,7 +299,7 @@ pnpm qa:live
 
 1. 直した内容をコミット（日本語・理由を書く）して push
 2. `docs/QA_CHECKLIST.md` の「結果の記録」に1行追加（日付・環境URL・qa:live の結果・手で見た結果）
-3. `docs/INTERNAL_SPEC.md` に、見つけた不具合を G-53 から追記（何が起きたか・原因・どう直したか）
+3. `docs/INTERNAL_SPEC.md` に、見つけた不具合を G-92 から追記（何が起きたか・原因・どう直したか）
 4. 依頼者に報告（下の形式）
 
 ```
