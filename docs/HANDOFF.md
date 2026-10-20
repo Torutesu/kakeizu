@@ -57,20 +57,18 @@
 - **確認用の公開環境:** https://kakeizu-five.vercel.app（東京 hnd1・Realtime 有効）。
   **見本限定（`AI_SAMPLE_ONLY=true`）**で、同梱の見本（全バイトのハッシュで照合）以外はAIへ送らない。
   無料の Gemini キーのため `noTrainingConfirmed: false`。**本物の戸籍は入れない**
-- `pnpm qa:live` は 2026-10-02 のクライアントレビュー前の版で **32/32 成功**（[QA_CHECKLIST.md](./QA_CHECKLIST.md) 結果の記録）
-- 2026-10-08 のコードレビューで直した5件（INTERNAL_SPEC G-79〜G-82）は、まだ公開環境に反映・実機確認していない
-- 2026-10-20 の Codex レビューで直した8件（G-84〜G-91）も同じく未反映。うち3件はDBのマイグレーション
-  （0015〜0017）で、**アプリより先に SQL Editor で実行し、Realtime の「Allow public access」を切る**
-  （[DEPLOY.md](./DEPLOY.md) 1-6。順序を逆にすると同時編集の配信が止まる）
+- **2026-10-20: G-79〜G-91を公開環境へ反映済み。**0015〜0017適用、B-4の4検査一致、RealtimeのAllow public access OFF、Google無効を確認。
+- 最新アプリ `bfce420` で **qa:live 32/32成功、失敗0・skip 0・再試行0（11.8分）**。
+- Dia通常＋シークレットで在席・下書き・取消・別人物の編集・Undo・オフライン復帰・見本取り込み・出力を確認。ダブルクリック起動は確証を得られず編集ボタンで実施したため、全手順無条件合格とは扱わない。
+- 読み取りは氏名誤り1件＋続柄表記差2件。既存の公開環境のモデル上書き `gemini-3-flash-preview` は変更していない。
+- 更新手順の例外・試験の詳細: [2026-10-20の記録](./HANDS_ON_RESULT_2026-10-20.md)。CycleX2.0は未操作。依頼者の承認でai-concentrate-outcomes-qaを一時停止し、既存kakeizuを再開した。
 
 **残っていること**
 
-- 新しい画面での [HANDS_ON_TEST.md](./HANDS_ON_TEST.md) の通し（ブラウザ2つ）
-- マイグレーション 0015〜0017 を適用し、G-79〜G-91 を反映して `pnpm qa:live` を通しで再実行
-  （G-87 の private チャンネルで、在席表示・下書き・他の人の保存の反映が届くこと。本物の環境でしか確かめられない）
-- 本番化: Vercel・Supabase の Pro 化、課金を有効にした Gemini キーと `AI_NO_TRAINING_CONFIRMED=true`、
-  `AI_SAMPLE_ONLY` を外す、独自ドメインと SMTP（招待メールの到達・初回登録・再設定の確認）
-- 依頼者の判断待ち: モデル選定（実データのベンチマーク）、要件定義書 v1.3、費用説明書の相談事項
+- 人の操作によるダブルクリック起動の最終確認。見本の読み取り差分を踏まえたモデル選定（モデル・思考の深さは今回変更なし）
+- 本番化: Vercel・SupabaseのPro化、課金済みGeminiキーと `AI_NO_TRAINING_CONFIRMED=true`、`AI_SAMPLE_ONLY` を外す判断、独自ドメインとSMTP（招待メール到達・初回登録・再設定の確認）
+- 依頼者の判断待ち: 実データのベンチマーク、要件定義書v1.3、費用説明書の相談事項
+- 今回発行した構築用Supabase/Vercelトークンの失効
 
 ### 今回の作業：既存の確認用環境を最新にして、実機で確かめる（2026-10-20）
 

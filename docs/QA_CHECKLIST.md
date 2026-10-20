@@ -239,3 +239,5 @@ pnpm qa:live
 | 2026-10-01 人物確認・担当追加 | Codex | https://kakeizu-five.vercel.app（`7bb9d0f` / `bb9bbbf`、見本専用） | 型・lint・ユニット308・DB19・build成功。E2E46件成功（workers=2、1.0分）。公開環境1366×768で生没年月日までFV内、未読3項目（没年月日・性別・続柄）の修正→保存版数前進→再読込後の内容保持・未読の印の消失を確認。担当設定の招待フォームを確認（実メール送信なし、送信結果分岐はモックテスト）。AI解析・全32件・HANDS_ON通しは今回未再実施。 |
 
 | 2026-10-02 クライアントレビュー前 | Codex | https://kakeizu-five.vercel.app（公開成果物 `kakeizu-b0gkh2chh`、見本専用） | **最終qa:live 32/32成功、失敗0・skip 0・再試行0（12.3分）**。型・lint・ユニット316・E2E46・DB19・build成功。3権限×3幅、実Excelの列・人数、原本PDFの取得、分割PDF全ページ、公開認証画面を確認。招待後の初回設定・再設定導線と分割PDFの余白白紙を修正。実メール到達・初回登録・再ログイン／回復は未実施（独自SMTP未設定）。最新版のDia 2ウィンドウHANDS_ON通しは未完了。[詳細](./CLIENT_REVIEW_2026-10-02.md) |
+
+| 2026-10-20 既存環境更新 | Codex | https://kakeizu-five.vercel.app（`bfce420` / 見本専用） | **qa:live 32/32成功、失敗0・skip 0・再試行0（11.8分）**。0015〜0017、private Realtime、Google無効、healthを確認。型・lint・unit326・E2E46・DB30・build成功。Dia 2窓で取り込み・在席/下書き/取消・並行編集・Undo・オフライン復帰・出力を実施。氏名誤り1件と続柄表記差2件。ダブルクリック起動のみ確証なし（編集ボタンで実施）。[詳細](./HANDS_ON_RESULT_2026-10-20.md) |
