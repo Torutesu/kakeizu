@@ -31,7 +31,9 @@ export function subscribeTreeRevision(
   }
 
   const channel = supabase
-    .channel(`tree_revisions:${projectId}`)
+    // private: Realtime の「Allow public access」を切っても購読できるようにする（0017）。
+    // 中身は tree_revisions の RLS でも絞られるが、チャンネルに入れる人もここで絞る
+    .channel(`tree_revisions:${projectId}`, { config: { private: true } })
     .on(
       'postgres_changes',
       {

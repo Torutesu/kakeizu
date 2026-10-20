@@ -19,7 +19,7 @@
 create temp table rls_results (name text, passed boolean);
 -- 検証中はロールを authenticated に切り替えるため、記録先にも権限が要る。
 -- ここを忘れると記録だけが失敗し、検証をすり抜けたまま「成功」と出てしまう
-grant all on rls_results to authenticated;
+grant all on rls_results to authenticated, anon;
 
 -- 実行するはずの検証件数は、末尾のDOブロックに定数として書いている。
 -- psqlの変数は $$ 〜 $$ の中で展開されないため、変数にはできない
@@ -225,6 +225,41 @@ exception when others then
   insert into rls_results values ('知らない種類の回数制限は使えない', true);
 end $$;
 
+-- ---- 26〜30) 0017: Realtime の private チャンネル ----
+-- 入力中の下書き（氏名・本籍など）は RLS のかからない broadcast で流れるため、
+-- チャンネルに入れる人をここで絞る
+set role authenticated;
+set realtime.topic = 'collab:project:cccccccc-0000-0000-0000-000000000001';
+
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+insert into rls_results
+select '担当の作業者は案件のチャンネルを購読できる', count(*) > 0 from realtime.messages;
+
+set request.jwt.claim.sub = '33333333-3333-3333-3333-333333333333';
+insert into rls_results
+select '他事務所の利用者は案件のチャンネルを購読できない', count(*) = 0 from realtime.messages;
+
+do $$ begin
+  insert into realtime.messages (topic, extension) values (realtime.topic(), 'broadcast');
+  insert into rls_results values ('他事務所の利用者は案件のチャンネルへ送れない', false);
+exception when others then
+  insert into rls_results values ('他事務所の利用者は案件のチャンネルへ送れない', true);
+end $$;
+
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+set realtime.topic = 'collab:project:cccccccc-0000-0000-0000-000000000002';
+insert into rls_results
+select '作業者は担当外の案件のチャンネルを購読できない', count(*) = 0 from realtime.messages;
+
+reset role;
+set role anon;
+set request.jwt.claim.sub = '';
+set realtime.topic = 'collab:project:cccccccc-0000-0000-0000-000000000001';
+insert into rls_results
+select '未ログインでは案件のチャンネルを購読できない', count(*) = 0 from realtime.messages;
+reset role;
+reset realtime.topic;
+
 reset role;
 
 -- ---- 結果の出力 ----
@@ -243,7 +278,7 @@ from rls_results;
 do $$
 declare
   -- 上の検証の数と一致させること。検証を増やしたらこの値も更新する
-  c_expected constant integer := 25;
+  c_expected constant integer := 30;
   v_failed integer;
   v_total integer;
 begin

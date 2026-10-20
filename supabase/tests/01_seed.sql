@@ -16,6 +16,10 @@ grant select on auth.users to authenticated;
 -- ストレージ（保管期間の検証で storage.objects を直接読むため）
 grant usage on schema storage to authenticated;
 grant all on storage.objects to authenticated;
+-- Realtime の権限（private チャンネル）の検証用。未ログイン（anon）でも試す
+grant usage on schema realtime to authenticated, anon;
+grant select, insert on realtime.messages to authenticated, anon;
+grant execute on function realtime.topic() to authenticated, anon;
 -- 2つの事務所と3人の利用者を用意
 insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111','admin-a@example.com'),
@@ -68,3 +72,7 @@ values
 insert into storage.objects (bucket_id, name) values
   ('koseki', 'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/new.pdf'),
   ('koseki', 'aaaaaaaa-0000-0000-0000-000000000001/cccccccc-0000-0000-0000-000000000001/old.pdf');
+
+-- private チャンネルの購読判定は行の中身ではなくチャンネル名で決まる。1行あれば足りる
+insert into realtime.messages (topic, extension, payload)
+values ('collab:project:cccccccc-0000-0000-0000-000000000001', 'broadcast', '{}'::jsonb);

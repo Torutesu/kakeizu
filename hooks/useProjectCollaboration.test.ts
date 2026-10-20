@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { act, renderHook, cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-const mock = vi.hoisted(() => ({ track: vi.fn(), status: null as null | ((status: string) => void) }))
+const mock = vi.hoisted(() => ({
+  track: vi.fn(),
+  status: null as null | ((status: string) => void),
+  channelArgs: [] as unknown[][],
+}))
 vi.mock('../lib/supabase/client', () => ({ getSupabaseBrowserClient: () => {
   const channel = {
     on: () => channel,
@@ -10,11 +14,11 @@ vi.mock('../lib/supabase/client', () => ({ getSupabaseBrowserClient: () => {
     send: vi.fn(),
     presenceState: () => ({}),
   }
-  return { channel: () => channel, removeChannel: vi.fn() }
+  return { channel: (...args: unknown[]) => { mock.channelArgs.push(args); return channel }, removeChannel: vi.fn() }
 } }))
 import { useProjectCollaboration } from './useProjectCollaboration'
 const me = { userId: 'worker', label: '作業者', canEdit: true }
-beforeEach(() => { vi.useFakeTimers(); mock.track.mockClear() })
+beforeEach(() => { vi.useFakeTimers(); mock.track.mockClear(); mock.channelArgs = [] })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('在席情報の送信頻度', () => {
@@ -52,5 +56,16 @@ describe('在席情報の送信頻度', () => {
     unmount()
     act(() => vi.advanceTimersByTime(1000))
     expect(mock.track).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('チャンネルの権限', () => {
+  it('private チャンネルで購読する（下書きを案件の外の人に流さない）', () => {
+    renderHook(() => useProjectCollaboration('project', me))
+    expect(mock.channelArgs).toHaveLength(1)
+    const [name, options] = mock.channelArgs[0] as [string, { config?: { private?: boolean } }]
+    // 名前の形は 0017 のポリシーが案件IDを取り出す前提と揃える
+    expect(name).toBe('collab:project:project')
+    expect(options?.config?.private).toBe(true)
   })
 })

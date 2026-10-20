@@ -60,3 +60,18 @@ returns text[] language sql immutable as $$
   select case when name is null then array[]::text[]
     else (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'),1)-1] end
 $$;
+
+-- Realtime Authorization（private チャンネル）の判定は realtime.messages のポリシーで行う。
+-- 本物では Realtime サーバが購読・送信のたびに、チャンネル名を realtime.topic() に入れて
+-- このテーブルへの select / insert を試す。検証ではチャンネル名をセッション変数で渡す
+create schema if not exists realtime;
+create table if not exists realtime.messages (
+  id bigint generated always as identity primary key,
+  topic text not null default '',
+  extension text not null,
+  payload jsonb,
+  private boolean not null default true
+);
+alter table realtime.messages enable row level security;
+create or replace function realtime.topic() returns text
+language sql stable as $$ select nullif(current_setting('realtime.topic', true), '') $$;

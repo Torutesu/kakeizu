@@ -80,8 +80,11 @@ export function useProjectCollaboration(
     if (!projectId || !me) return
 
     const supabase = getSupabaseBrowserClient()
+    // private: 購読・送信を realtime.messages のポリシー（0017）で判定させる。
+    // 下書きには入力中の氏名・本籍が載り、broadcast には RLS がかからないため、
+    // 公開チャンネルのままだと anon キーと案件IDだけで受け取れてしまう
     const channel = supabase.channel(`collab:project:${projectId}`, {
-      config: { presence: { key: me.userId }, broadcast: { self: false } },
+      config: { private: true, presence: { key: me.userId }, broadcast: { self: false } },
     })
     channelRef.current = channel
     let subscribed = false

@@ -111,6 +111,14 @@ Authentication → Emails → SMTP Settings で行う。設定後、自分の別
    （同時編集で他の利用者の変更を受け取るために使う。publication への追加は
    `0011_realtime_tree_revisions.sql` が行うが、プロジェクト側でRealtimeが
    無効だと届かない。無効でも保存は動くため、**気づきにくい**）
+6. **Realtime → Settings で「Allow public access」を切る**
+   （在席表示と入力中の下書きは private チャンネルで流し、購読できる人を
+   `0017_realtime_private_channels.sql` のポリシーで案件の関係者に絞っている。
+   公開チャンネルを許したままだと、同じ名前の公開チャンネルで受け取れる余地が残る）
+
+   > 既に動いている環境を更新するときは、**アプリより先に** SQL Editor で
+   > 新しいマイグレーション（0015〜）を実行する。アプリが private チャンネルを使うのに
+   > ポリシーが無いと、購読が拒まれて同時編集の配信が止まる（保存はできるため気づきにくい）
 
 ## 2. Vercel（約10分）
 
@@ -176,6 +184,7 @@ Authentication → Emails → SMTP Settings で行う。設定後、自分の別
       （既定は `assigned_only`。全案件を共有する場合のみ設定で明示的に変更する）
 - [ ] `/api/health` の `realtimeEnabled` が true（同時編集の配信。
       無効でも保存は動くため気づきにくい）
+- [ ] Realtime の「Allow public access」が切られている（下書きを案件の外へ流さない）
 - [ ] `/api/health` の `region` が `hnd1`（サーバー処理が東京。DBと同じ場所）
 - [ ] Vercel・Supabase がどちらも **Pro**（Hobby は商用不可、Supabase Free は停止・バックアップ無し）
 - [ ] 請求の上限: Vercel の Spend Management を設定、Supabase の Spend Cap は有効のまま
