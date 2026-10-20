@@ -298,6 +298,13 @@ test.describe('ダブルクリックで編集を開く', () => {
     await expect(editRequests(page)).toHaveAttribute('data-position-updates', '0')
   })
 
+  test('押している間に数ピクセルぶれても、カードは動かず編集が開く', async ({ page }) => {
+    await humanDoubleClick(page, 'ko1', 2)
+    await expect(editRequests(page)).toHaveAttribute('data-edit-requests', 'ko1')
+    // ダブルクリックのつもりの操作で位置が確定すると、元に戻す履歴と保存が1件ずつ増える
+    await expect(editRequests(page)).toHaveAttribute('data-position-updates', '0')
+  })
+
   test('カードの左寄りを押しても編集が開く（押した瞬間にカードが動かない）', async ({ page }) => {
     // 以前は押すたびに世代の帯がキャンバスを右へ押し出し、カードが帯の幅だけ動いた。
     // 左寄りを押すと、2回目に離した位置がカードから外れ、ダブルクリックがカードに届かなかった

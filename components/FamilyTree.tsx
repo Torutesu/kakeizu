@@ -9,6 +9,10 @@ import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
 import { useLayoutCalculation } from '../hooks/useLayoutCalculation'
 import { LAYOUT_CONFIG, UI_CONFIG, DEFAULT_ZOOM_SETTINGS, ZoomSettings } from '../constants/config'
 
+// これより小さい動きはドラッグとみなさない（画面上のピクセル。拡大率によらない）。
+// OSのダブルクリック判定の許容範囲（数ピクセル）と同程度にする
+const DRAG_THRESHOLD_PX = 5
+
 interface DragPosition {
   id: string
   x: number
@@ -141,6 +145,8 @@ export function FamilyTree({
   const activePointers = useRef(new Map<number, { x: number; y: number }>())
   const panPointerIdRef = useRef<number | null>(null)
   const dragPointerIdRef = useRef<number | null>(null)
+  // 押した位置（画面座標）。ここから一定以上動くまではドラッグとみなさない
+  const dragStartClientRef = useRef<{ x: number; y: number } | null>(null)
   // ピンチ開始時の状態（2本指の距離・ズーム・中点のモデル座標）
   const pinchStateRef = useRef<{
     distance: number
@@ -351,6 +357,7 @@ export function FamilyTree({
     if (!Number.isFinite(mouseModelX) || !Number.isFinite(mouseModelY)) return
 
     dragPointerIdRef.current = e.pointerId
+    dragStartClientRef.current = { x: e.clientX, y: e.clientY }
     setIsDragging(true)
     setDraggedPerson(person)
     setDragOffset({ x: person.x - mouseModelX, y: person.y - mouseModelY })
@@ -374,6 +381,15 @@ export function FamilyTree({
     ) return
 
     e.preventDefault()
+
+    // 押している間のわずかな手ぶれは動かしたことにしない。動かしたことにすると、
+    // クリック（選択）やダブルクリック（編集）のつもりの操作で位置が確定し、
+    // 元に戻す履歴と保存が増え、選択もされなかった。一度しきい値を超えたら最後まで追従する
+    const start = dragStartClientRef.current
+    if (start) {
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_THRESHOLD_PX) return
+      dragStartClientRef.current = null
+    }
 
     const rect = canvasRef.current.getBoundingClientRect()
     const newX = (e.clientX - rect.left - panX) / zoom + dragOffset.x
@@ -429,6 +445,7 @@ export function FamilyTree({
 
     if (draggedPerson) onLiveMove?.(draggedPerson.id, null)
     dragPointerIdRef.current = null
+    dragStartClientRef.current = null
     dragPositionRef.current = null
     setDragOverride(null)
     setIsDragging(false)
