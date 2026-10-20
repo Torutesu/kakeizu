@@ -398,6 +398,29 @@ describe('useFamilyData', () => {
       await waitFor(() => expect(mockedSave).toHaveBeenCalled(), { timeout: 3000 })
     })
 
+    it('持ち越した変更をアンドゥで取り消してから閉じたら、開き直しても戻ってこない', async () => {
+      const onLine = vi.spyOn(navigator, 'onLine', 'get')
+      onLine.mockReturnValue(false)
+      try {
+        const result = await setupHook()
+        act(() => { result.current.addPerson({ id: 'p1' }) })
+        // つながっていないので、保存ボタンは端末への持ち越しだけで終わる
+        await act(async () => { expect(await result.current.saveNow()).toBe('offline') })
+
+        // 取り消して、自動保存を待たずに閉じる
+        act(() => { result.current.undo() })
+        act(() => { window.dispatchEvent(new Event('pagehide')) })
+        expect(Object.keys(localStorage).filter(key => key.startsWith('kakeizu:offline-draft:'))).toEqual([])
+
+        const reopened = await setupHook()
+        expect(reopened.current.persons).toEqual([])
+        expect(reopened.current.restoredOfflineDraft).toBe(false)
+      } finally {
+        // 失敗しても戻す。戻さないと後のテストがすべて「オフライン」で走る
+        onLine.mockRestore()
+      }
+    })
+
     it('手元に変更がなければ、閉じても何も残さない', async () => {
       await setupHook()
       act(() => { window.dispatchEvent(new Event('pagehide')) })

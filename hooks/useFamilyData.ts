@@ -447,7 +447,12 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
       if (!userId) return
       const state = currentStateRef.current
       const local = toFamilyTreeData(state.persons, state.families, state.crossCheckIssues, state.registries)
-      if (hasNoChanges(baselineRef.current, local)) return
+      // 変更が無いなら、前に残した持ち越しも消す。持ち越した変更をアンドゥで取り消して
+      // すぐ閉じると、古い持ち越しが残り、次に開いたとき取り消したはずの変更が戻っていた
+      if (hasNoChanges(baselineRef.current, local)) {
+        clearOfflineDraft(projectId, userId)
+        return
+      }
       saveOfflineDraft(projectId, userId, {
         baselineVersion: versionRef.current,
         delta: computeTreeDelta(baselineRef.current, local),
