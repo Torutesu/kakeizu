@@ -61,6 +61,9 @@ service_roleキーはSupabase APIから自動取得してVercelに設定しま�
    - GitHub連携が未設定なら画面の指示に従ってVercel GitHub Appをインストール
 2. Production Branch は既定の **`main`** のまま（mainへのマージ＝本番デプロイになる）
 3. Framework は自動で Next.js と認識される（ビルド設定の変更は不要）
+   - Node.js は `package.json` の `engines`（`^22.23.4`）により **22.x** が使われる。
+     Project Settings → Build and Deployment → Node.js Version が 20.x 以下になっていないか確認する
+     （20.x はEOLで、2026年10月のセキュリティリリースの修正対象外）
 4. **Environment Variables** に以下を設定して Deploy:
 
 | 変数 | 値 |
