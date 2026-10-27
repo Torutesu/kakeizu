@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useFamilyData } from './useFamilyData'
+import { useFamilyData, NEW_PERSON_ID } from './useFamilyData'
 import { FamilyTreeData } from '../utils/familyDataProcessor'
 
 // DBアクセス層をモックする（Supabaseへの実接続なしでフックのロジックを検証する）
@@ -315,5 +315,57 @@ describe('useFamilyData', () => {
     act(() => { result.current.addPerson({ id: 'p1' }) })
     await waitFor(() => expect(mockedSave).toHaveBeenCalled(), { timeout: 3000 })
     expect(mockedSave.mock.calls[0][2]).toBe(5)
+  })
+
+  it('新しい人物の作成と関係づけを1操作で行い、1回の「元に戻す」で両方取り消せる', async () => {
+    const result = await setupHook()
+    act(() => {
+      result.current.addPerson({ id: 'me', sex: 'male', name: { surname: '森本', given_name: '信太郎' } })
+    })
+
+    let newId = ''
+    act(() => {
+      newId = result.current.addPersonWithRelation(
+        { sex: 'female', name: { surname: '森本', given_name: '愛子' } },
+        { kind: 'newFamily', parentIds: ['me', NEW_PERSON_ID], childIds: [], marriageDate: '1984-01-22', relationType: 'blood' }
+      )
+    })
+    expect(result.current.persons.map(p => p.id)).toContain(newId)
+    expect(result.current.families).toHaveLength(1)
+    expect(result.current.families[0].parents.map(p => p.id)).toEqual(['me', newId])
+    expect(result.current.families[0].marriageDate).toBe('1984-01-22')
+
+    act(() => {
+      result.current.addPersonWithRelation(
+        { name: { surname: '森本', given_name: '一郎' } },
+        { kind: 'appendChild', familyId: result.current.families[0].id }
+      )
+    })
+    expect(result.current.families[0].children.map(c => c.displayName)).toEqual(['森本 一郎'])
+
+    act(() => { result.current.undo() })
+    expect(result.current.persons).toHaveLength(2)
+    expect(result.current.families[0].children).toHaveLength(0)
+  })
+
+  it('関係を編集すると、姓の食い違いなどの指摘がその場で更新される', async () => {
+    const result = await setupHook()
+    act(() => {
+      result.current.addPerson({ id: 'father', sex: 'male', name: { surname: '丙山', given_name: '健一' } })
+    })
+    act(() => {
+      result.current.addPersonWithRelation(
+        { id: 'child', name: { surname: '森本', given_name: '信太郎' } },
+        { kind: 'newFamily', parentIds: ['father'], childIds: [NEW_PERSON_ID], relationType: 'blood' }
+      )
+    })
+    expect(result.current.issues.map(i => i.code)).toContain('surname_differs_from_parent')
+    expect(result.current.persons.find(p => p.id === 'child')?.isUncertain).toBe(true)
+
+    act(() => {
+      result.current.updatePerson('child', { name: { surname: '丙山', given_name: '信太郎' } })
+    })
+    expect(result.current.issues.map(i => i.code)).not.toContain('surname_differs_from_parent')
+    expect(result.current.persons.find(p => p.id === 'child')?.isUncertain).toBe(false)
   })
 })

@@ -68,3 +68,54 @@ describe('buildTreeSvg', () => {
     expect(emptyResult.width).toBeGreaterThan(0)
   })
 })
+
+describe('buildTreeSvg: 婚姻日と文字の大きさ', () => {
+  const couple: FamilyTreeData = {
+    people: [
+      {
+        id: 'h', generation: 1, sex: 'male',
+        name: { surname: '森本', given_name: '健一' },
+        birth: { original_date: null, date: '1950-03-01', place: null },
+        death: { original_date: null, date: null, place: null },
+      },
+      {
+        id: 'w', generation: 1, sex: 'female',
+        name: { surname: '森本', given_name: '愛子' },
+        birth: { original_date: null, date: '1955-05-05', place: null },
+        death: { original_date: null, date: null, place: null },
+      },
+    ],
+    families: [
+      {
+        id: 'f', parents: ['h', 'w'], children: [],
+        marriage_date: { original_date: '昭和59年1月22日', date: '1984-01-22' },
+        divorce_date: { original_date: null, date: null },
+        relation_type: 'blood',
+      },
+    ],
+  }
+
+  it('夫婦の婚姻日が図に書かれる', () => {
+    const { persons, families } = processFamilyData(couple)
+    expect(buildTreeSvg(persons, families, '案件', NOW).svg).toContain('婚姻 1984-01-22')
+  })
+
+  it('西暦に変換できなかった婚姻日は原文で書かれる', () => {
+    const { persons, families } = processFamilyData({
+      ...couple,
+      families: [{ ...couple.families[0], marriage_date: { original_date: '昭和59年1月22日', date: null } }],
+    })
+    expect(buildTreeSvg(persons, families, '案件', NOW).svg).toContain('婚姻 昭和59年1月22日')
+  })
+
+  it('人物名・日付は印刷で読める大きさ（名前20px・日付15px以上）で描く', () => {
+    const { persons, families } = processFamilyData(couple)
+    const { svg } = buildTreeSvg(persons, families, '案件', NOW)
+    const sizeOf = (text: string) => {
+      const match = new RegExp(`font-size="(\\d+)"[^>]*>${text}<`).exec(svg)
+      return match ? Number(match[1]) : 0
+    }
+    expect(sizeOf('森本 健一')).toBeGreaterThanOrEqual(20)
+    expect(sizeOf('生 1950-03-01')).toBeGreaterThanOrEqual(15)
+  })
+})

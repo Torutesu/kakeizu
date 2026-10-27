@@ -1,5 +1,6 @@
 import { ProcessedPerson, FamilyGroup } from './familyDataProcessor'
 import { LAYOUT_CONFIG } from '../constants/config'
+import { parseBirthOrder } from './consistency'
 
 export interface Point {
   x: number
@@ -18,8 +19,9 @@ const ROOT_GAP = LAYOUT_CONFIG.minFamilySpacing - LAYOUT_CONFIG.cardSpacing
  *
  * 再帰的なサブツリー方式:
  * - 家族単位の幅 = max(子サブツリー幅の合計, 親の幅) を再帰的に計算し、
- *   親を子たちの中央上に、兄弟を生年順に左から隣接して配置する
- * - 独立した家系（共通祖先を持たないルート家族）は左から順に、重ならない幅で並べる
+ *   親を子たちの中央上に、兄弟を隣接して配置する
+ * - 家系図の慣習に合わせ、兄弟は右から年長順、夫婦は夫を右・妻を左に置く
+ * - 独立した家系（共通祖先を持たないルート家族）は右から世代の古い順に、重ならない幅で並べる
  * - manualPosition=true の人物は保存された位置をそのまま使い、自動配置の対象にしない
  *
  * 制限: 両家の祖先が両方ともデータに存在する婚姻（家系の合流）では、
@@ -59,18 +61,43 @@ export function calculateTreeLayout(
     })
   })
 
-  // 家族の子を生年順に取得（生年不明は末尾・元の順を維持）
+  // 家族の子を、左から配置する順（右が年長）に取得する。
+  // 年長の判定は生年月日、無ければ続柄の出生順（長男・二女など）。どちらも無い子は左端に寄せる
   const sortedChildrenOf = (family: FamilyGroup): ProcessedPerson[] => {
     const children = family.children
       .map(c => byId.get(c.id))
       .filter((c): c is ProcessedPerson => c !== undefined)
-    return [...children].sort((a, b) => {
-      if (a.birth?.date && b.birth?.date) return a.birth.date.localeCompare(b.birth.date)
-      if (a.birth?.date) return -1
-      if (b.birth?.date) return 1
+    const eldestFirst = [...children].sort((a, b) => {
+      if (a.birth?.date && b.birth?.date && a.birth.date !== b.birth.date) {
+        return a.birth.date.localeCompare(b.birth.date)
+      }
+      if (a.birth?.date && !b.birth?.date) return -1
+      if (!a.birth?.date && b.birth?.date) return 1
+      const orderA = parseBirthOrder(a.relation_to_family_head)
+      const orderB = parseBirthOrder(b.relation_to_family_head)
+      if (orderA !== null && orderB !== null) return orderA - orderB
+      if (orderA !== null) return -1
+      if (orderB !== null) return 1
       return 0
     })
+    return eldestFirst.reverse()
   }
+
+  // 夫婦の並び（左から）。妻を左・夫を右に置き、性別が分からない場合は元の順を保つ
+  const sexRank = (person: ProcessedPerson) => (person.sex === 'female' ? 0 : person.sex === 'male' ? 2 : 1)
+  const orderedParentsOf = (family: FamilyGroup): ProcessedPerson[] =>
+    family.parents
+      .map(p => byId.get(p.id))
+      .filter((p): p is ProcessedPerson => p !== undefined)
+      .map((person, index) => ({ person, index }))
+      .sort((a, b) => sexRank(a.person) - sexRank(b.person) || a.index - b.index)
+      .map(entry => entry.person)
+
+  // 1人が複数の家族の親である場合（再婚など）の並び（左から）。婚姻の古い家族を右に置く
+  const ownFamiliesOf = (personId: string): FamilyGroup[] =>
+    [...(familiesAsParent.get(personId) ?? [])].sort((a, b) =>
+      (b.marriageDate ?? '').localeCompare(a.marriageDate ?? '')
+    )
 
   // ---- 幅の計算（メモ化・循環ガード付き） ----
   const familyWidthCache = new Map<string, number>()
@@ -92,7 +119,7 @@ export function calculateTreeLayout(
   }
 
   const measurePersonSubtree = (personId: string, stack: Set<string>): number => {
-    const ownFamilies = familiesAsParent.get(personId) ?? []
+    const ownFamilies = ownFamiliesOf(personId)
     if (ownFamilies.length === 0) return PERSON_SLOT
     // 再婚などで複数の家族を持つ場合は横に並べる
     const width = ownFamilies.reduce((sum, family) => sum + measureFamily(family, stack), 0)
@@ -126,9 +153,7 @@ export function calculateTreeLayout(
 
     // 親を子たちの中央上に配置
     const centerX = leftX + width / 2
-    const parents = family.parents
-      .map(p => byId.get(p.id))
-      .filter((p): p is ProcessedPerson => p !== undefined)
+    const parents = orderedParentsOf(family)
     if (parents.length >= 2) {
       placePerson(parents[0], centerX - LAYOUT_CONFIG.spouseSpacing / 2)
       placePerson(parents[1], centerX + LAYOUT_CONFIG.spouseSpacing / 2)
@@ -138,7 +163,7 @@ export function calculateTreeLayout(
   }
 
   const placePersonSubtree = (person: ProcessedPerson, leftX: number, width: number) => {
-    const ownFamilies = (familiesAsParent.get(person.id) ?? [])
+    const ownFamilies = ownFamiliesOf(person.id)
       .filter(family => !placedFamilies.has(family.id))
 
     if (ownFamilies.length === 0) {
@@ -167,13 +192,25 @@ export function calculateTreeLayout(
       return genOf(a) - genOf(b)
     })
 
-  let cursorX = LAYOUT_CONFIG.initialX
+  // 世代の古い家系ほど右に来るよう、後ろから順に左端から並べる。
+  // ただし、先頭の家系から配置しないと合流する家族の帰属が変わるため、
+  // 配置順は先頭からのまま、幅だけ先に測って右端からの位置を割り当てる
+  const rootSlots: Array<{ family: FamilyGroup; width: number }> = []
+  const claimed = new Set<string>()
   rootFamilies.forEach(family => {
-    if (placedFamilies.has(family.id)) return
-    const width = measureFamily(family, new Set())
-    placeFamily(family, cursorX)
-    cursorX += width + ROOT_GAP
+    if (claimed.has(family.id)) return
+    claimed.add(family.id)
+    rootSlots.push({ family, width: measureFamily(family, new Set()) })
   })
+  const totalRootWidth = rootSlots.reduce((sum, slot) => sum + slot.width, 0) +
+    Math.max(0, rootSlots.length - 1) * ROOT_GAP
+  let rightEdge = LAYOUT_CONFIG.initialX + totalRootWidth
+  rootSlots.forEach(({ family, width }) => {
+    rightEdge -= width
+    placeFamily(family, rightEdge)
+    rightEdge -= ROOT_GAP
+  })
+  let cursorX = LAYOUT_CONFIG.initialX + totalRootWidth + (rootSlots.length > 0 ? ROOT_GAP : 0)
 
   // ---- どの家系にも属さない・循環などで未配置の人物を世代ごとに右側へ並べる ----
   const leftovers = persons.filter(p => !p.manualPosition && !positions.has(p.id))

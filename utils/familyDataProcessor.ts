@@ -301,3 +301,16 @@ export function formatDate(date: string | null): string {
   
   return date
 } 
+/**
+ * 夫婦の線に添える婚姻・離婚の表示（例: 「婚姻 1984-01-22」）。
+ * 西暦に変換できなかった日付は原文（和暦など）をそのまま出す。記載が無ければ空配列
+ */
+export function familyEventLabels(family: Pick<FamilyGroup,
+  'marriageDate' | 'marriageOriginalDate' | 'divorceDate' | 'divorceOriginalDate'>): string[] {
+  const labels: string[] = []
+  const marriage = family.marriageDate ? formatDate(family.marriageDate) : family.marriageOriginalDate
+  if (marriage) labels.push(`婚姻 ${marriage}`)
+  const divorce = family.divorceDate ? formatDate(family.divorceDate) : family.divorceOriginalDate
+  if (divorce) labels.push(`離婚 ${divorce}`)
+  return labels
+}

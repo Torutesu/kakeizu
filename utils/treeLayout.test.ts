@@ -71,7 +71,7 @@ describe('calculateTreeLayout', () => {
     expect(child.y).toBe(getGenerationY(2))
   })
 
-  it('兄弟は生年順に左から、cardSpacing以上の間隔で並ぶ', () => {
+  it('兄弟は右から年長順に、cardSpacing以上の間隔で並ぶ', () => {
     const { positions } = layout({
       people: [
         makePerson({ id: 'parent' }),
@@ -93,8 +93,60 @@ describe('calculateTreeLayout', () => {
 
     const elder = positions.get('elder')!
     const younger = positions.get('younger')!
-    expect(elder.x).toBeLessThan(younger.x)
-    expect(younger.x - elder.x).toBeGreaterThanOrEqual(LAYOUT_CONFIG.cardSpacing)
+    expect(elder.x).toBeGreaterThan(younger.x)
+    expect(elder.x - younger.x).toBeGreaterThanOrEqual(LAYOUT_CONFIG.cardSpacing)
+  })
+
+  it('生年月日が無い兄弟は続柄の出生順で、右から年長順に並ぶ', () => {
+    const { positions } = layout({
+      people: [
+        makePerson({ id: 'parent' }),
+        makePerson({ id: 'third', generation: 2, relation_to_family_head: '三男' }),
+        makePerson({ id: 'first', generation: 2, relation_to_family_head: '長男' }),
+        makePerson({ id: 'second', generation: 2, relation_to_family_head: '二男' }),
+      ],
+      families: [
+        makeFamily({ id: 'f', parents: ['parent'], children: ['third', 'first', 'second'] }),
+      ],
+    })
+    expect(positions.get('first')!.x).toBeGreaterThan(positions.get('second')!.x)
+    expect(positions.get('second')!.x).toBeGreaterThan(positions.get('third')!.x)
+  })
+
+  it('夫婦は夫を右・妻を左に置く（データ上の並び順によらない）', () => {
+    const { positions } = layout({
+      people: [
+        makePerson({ id: 'wife', sex: 'female' }),
+        makePerson({ id: 'husband', sex: 'male' }),
+      ],
+      families: [makeFamily({ id: 'f', parents: ['wife', 'husband'] })],
+    })
+    expect(positions.get('husband')!.x).toBeGreaterThan(positions.get('wife')!.x)
+
+    const swapped = layout({
+      people: [
+        makePerson({ id: 'husband', sex: 'male' }),
+        makePerson({ id: 'wife', sex: 'female' }),
+      ],
+      families: [makeFamily({ id: 'f', parents: ['husband', 'wife'] })],
+    }).positions
+    expect(swapped.get('husband')!.x).toBeGreaterThan(swapped.get('wife')!.x)
+  })
+
+  it('独立した家系は世代の古い家系ほど右に並ぶ', () => {
+    const { positions } = layout({
+      people: [
+        makePerson({ id: 'young_root', generation: 2 }),
+        makePerson({ id: 'young_child', generation: 3 }),
+        makePerson({ id: 'old_root', generation: 1 }),
+        makePerson({ id: 'old_child', generation: 2 }),
+      ],
+      families: [
+        makeFamily({ id: 'fy', parents: ['young_root'], children: ['young_child'] }),
+        makeFamily({ id: 'fo', parents: ['old_root'], children: ['old_child'] }),
+      ],
+    })
+    expect(positions.get('old_root')!.x).toBeGreaterThan(positions.get('young_root')!.x)
   })
 
   it('3世代で祖父母が子孫ブロック全体の中央に配置される', () => {

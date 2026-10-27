@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx'
 import { ProcessedPerson, FamilyGroup, RegistryData } from './familyDataProcessor'
 import { formatKazoeAge } from './age'
+import { withDerivedGenerations } from './generations'
 
 // Excelエクスポート。
 // 「人物一覧」「家族関係」「戸籍」の3シート構成で、行政書士業務等での
@@ -39,7 +40,8 @@ export function buildWorkbook(
     })
   })
   // 世代 → 生年月日順に並べる（家系図として自然な順序）
-  const sortedPersons = [...persons].sort((a, b) => {
+  // 世代は家系図の段と同じく、親子・夫婦の関係から決めたものを使う
+  const sortedPersons = [...withDerivedGenerations(persons, families)].sort((a, b) => {
     if (a.generation !== b.generation) return a.generation - b.generation
     return (a.birth?.date ?? '9999').localeCompare(b.birth?.date ?? '9999')
   })

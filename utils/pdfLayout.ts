@@ -40,10 +40,10 @@ export const DEFAULT_PDF_OPTIONS: PdfExportOptions = {
 
 /**
  * この倍率を下回ると本文が読みにくくなる目安。
- * 人物カードの文字は11〜14pxで、0.6倍で7〜8px相当になり、
+ * PDFの人物カードの文字は15〜20px（utils/exportPdf.ts）で、0.47倍で約7〜9pt になり、
  * 印刷物としては判読の限界に近い。
  */
-export const READABLE_SCALE_THRESHOLD = 0.6
+export const READABLE_SCALE_THRESHOLD = 0.47
 
 export interface PdfPagePlan {
   /** 用紙の実寸（pt）。向きの解決後 */

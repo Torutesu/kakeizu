@@ -1,5 +1,6 @@
-import { ProcessedPerson, FamilyGroup } from './familyDataProcessor'
+import { ProcessedPerson, FamilyGroup, familyEventLabels, formatDate } from './familyDataProcessor'
 import { calculateTreeLayout, Point } from './treeLayout'
+import { withDerivedGenerations } from './generations'
 import { LAYOUT_CONFIG } from '../constants/config'
 import { formatKazoeAge } from './age'
 import { planPdfPages, PdfExportOptions, DEFAULT_PDF_OPTIONS } from './pdfLayout'
@@ -12,9 +13,32 @@ const MAX_CANVAS_EDGE = 8000
 // jsPDFで1ページに収めて出力する。日本語テキストはブラウザのフォントで
 // ラスタライズされるため、PDFへのフォント埋め込みが不要になる。
 
-const CARD_W = LAYOUT_CONFIG.cardWidth
-const CARD_H = 96
-const PADDING = 80
+// 印刷物では余白より文字の大きさが大事なため、画面のカードより幅を広げ、
+// 兄弟の間隔（cardSpacing）いっぱい近くまでカードを使って文字を大きくする。
+// 用紙に収めると全体が縮小されるので、縮小後も読める大きさを確保するのが目的
+const CARD_W = LAYOUT_CONFIG.cardSpacing - 14
+const CARD_H = 150
+const PADDING = 60
+const FONT_NAME = 20
+const FONT_DETAIL = 15
+const FONT_RELATION = 12
+const FONT_EVENT = 13
+const TEXT_LEFT = 14
+
+/** 1行に収まる幅を超える名前は、文字間を詰めてカードからはみ出さないようにする */
+function estimateTextWidth(text: string, fontSize: number): number {
+  let width = 0
+  for (const ch of text) width += /[\x00-\x7f]/.test(ch) ? fontSize * 0.55 : fontSize
+  return width
+}
+
+function fittedText(x: number, y: number, text: string, fontSize: number, attrs: string): string {
+  const maxWidth = CARD_W - TEXT_LEFT - 8
+  const fit = estimateTextWidth(text, fontSize) > maxWidth
+    ? ` textLength="${maxWidth}" lengthAdjust="spacingAndGlyphs"`
+    : ''
+  return `<text x="${x}" y="${y}" font-size="${fontSize}"${fit} ${attrs}>${escapeXml(text)}</text>`
+}
 
 function escapeXml(text: string): string {
   return text
@@ -39,7 +63,7 @@ export function buildTreeSvg(
 ): TreeGeometry {
   const getGenerationY = (generation: number) =>
     LAYOUT_CONFIG.initialY + (generation - 1) * LAYOUT_CONFIG.generationSpacing
-  const positions = calculateTreeLayout(persons, families, getGenerationY)
+  const positions = calculateTreeLayout(withDerivedGenerations(persons, families), families, getGenerationY)
 
   // 座標はカード中心。全体の範囲を求めて原点を左上に平行移動する
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
@@ -72,25 +96,36 @@ export function buildTreeSvg(
 
     if (parentPositions.length === 2) {
       const [p1, p2] = parentPositions
-      const dash = family.divorceDate ? ' stroke-dasharray="6 4"' : ''
+      const dash = family.divorceDate || family.divorceOriginalDate ? ' stroke-dasharray="6 4"' : ''
       parts.push(
-        `<line x1="${p1.x}" y1="${p1.y - 2}" x2="${p2.x}" y2="${p2.y - 2}" stroke="#dc2626" stroke-width="1.5" opacity="0.8"${dash}/>`,
-        `<line x1="${p1.x}" y1="${p1.y + 2}" x2="${p2.x}" y2="${p2.y + 2}" stroke="#dc2626" stroke-width="1.5" opacity="0.8"${dash}/>`
+        `<line x1="${p1.x}" y1="${p1.y - 2.5}" x2="${p2.x}" y2="${p2.y - 2.5}" stroke="#dc2626" stroke-width="2" opacity="0.85"${dash}/>`,
+        `<line x1="${p1.x}" y1="${p1.y + 2.5}" x2="${p2.x}" y2="${p2.y + 2.5}" stroke="#dc2626" stroke-width="2" opacity="0.85"${dash}/>`
       )
+
+      // 婚姻日・離婚日は夫婦の中点から下ろす線の右脇（カードの下）に書く
+      const labelX = (p1.x + p2.x) / 2 + 7
+      const labelTop = Math.max(p1.y, p2.y) + CARD_H / 2 + FONT_EVENT + 4
+      familyEventLabels(family).forEach((label, index) => {
+        parts.push(
+          `<text x="${labelX}" y="${labelTop + index * (FONT_EVENT + 4)}" font-size="${FONT_EVENT}" fill="#374151" stroke="#ffffff" stroke-width="4" paint-order="stroke">${escapeXml(label)}</text>`
+        )
+      })
     }
 
     if (parentPositions.length > 0 && family.children.length > 0) {
       const centerX = parentPositions.reduce((sum, p) => sum + p.x, 0) / parentPositions.length
       const centerY = parentPositions.reduce((sum, p) => sum + p.y, 0) / parentPositions.length
+      // 単親はカードの下端から、夫婦は二重線の中点から下ろす
+      const fromY = parentPositions.length >= 2 ? centerY : centerY + CARD_H / 2
       const dash = family.relationType === 'adoption' ? ' stroke-dasharray="5 4"' : ''
 
       family.children.forEach(child => {
         const childPos = positions.get(child.id)
         if (!childPos) return
         const c = at(childPos)
-        const midY = (centerY + c.y - CARD_H / 2) / 2
+        const busY = c.y - CARD_H / 2 - LAYOUT_CONFIG.siblingBusOffset / 2
         parts.push(
-          `<path d="M ${centerX} ${centerY} L ${centerX} ${midY} L ${c.x} ${midY} L ${c.x} ${c.y - CARD_H / 2}" stroke="#6b7280" stroke-width="1.5" fill="none" opacity="0.7"${dash}/>`
+          `<path d="M ${centerX} ${fromY} L ${centerX} ${busY} L ${c.x} ${busY} L ${c.x} ${c.y - CARD_H / 2}" stroke="#4b5563" stroke-width="2" fill="none" opacity="0.8"${dash}/>`
         )
       })
     }
@@ -109,35 +144,35 @@ export function buildTreeSvg(
     const age = formatKazoeAge(person.birth?.date, person.death?.date, now)
 
     parts.push(
-      `<rect x="${left}" y="${top}" width="${CARD_W}" height="${CARD_H}" rx="8" fill="${fill}" stroke="#d1d5db"/>`,
-      `<rect x="${left}" y="${top}" width="4" height="${CARD_H}" rx="2" fill="${accent}"/>`,
-      `<text x="${left + 12}" y="${top + 24}" font-size="13" font-weight="bold" fill="#111827">${escapeXml(person.displayName)}</text>`
+      `<rect x="${left}" y="${top}" width="${CARD_W}" height="${CARD_H}" rx="8" fill="${fill}" stroke="#9ca3af"/>`,
+      `<rect x="${left}" y="${top}" width="5" height="${CARD_H}" rx="2" fill="${accent}"/>`,
+      fittedText(left + TEXT_LEFT, top + FONT_NAME + 8, person.displayName, FONT_NAME, 'font-weight="bold" fill="#111827"')
     )
-    let line = 0
-    if (person.birth?.date) {
+
+    let cursorY = top + FONT_NAME + 8
+    if (person.relation_to_family_head) {
+      cursorY += FONT_RELATION + 8
       parts.push(
-        `<text x="${left + 12}" y="${top + 44 + line * 16}" font-size="10" fill="#4b5563">生 ${escapeXml(person.birth.date)}</text>`
-      )
-      line++
-    }
-    if (person.death?.date) {
-      parts.push(
-        `<text x="${left + 12}" y="${top + 44 + line * 16}" font-size="10" fill="#4b5563">没 ${escapeXml(person.death.date)}</text>`
-      )
-      line++
-    }
-    if (age) {
-      parts.push(
-        `<text x="${left + 12}" y="${top + 44 + line * 16}" font-size="10" fill="#6b7280">${escapeXml(age)}</text>`
+        fittedText(left + TEXT_LEFT, cursorY, person.relation_to_family_head, FONT_RELATION, 'fill="#6b7280"')
       )
     }
+
+    const details: Array<[string, string]> = []
+    if (person.birth?.date) details.push([`生 ${formatDate(person.birth.date)}`, '#374151'])
+    if (person.death?.date) details.push([`没 ${formatDate(person.death.date)}`, '#374151'])
+    if (age) details.push([age, '#4b5563'])
+    // 日付・年齢はカードの下端から積む（続柄の有無で位置がぶれないように）
+    details.forEach(([text, color], index) => {
+      const baseline = top + CARD_H - 12 - (details.length - 1 - index) * (FONT_DETAIL + 6)
+      parts.push(fittedText(left + TEXT_LEFT, baseline, text, FONT_DETAIL, `fill="${color}"`))
+    })
   })
 
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<rect width="${width}" height="${height}" fill="#ffffff"/>` +
-    `<text x="${PADDING}" y="${PADDING - 24}" font-size="20" font-weight="bold" fill="#111827">${escapeXml(projectName)}</text>` +
-    `<text x="${PADDING}" y="${PADDING - 4}" font-size="11" fill="#6b7280">作成日: ${now.toLocaleDateString('ja-JP')}</text>` +
+    `<text x="${PADDING}" y="${PADDING - 16}" font-size="26" font-weight="bold" fill="#111827">${escapeXml(projectName)}</text>` +
+    `<text x="${PADDING}" y="${PADDING + 8}" font-size="14" fill="#6b7280">作成日: ${now.toLocaleDateString('ja-JP')}</text>` +
     `<g font-family="'Hiragino Sans','Yu Gothic',Meiryo,sans-serif">${parts.join('')}</g>` +
     `</svg>`
 

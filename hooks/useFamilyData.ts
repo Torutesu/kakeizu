@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   processFamilyData,
   toFamilyTreeData,
@@ -10,7 +10,7 @@ import {
 } from '../utils/familyDataProcessor'
 import { useUndoRedo } from './useUndoRedo'
 import { mergeFamilyTreeData } from '../utils/mergeFamilyData'
-import { ConsistencyIssue } from '../utils/consistency'
+import { ConsistencyIssue, checkConsistency, buildUncertaintyMap } from '../utils/consistency'
 import type { RegistryData } from '../utils/familyDataProcessor'
 import { loadTreeRevision, saveTreeRevision } from '../lib/db/trees'
 import { fetchCanEditProject } from '../lib/db/projects'
@@ -19,6 +19,58 @@ import { fetchCanEditProject } from '../lib/db/projects'
 export type SaveStatus = 'saved' | 'saving' | 'conflict' | 'error'
 
 const AUTOSAVE_DEBOUNCE_MS = 800
+
+/** addPersonWithRelation の link の中で、新しく作る人物を指すid */
+export const NEW_PERSON_ID = '__new_person__'
+
+/**
+ * 新しい人物を家族関係に結びつける方法。
+ * - newFamily: 新しい家族を作る（parentIds/childIds に NEW_PERSON_ID を含める）
+ * - appendChild: 既存の家族の子として加える
+ * - appendParent: 既存の家族の親（片親だけの家族の配偶者）として加える
+ */
+export type RelationLink =
+  | {
+      kind: 'newFamily'
+      parentIds: string[]
+      childIds: string[]
+      marriageDate?: string
+      relationType: 'blood' | 'adoption'
+    }
+  | { kind: 'appendChild'; familyId: string }
+  | { kind: 'appendParent'; familyId: string }
+
+function buildNewPerson(personData: Partial<ProcessedPerson>): ProcessedPerson {
+  const newPerson: ProcessedPerson = {
+    id: generateId('person'),
+    generation: 1,
+    sex: 'male',
+    name: {
+      surname: '',
+      given_name: ''
+    },
+    birth: {
+      original_date: null,
+      date: null,
+      place: null
+    },
+    death: {
+      original_date: null,
+      date: null,
+      place: null
+    },
+    x: 0,
+    y: 0,
+    displayName: '',
+    isUncertain: false,
+    uncertaintyReasons: [],
+    manualPosition: false,
+    ...personData
+  }
+  // 表示名を更新
+  newPerson.displayName = buildDisplayName(newPerson.name)
+  return newPerson
+}
 
 interface FamilyDataState {
   persons: ProcessedPerson[]
@@ -48,6 +100,8 @@ interface UseFamilyDataReturn {
 
   // 操作
   addPerson: (personData: Partial<ProcessedPerson>) => void
+  // 新しい人物を作って家族関係に結びつける。作った人物のidを返す
+  addPersonWithRelation: (personData: Partial<ProcessedPerson>, link: RelationLink) => string
   updatePerson: (id: string, updates: Partial<ProcessedPerson>) => void
   deletePerson: (id: string) => void
   addFamily: (familyData: {
@@ -112,7 +166,25 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
 
   const { persons, families, crossCheckIssues } = currentState
   const registries = currentState.registries ?? []
-  const issues = currentState.issues ?? []
+
+  // 指摘と要確認マークは、編集のたびに現在のデータから計算し直す
+  // （読み込み時の結果のままだと、関係を直しても指摘が消えず、新しい矛盾も出ない）
+  const { issues, livePersons } = useMemo(() => {
+    const current = [
+      ...checkConsistency(toFamilyTreeData(persons, families)),
+      ...(crossCheckIssues ?? []),
+    ]
+    const reasonsById = buildUncertaintyMap(current)
+    const updated = persons.map(person => {
+      const reasons = reasonsById.get(person.id) ?? []
+      const unchanged =
+        person.isUncertain === reasons.length > 0 &&
+        person.uncertaintyReasons.length === reasons.length &&
+        person.uncertaintyReasons.every((reason, index) => reason === reasons[index])
+      return unchanged ? person : { ...person, isUncertain: reasons.length > 0, uncertaintyReasons: reasons }
+    })
+    return { issues: current, livePersons: updated }
+  }, [persons, families, crossCheckIssues])
 
   // 非同期処理（複数ファイルの連続マージなど）から呼ばれても常に最新のstateを
   // 参照できるよう、refに現在値を持たせる（クロージャの古いstateによるデータ欠落防止）
@@ -223,38 +295,45 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
 
   // 人物追加
   const addPerson = useCallback((personData: Partial<ProcessedPerson>) => {
-    const newPerson: ProcessedPerson = {
-      id: generateId('person'),
-      generation: 1,
-      sex: 'male',
-      name: {
-        surname: '',
-        given_name: ''
-      },
-      birth: {
-        original_date: null,
-        date: null,
-        place: null
-      },
-      death: {
-        original_date: null,
-        date: null,
-        place: null
-      },
-      x: 0,
-      y: 0,
-      displayName: '',
-      isUncertain: false,
-      uncertaintyReasons: [],
-      manualPosition: false,
-      ...personData
-    }
-
-    // 表示名を更新
-    newPerson.displayName = buildDisplayName(newPerson.name)
-
+    const newPerson = buildNewPerson(personData)
     const newPersons = [...persons, newPerson]
     pushState({ persons: newPersons, families }, `${newPerson.displayName}を追加`)
+  }, [persons, families, pushState])
+
+  // 新しい人物を作り、同時に家族関係へ結びつける（「元に戻す」1回で両方を取り消せるよう1操作にする）
+  const addPersonWithRelation = useCallback((personData: Partial<ProcessedPerson>, link: RelationLink) => {
+    const newPerson = buildNewPerson(personData)
+    const newPersons = [...persons, newPerson]
+    const resolve = (id: string) =>
+      id === NEW_PERSON_ID ? newPerson : persons.find(p => p.id === id)
+
+    let newFamilies: FamilyGroup[]
+    if (link.kind === 'newFamily') {
+      const parents = link.parentIds.map(resolve).filter((p): p is ProcessedPerson => p !== undefined)
+      const children = link.childIds.map(resolve).filter((p): p is ProcessedPerson => p !== undefined)
+      newFamilies = [
+        ...families,
+        {
+          id: generateId('family'),
+          parents,
+          children,
+          marriageDate: link.marriageDate,
+          relationType: link.relationType,
+          marriageLines: [],
+          childrenLines: [],
+        },
+      ]
+    } else {
+      newFamilies = families.map(family => {
+        if (family.id !== link.familyId) return family
+        return link.kind === 'appendChild'
+          ? { ...family, children: [...family.children, newPerson] }
+          : { ...family, parents: [...family.parents, newPerson] }
+      })
+    }
+
+    pushState({ persons: newPersons, families: newFamilies }, `${newPerson.displayName}を追加`)
+    return newPerson.id
   }, [persons, families, pushState])
 
   // 人物更新
@@ -439,7 +518,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
   }, [redoState])
 
   return {
-    persons,
+    persons: livePersons,
     families,
     issues,
     registries,
@@ -448,6 +527,7 @@ export function useFamilyData(projectId: string): UseFamilyDataReturn {
     saveStatus,
     canEdit,
     addPerson,
+    addPersonWithRelation,
     updatePerson,
     deletePerson,
     addFamily,

@@ -230,3 +230,53 @@ describe('buildUncertaintyMap', () => {
     expect(map.get('p2')).toEqual(['理由1'])
   })
 })
+
+describe('親と姓・性別の整合', () => {
+  const named = (id: string, surname: string, sex: PersonData['sex'] = null) =>
+    person({ id, sex, name: { surname, given_name: id } })
+
+  it('子の姓が親のどちらとも違う場合はエラーにする', () => {
+    const data = tree(
+      [named('father', '丙山', 'male'), named('mother', '丙山', 'female'), named('child', '森本', 'male')],
+      [family({ id: 'f', parents: ['father', 'mother'], children: ['child'] })]
+    )
+    const issue = checkConsistency(data, NOW).find(i => i.code === 'surname_differs_from_parent')
+    expect(issue?.severity).toBe('error')
+    expect(issue?.personIds).toEqual(['child'])
+  })
+
+  it('親のどちらかと姓が同じなら指摘しない（全角・半角の違いは同じとみなす）', () => {
+    const data = tree(
+      [named('father', '丙山'), named('mother', '甲田'), named('child', '丙山 ')],
+      [family({ id: 'f', parents: ['father', 'mother'], children: ['child'] })]
+    )
+    expect(codesOf(data)).not.toContain('surname_differs_from_parent')
+  })
+
+  it('婚姻で配偶者の姓に変わった子は指摘しない', () => {
+    const data = tree(
+      [named('father', '丙山'), named('daughter', '森本', 'female'), named('husband', '森本', 'male')],
+      [
+        family({ id: 'f1', parents: ['father'], children: ['daughter'] }),
+        family({ id: 'f2', parents: ['husband', 'daughter'] }),
+      ]
+    )
+    expect(codesOf(data)).not.toContain('surname_differs_from_parent')
+  })
+
+  it('親の姓が分からない場合は判定しない', () => {
+    const data = tree(
+      [named('mother', ''), named('child', '森本')],
+      [family({ id: 'f', parents: ['mother'], children: ['child'] })]
+    )
+    expect(codesOf(data)).not.toContain('surname_differs_from_parent')
+  })
+
+  it('実親の2人が同じ性別ならエラーにする（養子縁組は対象外）', () => {
+    const people = [named('a', '丙山', 'male'), named('b', '丙山', 'male'), named('c', '丙山')]
+    expect(codesOf(tree(people, [family({ id: 'f', parents: ['a', 'b'], children: ['c'] })])))
+      .toContain('parents_same_sex')
+    expect(codesOf(tree(people, [family({ id: 'f', parents: ['a', 'b'], children: ['c'], relation_type: 'adoption' })])))
+      .not.toContain('parents_same_sex')
+  })
+})

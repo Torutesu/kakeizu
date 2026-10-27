@@ -44,10 +44,11 @@ import { IssuesPanel } from "./IssuesPanel"
 import { RegistriesPanel } from "./RegistriesPanel"
 import { PdfExportDialog } from "./PdfExportDialog"
 import { PdfExportOptions } from "../utils/pdfLayout"
-import { LAYOUT_CONFIG } from "../constants/config"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
 import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
 import { formatKazoeAge } from "../utils/age"
+import { deriveGenerations } from "../utils/generations"
+import { buildTreeSvg } from "../utils/exportPdf"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -88,6 +89,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     saveStatus,
     canEdit,
     addPerson,
+    addPersonWithRelation,
     updatePerson,
     deletePerson,
     addFamily,
@@ -156,6 +158,9 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   const selectedPerson = selectedPersonId
     ? persons.find(p => p.id === selectedPersonId) ?? null
     : null
+
+  // 表示する世代は家系図の段と同じく、親子・夫婦の関係から決めたもの
+  const generationById = useMemo(() => deriveGenerations(persons, families), [persons, families])
 
   const [searchQuery, setSearchQuery] = useState("")
   const [focusPerson, setFocusPerson] = useState<FocusPersonRequest | null>(null)
@@ -360,17 +365,13 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     }
   }
 
-  // ダイアログでページ数・倍率を計算するため、実際の描画サイズを求める
+  // ダイアログでページ数・倍率を計算するため、実際に書き出す図と同じ計算で描画サイズを求める
+  // （自動配置の人物は保存データに座標を持たないため、人物の x,y からは求められない）
   const pdfContentSize = useMemo(() => {
     if (persons.length === 0) return { width: 0, height: 0 }
-    const xs = persons.map(p => p.x)
-    const ys = persons.map(p => p.y)
-    const padding = LAYOUT_CONFIG.canvasPadding
-    return {
-      width: Math.max(...xs) - Math.min(...xs) + LAYOUT_CONFIG.cardWidth + padding * 2,
-      height: Math.max(...ys) - Math.min(...ys) + LAYOUT_CONFIG.cardHeight + padding * 2,
-    }
-  }, [persons])
+    const { width, height } = buildTreeSvg(persons, families, project?.name || '家系図')
+    return { width, height }
+  }, [persons, families, project?.name])
 
   // JSON読み込みハンドラー
   const handleLoadFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -751,7 +752,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                       }}
                     >
                       <div className="text-sm font-medium">{person.displayName}</div>
-                      <div className="text-xs text-gray-500">第{person.generation}世代</div>
+                      <div className="text-xs text-gray-500">第{generationById.get(person.id) ?? person.generation}世代</div>
                     </div>
                   ))}
                 </div>
@@ -843,7 +844,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                     <div>
                       <label className="text-sm font-medium text-gray-700">世代</label>
                       <div className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm">
-                        第{selectedPerson.generation}世代
+                        第{generationById.get(selectedPerson.id) ?? selectedPerson.generation}世代
                       </div>
                     </div>
 
@@ -929,6 +930,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         onAddFamily={addFamily}
         onUpdateFamily={updateFamily}
         onDeleteFamily={deleteFamily}
+        onAddPersonWithRelation={addPersonWithRelation}
       />
 
       <AddPersonDialog
