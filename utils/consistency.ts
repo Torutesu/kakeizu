@@ -157,6 +157,37 @@ export function checkConsistency(data: FamilyTreeData, now: Date = new Date()): 
   }
   const spouseSurnamesOf = (id: string) => spouseSurnames.get(id) ?? new Set<string>()
 
+  // 子の姓が、実親・養親のどちらの姓とも違う（人物ごとに1件だけ指摘する）。
+  // 戸籍では子は親（養子は養親）の氏を称するため、違えば姓の読み違いか親子関係の誤りを疑う。
+  // 婚姻で相手の氏に変わった子（配偶者と同じ姓）は正しいので対象外にする
+  const parentsByChild = new Map<string, PersonData[]>()
+  for (const family of data.families ?? []) {
+    for (const childId of family.children ?? []) {
+      const list = parentsByChild.get(childId) ?? []
+      for (const parentId of family.parents ?? []) {
+        const parent = byId.get(parentId)
+        if (parent && !list.includes(parent)) list.push(parent)
+      }
+      parentsByChild.set(childId, list)
+    }
+  }
+  parentsByChild.forEach((parents, childId) => {
+    const child = byId.get(childId)
+    if (!child) return
+    const surname = normalizeSurname(child.name?.surname)
+    const parentSurnames = new Set(parents.map(p => normalizeSurname(p.name?.surname)).filter(Boolean))
+    if (!surname || parentSurnames.size === 0 || parentSurnames.has(surname)) return
+    if (spouseSurnamesOf(child.id).has(surname)) return
+    issues.push({
+      severity: 'error',
+      code: 'surname_differs_from_parent',
+      message:
+        `${displayName(child)}の姓「${child.name?.surname}」が親（${parents.map(displayName).join('・')}）の姓と異なります。` +
+        '姓の読み違いか、親子関係・改姓（婚姻・養子縁組）の記載漏れの可能性があります。',
+      personIds: [child.id],
+    })
+  })
+
   // ---- 親子関係のチェック ----
   for (const family of data.families ?? []) {
     const parents = (family.parents ?? [])
@@ -224,26 +255,6 @@ export function checkConsistency(data: FamilyTreeData, now: Date = new Date()): 
           code: 'parents_same_sex',
           message: `${displayName(a)}と${displayName(b)}が同じ性別のまま、${children.length > 0 ? children.map(displayName).join('・') + 'の' : ''}両親になっています。性別か親子関係の読み違いの可能性があります。`,
           personIds: [a.id, b.id],
-        })
-      }
-    }
-
-    // 子の姓が親のどちらとも違う。
-    // 戸籍では子は親の氏を称するため、違えば姓の読み違いか親子関係の誤りを疑う。
-    // ただし婚姻で相手の氏に変わった子（配偶者と同じ姓）は正しいので対象外にする
-    const parentSurnames = new Set(parents.map(p => normalizeSurname(p.name?.surname)).filter(Boolean))
-    if (parentSurnames.size > 0) {
-      for (const child of children) {
-        const surname = normalizeSurname(child.name?.surname)
-        if (!surname || parentSurnames.has(surname)) continue
-        if (spouseSurnamesOf(child.id).has(surname)) continue
-        issues.push({
-          severity: 'error',
-          code: 'surname_differs_from_parent',
-          message:
-            `${displayName(child)}の姓「${child.name?.surname}」が親（${parents.map(displayName).join('・')}）の姓と異なります。` +
-            '姓の読み違いか、親子関係・改姓（婚姻・養子縁組）の記載漏れの可能性があります。',
-          personIds: [child.id],
         })
       }
     }

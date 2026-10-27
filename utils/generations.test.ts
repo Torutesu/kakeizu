@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { deriveGenerations, withDerivedGenerations } from './generations'
 
 const p = (id: string, generation: number) => ({ id, generation })
-const f = (parents: string[], children: string[] = []) => ({
+const f = (parents: string[], children: string[] = [], relationType: 'blood' | 'adoption' = 'blood') => ({
   parents: parents.map(id => ({ id })),
   children: children.map(id => ({ id })),
+  relationType,
 })
 
 describe('deriveGenerations', () => {
@@ -59,6 +60,51 @@ describe('deriveGenerations', () => {
   it('関係に存在しない人物idは無視する', () => {
     const gens = deriveGenerations([p('a', 1)], [f(['a', 'ghost'], ['nobody'])])
     expect([...gens.keys()]).toEqual(['a'])
+  })
+})
+
+describe('deriveGenerations: 養子縁組と手で配置したカード', () => {
+  it('孫養子（実の祖父母の養子）でも、実親子の段が優先され家族の並びの順に左右されない', () => {
+    const persons = [p('gf', 1), p('gm', 1), p('father', 2), p('mother', 2), p('child', 3)]
+    const blood = [f(['gf', 'gm'], ['father']), f(['father', 'mother'], ['child'])]
+    const adoption = f(['gf', 'gm'], ['child'], 'adoption')
+    for (const families of [[...blood, adoption], [adoption, ...blood]]) {
+      const gens = deriveGenerations(persons, families)
+      expect(gens.get('gf')).toBe(1)
+      expect(gens.get('father')).toBe(2)
+      expect(gens.get('mother')).toBe(2)
+      expect(gens.get('child')).toBe(3)
+    }
+  })
+
+  it('養子縁組でしかつながらない人は、養親の1つ下の段になる', () => {
+    const gens = deriveGenerations([p('a', 1), p('adopted', 7)], [f(['a'], ['adopted'], 'adoption')])
+    expect(gens.get('adopted')).toBe(gens.get('a')! + 1)
+  })
+
+  it('手で配置したカードがあると、その段を基準にして全体を動かさない', () => {
+    // 未接続の人を最上段より上（第0世代）へドラッグした状態
+    const persons = [
+      { id: 'x', generation: 0, manualPosition: true },
+      p('a', 1), p('b', 1), p('c', 2),
+    ]
+    const gens = deriveGenerations(persons, [f(['a', 'b'], ['c'])])
+    expect(gens.get('x')).toBe(0)
+    expect(gens.get('a')).toBe(1)
+    expect(gens.get('c')).toBe(2)
+  })
+
+  it('手で配置したカードを含む集まりは、そのカードの段に合わせる', () => {
+    // 最上段の人に親を足した状態。手で置いた子の段（2）が保たれ、新しい親は1つ上に来る
+    const persons = [
+      { id: 'child', generation: 2, manualPosition: true },
+      p('parent', 1),
+      p('newGrandparent', 1),
+    ]
+    const gens = deriveGenerations(persons, [f(['parent'], ['child']), f(['newGrandparent'], ['parent'])])
+    expect(gens.get('child')).toBe(2)
+    expect(gens.get('parent')).toBe(1)
+    expect(gens.get('newGrandparent')).toBe(0)
   })
 })
 

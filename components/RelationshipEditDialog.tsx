@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -16,12 +16,12 @@ import { Badge } from '@/components/ui/badge'
 import { Trash2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { useConfirm } from '../hooks/useConfirm'
-import { NEW_PERSON_ID, RelationLink } from '../hooks/useFamilyData'
+import { NEW_PERSON_ID, RelationLink } from '../utils/familyMutations'
 import { checkDateInput } from '../utils/dateInput'
 import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
 import { deriveGenerations } from '../utils/generations'
 import { yearOf } from '../utils/consistency'
-import { PersonCandidate, PersonPicker, PersonSelection, splitPersonName } from './PersonPicker'
+import { OPEN_PICKER_SELECTOR, PersonCandidate, PersonPicker, PersonSelection, splitPersonName } from './PersonPicker'
 
 type RelationType = 'blood' | 'adoption'
 type Sex = 'male' | 'female' | 'unknown'
@@ -43,6 +43,8 @@ interface RelationshipEditDialogProps {
   onDeleteFamily: (id: string) => void
   /** 新しい人物を作って関係に結びつける（1操作で元に戻せる） */
   onAddPersonWithRelation: (personData: Partial<ProcessedPerson>, link: RelationLink) => string
+  /** 子を片親だけの家族から夫婦の家族へ移す（1操作で元に戻せる） */
+  onMoveChild: (childId: string, fromFamilyId: string, toFamilyId: string) => void
 }
 
 const SINGLE_PARENT = '__single__'
@@ -123,7 +125,8 @@ function MarriageDateEditor({
   onSave,
 }: {
   family: FamilyGroup
-  onSave: (date: string | undefined) => void
+  /** 空欄で保存したときは、原文も消して「婚姻日なし」にする */
+  onSave: (updates: Pick<FamilyGroup, 'marriageDate' | 'marriageOriginalDate'>) => void
 }) {
   const [value, setValue] = useState(family.marriageDate ?? '')
   const [error, setError] = useState('')
@@ -133,7 +136,9 @@ function MarriageDateEditor({
   }, [family.id, family.marriageDate])
 
   const inputId = `marriage-date-${family.id}`
-  const changed = value.trim() !== (family.marriageDate ?? '')
+  // 原文だけがある場合は、空欄のままの保存で原文を消せるようにする
+  const changed =
+    value.trim() !== (family.marriageDate ?? '') || (!value.trim() && !!family.marriageOriginalDate)
   return (
     <div className="mt-3 flex flex-wrap items-end gap-2">
       <div className="space-y-1">
@@ -159,8 +164,13 @@ function MarriageDateEditor({
             return
           }
           setError('')
-          onSave(checked.value ?? undefined)
-          toast.success('結婚日を更新しました')
+          if (checked.value) {
+            onSave({ marriageDate: checked.value, marriageOriginalDate: family.marriageOriginalDate })
+            toast.success('結婚日を更新しました')
+          } else {
+            onSave({ marriageDate: undefined, marriageOriginalDate: undefined })
+            toast.success('結婚日を削除しました')
+          }
         }}
       >
         保存
@@ -189,6 +199,7 @@ export function RelationshipEditDialog({
   onUpdateFamily,
   onDeleteFamily,
   onAddPersonWithRelation,
+  onMoveChild,
 }: RelationshipEditDialogProps) {
   const [spouse, setSpouse] = useState<PersonSelection | null>(null)
   const [spouseSex, setSpouseSex] = useState<Sex>('unknown')
@@ -204,6 +215,8 @@ export function RelationshipEditDialog({
 
   const [parent, setParent] = useState<PersonSelection | null>(null)
   const [parentSex, setParentSex] = useState<Sex>('unknown')
+  // 利用者が性別を選んだら、親の組み合わせを変えても既定値で上書きしない
+  const parentSexTouched = useRef(false)
   const [parentFamilyChoice, setParentFamilyChoice] = useState<string | null>(null)
   const [parentRelationType, setParentRelationType] = useState<RelationType>('blood')
 
@@ -222,6 +235,7 @@ export function RelationshipEditDialog({
     setChildRelationType('blood')
     setParent(null)
     setParentSex('unknown')
+    parentSexTouched.current = false
     setParentFamilyChoice(null)
     setParentRelationType('blood')
   }, [isOpen, person?.id, person?.sex])
@@ -229,9 +243,10 @@ export function RelationshipEditDialog({
   const personId = person?.id
 
   // 候補の並び替えに使う世代は、家系図の段と同じく関係から決めたもの
+  // 閉じている間は計算しない（ダイアログは常に描画されているため、編集のたびに走らせない）
   const generationById = useMemo(
-    () => deriveGenerations(availablePersons, families),
-    [availablePersons, families]
+    () => (isOpen ? deriveGenerations(availablePersons, families) : new Map<string, number>()),
+    [isOpen, availablePersons, families]
   )
   const personGeneration = personId ? generationById.get(personId) ?? person?.generation ?? 1 : 1
 
@@ -256,58 +271,64 @@ export function RelationshipEditDialog({
   )
 
   const ancestors = useMemo(
-    () => (personId ? collectRelatives(personId, families, 'up') : new Set<string>()),
-    [personId, families]
+    () => (isOpen && personId ? collectRelatives(personId, families, 'up') : new Set<string>()),
+    [isOpen, personId, families]
   )
   const descendants = useMemo(
-    () => (personId ? collectRelatives(personId, families, 'down') : new Set<string>()),
-    [personId, families]
+    () => (isOpen && personId ? collectRelatives(personId, families, 'down') : new Set<string>()),
+    [isOpen, personId, families]
   )
 
-  const makeCandidates = (exclude: Set<string>, expectedGeneration: number): PersonCandidate[] =>
-    availablePersons
-      .filter(p => p.id !== personId && !exclude.has(p.id))
-      .map(p => {
-        const generation = generationById.get(p.id) ?? p.generation
-        const birthYear = yearOf(p.birth?.date)
-        return {
-          person: p,
-          hint: [birthYear ? `${birthYear}年生` : null, `第${generation}世代`].filter(Boolean).join('・'),
-          recommended: generation === expectedGeneration,
-        }
-      })
+  // 候補は開いているときだけ組み立てる（人数が多い家系図で、編集のたびに3×人数の配列を作らない）
+  const { spouseCandidates, childCandidates, parentCandidates } = useMemo(() => {
+    if (!isOpen || !personId) {
+      return { spouseCandidates: [], childCandidates: [], parentCandidates: [] }
+    }
+    const makeCandidates = (exclude: Set<string>, expectedGeneration: number): PersonCandidate[] =>
+      availablePersons
+        .filter(p => p.id !== personId && !exclude.has(p.id))
+        .map(p => {
+          const generation = generationById.get(p.id) ?? p.generation
+          const birthYear = yearOf(p.birth?.date)
+          return {
+            person: p,
+            hint: [birthYear ? `${birthYear}年生` : null, `第${generation}世代`].filter(Boolean).join('・'),
+            recommended: generation === expectedGeneration,
+          }
+        })
 
-  // 配偶者の候補: 祖先・子孫と、すでに配偶者の人を除く全員
-  const spouseCandidates = makeCandidates(
-    new Set([
-      ...ancestors,
-      ...descendants,
-      ...couples.flatMap(family => family.parents.map(p => p.id)),
-    ]),
-    personGeneration
-  )
-
-  // 子の候補: 祖先と、すでに本人の子である人を除く全員
-  const childCandidates = makeCandidates(
-    new Set([
-      ...ancestors,
-      ...personFamilies
-        .filter(family => family.parents.some(p => p.id === personId))
-        .flatMap(family => family.children.map(c => c.id)),
-    ]),
-    personGeneration + 1
-  )
-
-  // 親の候補: 子孫と、すでに本人の親である人を除く全員
-  const parentCandidates = makeCandidates(
-    new Set([
-      ...descendants,
-      ...personFamilies
-        .filter(family => family.children.some(c => c.id === personId))
-        .flatMap(family => family.parents.map(p => p.id)),
-    ]),
-    personGeneration - 1
-  )
+    return {
+      // 配偶者の候補: 祖先・子孫と、すでに配偶者の人を除く全員
+      spouseCandidates: makeCandidates(
+        new Set([
+          ...ancestors,
+          ...descendants,
+          ...couples.flatMap(family => family.parents.map(p => p.id)),
+        ]),
+        personGeneration
+      ),
+      // 子の候補: 祖先と、すでに本人の子である人を除く全員
+      childCandidates: makeCandidates(
+        new Set([
+          ...ancestors,
+          ...personFamilies
+            .filter(family => family.parents.some(p => p.id === personId))
+            .flatMap(family => family.children.map(c => c.id)),
+        ]),
+        personGeneration + 1
+      ),
+      // 親の候補: 子孫と、すでに本人の親である人を除く全員
+      parentCandidates: makeCandidates(
+        new Set([
+          ...descendants,
+          ...personFamilies
+            .filter(family => family.children.some(c => c.id === personId))
+            .flatMap(family => family.parents.map(p => p.id)),
+        ]),
+        personGeneration - 1
+      ),
+    }
+  }, [isOpen, personId, availablePersons, generationById, ancestors, descendants, couples, personFamilies, personGeneration])
 
   // ---- 子を加える先 ----
   const childFamilyId = resolveChoice(
@@ -352,10 +373,11 @@ export function RelationshipEditDialog({
       : null
 
   // 新しい親の性別は、配偶者になる側の親と反対を既定にする
+  const joinTargetSex = joinTarget?.parents[0].sex ?? null
   useEffect(() => {
-    if (parent?.kind !== 'new') return
-    setParentSex(joinTarget ? oppositeSex(joinTarget.parents[0].sex) : 'unknown')
-  }, [parent?.kind, joinTarget])
+    if (parent?.kind !== 'new' || parentSexTouched.current) return
+    setParentSex(joinTarget ? oppositeSex(joinTargetSex) : 'unknown')
+  }, [parent?.kind, joinTarget, joinTargetSex])
 
   // 両親が同じ性別になる組み合わせは、追加前に知らせる
   const selectedParentSex: ProcessedPerson['sex'] =
@@ -446,13 +468,25 @@ export function RelationshipEditDialog({
 
   const handleAddParent = () => {
     if (!person || !parent) return
-    const parentGeneration = Math.max(1, personGeneration - 1)
+    const parentGeneration = personGeneration - 1
 
     if (parent.kind === 'existing') {
       const parentPerson = availablePersons.find(p => p.id === parent.id)
       if (!parentPerson) return
+      // 本人が片親だけの家族の子で、選んだ夫婦にその親が含まれる場合は、
+      // 片親の家族から夫婦の家族へ移す（同じ親の子として二重に登録しない）
+      const singleParentFamily =
+        parentCoupleTarget && parentCoupleTarget.relationType === parentRelationType
+          ? joinableFamilies.find(
+              f =>
+                f.relationType === parentCoupleTarget.relationType &&
+                parentCoupleTarget.parents.some(p => p.id === f.parents[0].id)
+            )
+          : undefined
       if (joinTarget) {
         onUpdateFamily(joinTarget.id, { parents: [...joinTarget.parents, parentPerson] })
+      } else if (singleParentFamily && parentCoupleTarget) {
+        onMoveChild(person.id, singleParentFamily.id, parentCoupleTarget.id)
       } else if (parentCoupleTarget && parentCoupleTarget.relationType === parentRelationType) {
         onUpdateFamily(parentCoupleTarget.id, { children: [...parentCoupleTarget.children, person] })
       } else {
@@ -510,7 +544,13 @@ export function RelationshipEditDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-3xl max-h-[90vh] overflow-y-auto"
+        // 候補一覧を開いているときのEscは一覧だけを閉じる（入力途中でダイアログごと閉じない）
+        onEscapeKeyDown={e => {
+          if (document.activeElement?.matches(OPEN_PICKER_SELECTOR)) e.preventDefault()
+        }}
+      >
         {confirmDialog}
         <DialogHeader>
           <DialogTitle>家族関係の編集: {person.displayName}</DialogTitle>
@@ -529,7 +569,7 @@ export function RelationshipEditDialog({
             ) : (
               <ul className="space-y-3">
                 {personFamilies.map(family => (
-                  <li key={family.id} className="border border-gray-200 rounded-lg p-4">
+                  <li key={family.id} className="border border-gray-200 rounded-lg p-4" data-family-card>
                     <div className="flex justify-between items-start gap-3 mb-3">
                       <div className="flex flex-wrap gap-2">
                         <Badge variant={family.relationType === 'blood' ? 'default' : 'secondary'}>
@@ -589,7 +629,7 @@ export function RelationshipEditDialog({
                     {family.parents.length === 2 && (
                       <MarriageDateEditor
                         family={family}
-                        onSave={date => onUpdateFamily(family.id, { marriageDate: date })}
+                        onSave={updates => onUpdateFamily(family.id, updates)}
                       />
                     )}
                   </li>
@@ -710,12 +750,20 @@ export function RelationshipEditDialog({
                   onChange={selection => {
                     setParent(selection)
                     setParentFamilyChoice(null)
+                    parentSexTouched.current = false
                   }}
                 />
                 {parent?.kind === 'new' && (
                   <div className="pt-1 space-y-1.5">
                     <Label htmlFor="rel-parent-sex">性別</Label>
-                    <SexSelect id="rel-parent-sex" value={parentSex} onChange={setParentSex} />
+                    <SexSelect
+                      id="rel-parent-sex"
+                      value={parentSex}
+                      onChange={sex => {
+                        parentSexTouched.current = true
+                        setParentSex(sex)
+                      }}
+                    />
                   </div>
                 )}
               </div>

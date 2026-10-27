@@ -264,6 +264,28 @@ describe('親と姓・性別の整合', () => {
     expect(codesOf(data)).not.toContain('surname_differs_from_parent')
   })
 
+  it('養子縁組で養親の姓になった子は指摘しない（実親の家族にも子として残っていても）', () => {
+    const data = tree(
+      [named('father', '山田', 'male'), named('mother', '山田', 'female'), named('adoptive', '佐藤', 'male'), named('child', '佐藤')],
+      [
+        family({ id: 'f1', parents: ['father', 'mother'], children: ['child'] }),
+        family({ id: 'f2', parents: ['adoptive'], children: ['child'], relation_type: 'adoption' }),
+      ]
+    )
+    expect(codesOf(data)).not.toContain('surname_differs_from_parent')
+  })
+
+  it('同じ子が複数の家族に属していても、指摘は1件にまとめる', () => {
+    const data = tree(
+      [named('father', '丙山', 'male'), named('adoptive', '甲田', 'male'), named('child', '森本')],
+      [
+        family({ id: 'f1', parents: ['father'], children: ['child'] }),
+        family({ id: 'f2', parents: ['adoptive'], children: ['child'], relation_type: 'adoption' }),
+      ]
+    )
+    expect(codesOf(data).filter(code => code === 'surname_differs_from_parent')).toHaveLength(1)
+  })
+
   it('親の姓が分からない場合は判定しない', () => {
     const data = tree(
       [named('mother', ''), named('child', '森本')],

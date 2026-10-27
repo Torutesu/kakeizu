@@ -16,7 +16,9 @@ const MAX_CANVAS_EDGE = 8000
 // 印刷物では余白より文字の大きさが大事なため、画面のカードより幅を広げ、
 // 兄弟の間隔（cardSpacing）いっぱい近くまでカードを使って文字を大きくする。
 // 用紙に収めると全体が縮小されるので、縮小後も読める大きさを確保するのが目的
-const CARD_W = LAYOUT_CONFIG.cardSpacing - 14
+const CARD_W_MAX = LAYOUT_CONFIG.cardSpacing - 14
+// 隣のカードとの間に最低限あける隙間
+const CARD_GAP = 14
 const CARD_H = 150
 const PADDING = 60
 const FONT_NAME = 20
@@ -32,8 +34,8 @@ function estimateTextWidth(text: string, fontSize: number): number {
   return width
 }
 
-function fittedText(x: number, y: number, text: string, fontSize: number, attrs: string): string {
-  const maxWidth = CARD_W - TEXT_LEFT - 8
+function fittedText(x: number, y: number, text: string, fontSize: number, attrs: string, cardWidth: number): string {
+  const maxWidth = cardWidth - TEXT_LEFT - 8
   const fit = estimateTextWidth(text, fontSize) > maxWidth
     ? ` textLength="${maxWidth}" lengthAdjust="spacingAndGlyphs"`
     : ''
@@ -64,6 +66,22 @@ export function buildTreeSvg(
   const getGenerationY = (generation: number) =>
     LAYOUT_CONFIG.initialY + (generation - 1) * LAYOUT_CONFIG.generationSpacing
   const positions = calculateTreeLayout(withDerivedGenerations(persons, families), families, getGenerationY)
+
+  // 手で配置したカードは画面のカード幅（cardWidth）を前提に置かれているため、
+  // 同じ段で最も近いカードどうしの間隔に合わせてPDFのカード幅を決める（重ならないように）
+  const rows = new Map<number, number[]>()
+  positions.forEach(pos => {
+    const row = Math.round(pos.y)
+    const list = rows.get(row)
+    if (list) list.push(pos.x)
+    else rows.set(row, [pos.x])
+  })
+  let minGap = Infinity
+  rows.forEach(xs => {
+    xs.sort((a, b) => a - b)
+    for (let i = 1; i < xs.length; i++) minGap = Math.min(minGap, xs[i] - xs[i - 1])
+  })
+  const CARD_W = Math.max(LAYOUT_CONFIG.cardWidth, Math.min(CARD_W_MAX, minGap - CARD_GAP))
 
   // 座標はカード中心。全体の範囲を求めて原点を左上に平行移動する
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
@@ -146,14 +164,14 @@ export function buildTreeSvg(
     parts.push(
       `<rect x="${left}" y="${top}" width="${CARD_W}" height="${CARD_H}" rx="8" fill="${fill}" stroke="#9ca3af"/>`,
       `<rect x="${left}" y="${top}" width="5" height="${CARD_H}" rx="2" fill="${accent}"/>`,
-      fittedText(left + TEXT_LEFT, top + FONT_NAME + 8, person.displayName, FONT_NAME, 'font-weight="bold" fill="#111827"')
+      fittedText(left + TEXT_LEFT, top + FONT_NAME + 8, person.displayName, FONT_NAME, 'font-weight="bold" fill="#111827"', CARD_W)
     )
 
     let cursorY = top + FONT_NAME + 8
     if (person.relation_to_family_head) {
       cursorY += FONT_RELATION + 8
       parts.push(
-        fittedText(left + TEXT_LEFT, cursorY, person.relation_to_family_head, FONT_RELATION, 'fill="#6b7280"')
+        fittedText(left + TEXT_LEFT, cursorY, person.relation_to_family_head, FONT_RELATION, 'fill="#6b7280"', CARD_W)
       )
     }
 
@@ -164,7 +182,7 @@ export function buildTreeSvg(
     // 日付・年齢はカードの下端から積む（続柄の有無で位置がぶれないように）
     details.forEach(([text, color], index) => {
       const baseline = top + CARD_H - 12 - (details.length - 1 - index) * (FONT_DETAIL + 6)
-      parts.push(fittedText(left + TEXT_LEFT, baseline, text, FONT_DETAIL, `fill="${color}"`))
+      parts.push(fittedText(left + TEXT_LEFT, baseline, text, FONT_DETAIL, `fill="${color}"`, CARD_W))
     })
   })
 

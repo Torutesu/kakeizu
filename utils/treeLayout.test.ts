@@ -113,6 +113,38 @@ describe('calculateTreeLayout', () => {
     expect(positions.get('second')!.x).toBeGreaterThan(positions.get('third')!.x)
   })
 
+  it('続柄の出生順は男女別に比べ、男女間は戸籍の記載順を保つ', () => {
+    // 戸籍の記載順: 長男, 二男, 長女（生年月日なし）。長女は二男より年下
+    const { positions } = layout({
+      people: [
+        makePerson({ id: 'parent' }),
+        makePerson({ id: 'first_son', generation: 2, relation_to_family_head: '長男' }),
+        makePerson({ id: 'second_son', generation: 2, relation_to_family_head: '二男' }),
+        makePerson({ id: 'first_daughter', generation: 2, relation_to_family_head: '長女' }),
+      ],
+      families: [
+        makeFamily({ id: 'f', parents: ['parent'], children: ['first_son', 'second_son', 'first_daughter'] }),
+      ],
+    })
+    expect(positions.get('first_son')!.x).toBeGreaterThan(positions.get('second_son')!.x)
+    expect(positions.get('second_son')!.x).toBeGreaterThan(positions.get('first_daughter')!.x)
+  })
+
+  it('生年月日の無い長男も、生年月日のある二男より年長として右に置く', () => {
+    const { positions } = layout({
+      people: [
+        makePerson({ id: 'parent' }),
+        makePerson({
+          id: 'second_son', generation: 2, relation_to_family_head: '二男',
+          birth: { original_date: null, date: '1950-01-01', place: null },
+        }),
+        makePerson({ id: 'first_son', generation: 2, relation_to_family_head: '長男' }),
+      ],
+      families: [makeFamily({ id: 'f', parents: ['parent'], children: ['second_son', 'first_son'] })],
+    })
+    expect(positions.get('first_son')!.x).toBeGreaterThan(positions.get('second_son')!.x)
+  })
+
   it('夫婦は夫を右・妻を左に置く（データ上の並び順によらない）', () => {
     const { positions } = layout({
       people: [
@@ -251,5 +283,50 @@ describe('calculateTreeLayout', () => {
     persons.forEach(p => expect(positions.has(p.id)).toBe(true))
     // 子どもたちは別々の位置に配置される
     expect(positions.get('child1')!.x).not.toBe(positions.get('child2')!.x)
+  })
+
+  it('再婚した人は配偶者たちの間に置かれ、婚姻線が他の配偶者のカードを横切らない', () => {
+    for (const [hubSex, spouseSex] of [['male', 'female'], ['female', 'male']] as const) {
+      const { positions } = layout({
+        people: [
+          makePerson({ id: 'hub', sex: hubSex }),
+          makePerson({ id: 'first', sex: spouseSex }),
+          makePerson({ id: 'second', sex: spouseSex }),
+        ],
+        families: [
+          makeFamily({ id: 'f1', parents: ['hub', 'first'], marriage_date: { original_date: null, date: '1950-01-01' } }),
+          makeFamily({ id: 'f2', parents: ['hub', 'second'], marriage_date: { original_date: null, date: '1960-01-01' } }),
+        ],
+      })
+      const hub = positions.get('hub')!.x
+      const first = positions.get('first')!.x
+      const second = positions.get('second')!.x
+      // 配偶者2人の間に本人がいる
+      expect(Math.min(first, second)).toBeLessThan(hub)
+      expect(Math.max(first, second)).toBeGreaterThan(hub)
+      // 隣り合う（間に別のカードを挟まない）
+      expect(Math.abs(hub - first)).toBeLessThanOrEqual(LAYOUT_CONFIG.spouseSpacing + 1)
+      expect(Math.abs(hub - second)).toBeLessThanOrEqual(LAYOUT_CONFIG.spouseSpacing + 1)
+    }
+  })
+
+  it('子の世代での再婚も、本人が配偶者たちの間に置かれる', () => {
+    const { positions } = layout({
+      people: [
+        makePerson({ id: 'parent' }),
+        makePerson({ id: 'woman', sex: 'female', generation: 2 }),
+        makePerson({ id: 'husband1', sex: 'male', generation: 2 }),
+        makePerson({ id: 'husband2', sex: 'male', generation: 2 }),
+      ],
+      families: [
+        makeFamily({ id: 'f0', parents: ['parent'], children: ['woman'] }),
+        makeFamily({ id: 'f1', parents: ['woman', 'husband1'], marriage_date: { original_date: null, date: '1950-01-01' } }),
+        makeFamily({ id: 'f2', parents: ['woman', 'husband2'], marriage_date: { original_date: null, date: '1960-01-01' } }),
+      ],
+    })
+    const woman = positions.get('woman')!.x
+    const xs = [positions.get('husband1')!.x, positions.get('husband2')!.x]
+    expect(Math.min(...xs)).toBeLessThan(woman)
+    expect(Math.max(...xs)).toBeGreaterThan(woman)
   })
 })

@@ -95,6 +95,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
     addFamily,
     updateFamily,
     deleteFamily,
+    moveChildToFamily,
     importFamilyTreeData,
     exportFamilyTreeData,
     saveNow,
@@ -367,11 +368,12 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
   // ダイアログでページ数・倍率を計算するため、実際に書き出す図と同じ計算で描画サイズを求める
   // （自動配置の人物は保存データに座標を持たないため、人物の x,y からは求められない）
+  // 図全体を組み立てるため、PDFダイアログを開いているときだけ計算する
   const pdfContentSize = useMemo(() => {
-    if (persons.length === 0) return { width: 0, height: 0 }
+    if (!isPdfDialogOpen || persons.length === 0) return { width: 0, height: 0 }
     const { width, height } = buildTreeSvg(persons, families, project?.name || '家系図')
     return { width, height }
-  }, [persons, families, project?.name])
+  }, [isPdfDialogOpen, persons, families, project?.name])
 
   // JSON読み込みハンドラー
   const handleLoadFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -931,6 +933,7 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
         onUpdateFamily={updateFamily}
         onDeleteFamily={deleteFamily}
         onAddPersonWithRelation={addPersonWithRelation}
+        onMoveChild={moveChildToFamily}
       />
 
       <AddPersonDialog

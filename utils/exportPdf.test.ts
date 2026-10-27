@@ -119,3 +119,25 @@ describe('buildTreeSvg: 婚姻日と文字の大きさ', () => {
     expect(sizeOf('生 1950-03-01')).toBeGreaterThanOrEqual(15)
   })
 })
+
+describe('buildTreeSvg: 手で配置したカード', () => {
+  it('手で近くに置いたカードどうしがPDFで重ならないよう、カード幅を狭める', () => {
+    const near: FamilyTreeData = {
+      people: [0, 175].map((x, i) => ({
+        id: `p${i}`, generation: 1, sex: null,
+        name: { surname: '甲', given_name: `${i}` },
+        birth: { original_date: null, date: null, place: null },
+        death: { original_date: null, date: null, place: null },
+        position: { x, y: 0 },
+      })),
+      families: [],
+    }
+    const { persons, families } = processFamilyData(near)
+    const { svg } = buildTreeSvg(persons, families, '案件', NOW)
+    const widths = [...svg.matchAll(/<rect x="[^"]+" y="[^"]+" width="(\d+(?:\.\d+)?)" height="150"/g)].map(m => Number(m[1]))
+      // 性別の色の帯（幅5）を除いた、カード本体の枠
+      .filter(width => width > 10)
+    expect(widths.length).toBe(2)
+    widths.forEach(width => expect(width).toBeLessThanOrEqual(175 - 14))
+  })
+})
