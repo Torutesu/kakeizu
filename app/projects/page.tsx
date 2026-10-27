@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -17,16 +17,31 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Loader2, Plus, Trash2, Users, FolderOpen } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Loader2, Plus, Trash2, Users, FolderOpen, Search, MoreHorizontal, Pencil, X } from 'lucide-react'
 import { fetchOrgContext, OrgContext } from '@/lib/db/org'
 import {
   fetchProjects,
   createProject,
   deleteProject,
+  updateProject,
   ProjectSummary,
 } from '@/lib/db/projects'
-import { canCreateProject, canDeleteProject, canAssignProjectMembers } from '@/lib/auth/permissions'
+import {
+  canCreateProject,
+  canDeleteProject,
+  canAssignProjectMembers,
+} from '@/lib/auth/permissions'
 import { useConfirm } from '@/hooks/useConfirm'
+import { formatRelativeDateTime } from '@/utils/formatDate'
+
+type ProjectFormState = { name: string; clientName: string }
 
 export default function ProjectsPage() {
   const router = useRouter()
@@ -34,17 +49,17 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
 
-  // 新規作成ダイアログ
+  // 新規作成・名前変更ダイアログ（同じフォームを使う）
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newClientName, setNewClientName] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
+  const [editTarget, setEditTarget] = useState<ProjectSummary | null>(null)
+  const [form, setForm] = useState<ProjectFormState>({ name: '', clientName: '' })
+  const [isSaving, setIsSaving] = useState(false)
 
   // アサイン管理ダイアログ
   const [assignTarget, setAssignTarget] = useState<ProjectSummary | null>(null)
 
-  // 確認ダイアログ
   const { confirm, confirmDialog } = useConfirm()
 
   const load = useCallback(async () => {
@@ -69,21 +84,55 @@ export default function ProjectsPage() {
     load()
   }, [load])
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const filteredProjects = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return projects
+    return projects.filter(
+      p => p.name.toLowerCase().includes(q) || (p.clientName ?? '').toLowerCase().includes(q)
+    )
+  }, [projects, query])
+
+  const openCreate = () => {
+    setForm({ name: '', clientName: '' })
+    setIsCreateOpen(true)
+  }
+
+  const openEdit = (project: ProjectSummary) => {
+    setForm({ name: project.name, clientName: project.clientName ?? '' })
+    setEditTarget(project)
+  }
+
+  const closeForm = () => {
+    if (isSaving) return
+    setIsCreateOpen(false)
+    setEditTarget(null)
+  }
+
+  const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!ctx) return
-    setIsCreating(true)
+    const name = form.name.trim()
+    const clientName = form.clientName.trim()
+    if (!name) return
+    setIsSaving(true)
     try {
-      const projectId = await createProject(ctx.orgId, newName, newClientName || undefined)
-      toast.success('案件を作成しました')
-      setIsCreateOpen(false)
-      setNewName('')
-      setNewClientName('')
-      router.push(`/projects/${projectId}`)
+      if (editTarget) {
+        await updateProject(editTarget.id, { name, clientName: clientName || null })
+        setProjects(prev =>
+          prev.map(p => (p.id === editTarget.id ? { ...p, name, clientName: clientName || null } : p))
+        )
+        toast.success('案件を更新しました')
+        setEditTarget(null)
+      } else {
+        const projectId = await createProject(ctx.orgId, name, clientName || undefined)
+        toast.success('案件を作成しました')
+        setIsCreateOpen(false)
+        router.push(`/projects/${projectId}`)
+      }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '作成に失敗しました')
+      toast.error(err instanceof Error ? err.message : '保存に失敗しました')
     } finally {
-      setIsCreating(false)
+      setIsSaving(false)
     }
   }
 
@@ -106,15 +155,16 @@ export default function ProjectsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50" role="status" aria-live="polite">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="sr-only">読み込み中</span>
       </div>
     )
   }
 
   if (error || !ctx) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error ?? '読み込みに失敗しました'}</p>
           <Button onClick={load}>再試行</Button>
@@ -123,117 +173,190 @@ export default function ProjectsPage() {
     )
   }
 
+  // 名前変更は編集権限があれば可。担当外の案件は一覧に出ないため、ロールだけで判断できる
+  const canEdit = ctx.role !== 'viewer'
+  const showActions = canEdit || canAssignProjectMembers(ctx.role) || canDeleteProject(ctx.role)
+  const isFormOpen = isCreateOpen || editTarget !== null
+
   return (
     <div className="min-h-screen bg-gray-50">
       <AppHeader ctx={ctx} />
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">案件一覧</h1>
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">案件一覧</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              案件ごとに1つの家系図を管理します。{projects.length > 0 && `全${projects.length}件`}
+            </p>
+          </div>
           {canCreateProject(ctx.role) && (
-            <Button onClick={() => setIsCreateOpen(true)}>
+            <Button onClick={openCreate}>
               <Plus className="w-4 h-4 mr-2" />
               新しい案件
             </Button>
           )}
         </div>
 
+        {projects.length > 0 && (
+          <div className="relative mb-5 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true" />
+            <Input
+              type="search"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="案件名・顧客名で絞り込む"
+              aria-label="案件を検索"
+              className="pl-10 bg-white"
+            />
+            {query && (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-gray-400 hover:text-gray-600"
+                onClick={() => setQuery('')}
+                aria-label="検索条件をクリア"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
+
         {projects.length === 0 ? (
           <Card>
             <CardContent className="py-16 text-center text-gray-500">
-              <FolderOpen className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>アクセスできる案件がありません。</p>
+              <FolderOpen className="w-12 h-12 mx-auto mb-4 text-gray-300" aria-hidden="true" />
+              <p className="font-medium text-gray-700">まだ案件がありません</p>
               {canCreateProject(ctx.role) ? (
-                <p className="text-sm mt-1">「新しい案件」から最初の家系図を作成してください。</p>
+                <>
+                  <p className="text-sm mt-1">最初の案件を作成して、戸籍書類を取り込みましょう。</p>
+                  <Button className="mt-5" onClick={openCreate}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    新しい案件を作成
+                  </Button>
+                </>
               ) : (
                 <p className="text-sm mt-1">管理者に案件へのアサインを依頼してください。</p>
               )}
             </CardContent>
           </Card>
+        ) : filteredProjects.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-gray-500">
+              <p>「{query}」に一致する案件はありません。</p>
+            </CardContent>
+          </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {projects.map(project => (
-              <Card key={project.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between">
-                    <Link href={`/projects/${project.id}`} className="flex-1 min-w-0">
-                      <h2 className="font-semibold text-gray-900 truncate hover:text-blue-600">
-                        {project.name}
-                      </h2>
-                      {project.clientName && (
-                        <p className="text-sm text-gray-500 truncate">顧客: {project.clientName}</p>
-                      )}
-                      <p className="text-xs text-gray-400 mt-2">
-                        更新: {new Date(project.updatedAt).toLocaleString('ja-JP')}
-                      </p>
-                    </Link>
-                    <div className="flex gap-1 ml-3">
-                      {canAssignProjectMembers(ctx.role) && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="担当者のアサイン"
-                          onClick={() => setAssignTarget(project)}
-                        >
-                          <Users className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {canDeleteProject(ctx.role) && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="案件を削除"
-                          className="text-red-500 hover:text-red-700"
-                          onClick={() => handleDelete(project)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+          <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="案件">
+            {filteredProjects.map(project => (
+              <li key={project.id}>
+                <Card className="h-full hover:shadow-md hover:border-gray-300 transition-all">
+                  <CardContent className="p-5 h-full flex flex-col">
+                    <div className="flex items-start justify-between gap-2">
+                      <Link
+                        href={`/projects/${project.id}`}
+                        className="flex-1 min-w-0 group focus-visible:outline-none"
+                      >
+                        <h2 className="font-semibold text-gray-900 leading-snug line-clamp-2 group-hover:text-primary group-focus-visible:underline">
+                          {project.name}
+                        </h2>
+                        <p className="text-sm text-gray-500 truncate mt-0.5">
+                          {project.clientName ? `顧客: ${project.clientName}` : '顧客名なし'}
+                        </p>
+                      </Link>
+                      {showActions && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0 -mr-2 -mt-1"
+                              aria-label={`「${project.name}」の操作`}
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {canEdit && (
+                              <DropdownMenuItem onClick={() => openEdit(project)}>
+                                <Pencil className="w-4 h-4 mr-2" />
+                                案件名・顧客名を変更
+                              </DropdownMenuItem>
+                            )}
+                            {canAssignProjectMembers(ctx.role) && (
+                              <DropdownMenuItem onClick={() => setAssignTarget(project)}>
+                                <Users className="w-4 h-4 mr-2" />
+                                担当者のアサイン
+                              </DropdownMenuItem>
+                            )}
+                            {canDeleteProject(ctx.role) && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-red-600 focus:text-red-700"
+                                  onClick={() => handleDelete(project)}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  案件を削除
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                    <p className="text-xs text-gray-400 mt-auto pt-4">
+                      <time dateTime={project.updatedAt}>更新: {formatRelativeDateTime(project.updatedAt)}</time>
+                    </p>
+                  </CardContent>
+                </Card>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </main>
 
-      {/* 新規作成ダイアログ */}
-      <Dialog open={isCreateOpen} onOpenChange={open => !open && setIsCreateOpen(false)}>
+      {/* 新規作成・名前変更ダイアログ */}
+      <Dialog open={isFormOpen} onOpenChange={open => !open && closeForm()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>新しい案件を作成</DialogTitle>
+            <DialogTitle>{editTarget ? '案件の情報を変更' : '新しい案件を作成'}</DialogTitle>
             <DialogDescription>
-              案件ごとに1つの家系図を管理します。
+              {editTarget
+                ? '案件名と顧客名を変更します。家系図のデータには影響しません。'
+                : '案件ごとに1つの家系図を管理します。作成後すぐに戸籍書類を取り込めます。'}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-4">
+          <form onSubmit={handleSubmitForm} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="project-name">案件名 *</Label>
               <Input
                 id="project-name"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="例: 山田家 家系図作成"
                 required
+                maxLength={200}
+                autoFocus
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="client-name">顧客名（任意）</Label>
               <Input
                 id="client-name"
-                value={newClientName}
-                onChange={e => setNewClientName(e.target.value)}
+                value={form.clientName}
+                onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))}
                 placeholder="例: 山田太郎様"
+                maxLength={200}
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>
+              <Button type="button" variant="outline" onClick={closeForm} disabled={isSaving}>
                 キャンセル
               </Button>
-              <Button type="submit" disabled={isCreating}>
-                {isCreating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                作成
+              <Button type="submit" disabled={isSaving || !form.name.trim()}>
+                {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {editTarget ? '保存' : '作成'}
               </Button>
             </div>
           </form>
@@ -242,7 +365,6 @@ export default function ProjectsPage() {
 
       {confirmDialog}
 
-      {/* アサイン管理ダイアログ */}
       {assignTarget && (
         <ProjectAssignDialog
           ctx={ctx}

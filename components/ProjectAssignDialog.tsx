@@ -113,6 +113,7 @@ export function ProjectAssignDialog({ ctx, project, onClose }: ProjectAssignDial
                     checked={assignedIds.has(member.userId)}
                     disabled={busyUserId === member.userId}
                     onCheckedChange={checked => handleToggle(member, checked)}
+                    aria-label={`${member.displayName || member.email} をこの案件にアサイン`}
                   />
                 )}
               </div>

@@ -167,7 +167,7 @@ export function KosekiUploadDialog({
           <DialogDescription>
             戸籍謄本のPDF・画像（複数可）をアップロードして家系図データを自動抽出します。
             複数の書類に登場する同一人物は自動的に1人に統合されます。
-            ファイルは案件に紐づけて保存され、解析のためGoogle Gemini APIに送信されます。
+            ファイルは案件に紐づけて非公開ストレージに保存され、読み取りのため外部のAI（入力を学習に使わない契約のもの）へ送信されます。
           </DialogDescription>
         </DialogHeader>
 

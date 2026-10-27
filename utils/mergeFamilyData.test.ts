@@ -356,3 +356,57 @@ describe('mergeFamilyTreeData: 戸籍の統合', () => {
     expect(mergeFamilyTreeData(withRegistry, empty).data.registries).toHaveLength(1)
   })
 })
+
+describe('家族idの衝突（書類ごとに f001 から振り直される）', () => {
+  it('idが同じでも親が違えば別の家族として追加し、idを振り直す', () => {
+    const existing: FamilyTreeData = {
+      people: [
+        makePerson({ id: 'a', name: { surname: '甲', given_name: '一' } }),
+        makePerson({ id: 'b', name: { surname: '甲', given_name: '花' } }),
+        makePerson({ id: 'c', name: { surname: '甲', given_name: '子' } }),
+      ],
+      families: [makeFamily({ id: 'f001', parents: ['a', 'b'], children: ['c'] })],
+    }
+    const incoming: FamilyTreeData = {
+      people: [
+        makePerson({ id: 'x', name: { surname: '乙', given_name: '二' } }),
+        makePerson({ id: 'y', name: { surname: '乙', given_name: '梅' } }),
+        makePerson({ id: 'z', name: { surname: '乙', given_name: '孫' } }),
+      ],
+      families: [makeFamily({ id: 'f001', parents: ['x', 'y'], children: ['z'] })],
+    }
+
+    const { data } = mergeFamilyTreeData(existing, incoming)
+
+    expect(data.families).toHaveLength(2)
+    const first = data.families.find(f => f.parents.includes('a'))!
+    expect(first.children).toEqual(['c'])
+    const second = data.families.find(f => f.parents.includes('x'))!
+    expect(second.children).toEqual(['z'])
+    expect(second.id).not.toBe('f001')
+    expect(new Set(data.families.map(f => f.id)).size).toBe(2)
+  })
+
+  it('idが同じで親も同じなら統合する', () => {
+    const existing: FamilyTreeData = {
+      people: [
+        makePerson({ id: 'a', name: { surname: '甲', given_name: '一' }, birth: { original_date: null, date: '1900-01-01', place: null } }),
+        makePerson({ id: 'b', name: { surname: '甲', given_name: '花' }, birth: { original_date: null, date: '1902-01-01', place: null } }),
+        makePerson({ id: 'c', name: { surname: '甲', given_name: '子' }, birth: { original_date: null, date: '1925-01-01', place: null } }),
+      ],
+      families: [makeFamily({ id: 'f001', parents: ['a', 'b'], children: ['c'] })],
+    }
+    const incoming: FamilyTreeData = {
+      people: [
+        makePerson({ id: 'p1', name: { surname: '甲', given_name: '一' }, birth: { original_date: null, date: '1900-01-01', place: null } }),
+        makePerson({ id: 'p2', name: { surname: '甲', given_name: '花' }, birth: { original_date: null, date: '1902-01-01', place: null } }),
+        makePerson({ id: 'p3', name: { surname: '甲', given_name: '次' }, birth: { original_date: null, date: '1928-01-01', place: null } }),
+      ],
+      families: [makeFamily({ id: 'f001', parents: ['p1', 'p2'], children: ['p3'] })],
+    }
+
+    const { data } = mergeFamilyTreeData(existing, incoming)
+    expect(data.families).toHaveLength(1)
+    expect(data.families[0].children).toHaveLength(2)
+  })
+})

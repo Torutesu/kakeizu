@@ -7,7 +7,7 @@ import { fetchOrgContext, signOut } from '@/lib/db/org'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { AuthShell } from '@/components/auth/AuthShell'
 import { Loader2, MailQuestion, RefreshCw } from 'lucide-react'
 
 export default function OnboardingPage() {
@@ -60,8 +60,9 @@ export default function OnboardingPage() {
 
   if (isChecking) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50" role="status" aria-live="polite">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="sr-only">確認中</span>
       </div>
     )
   }
@@ -69,20 +70,16 @@ export default function OnboardingPage() {
   // 招待待ちの状態（組織は既に存在し、まだどこにも所属していない）
   if (!canCreateOrg) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <div className="w-11 h-11 rounded-lg bg-blue-50 flex items-center justify-center mb-3">
-              <MailQuestion className="w-5 h-5 text-blue-600" />
-            </div>
-            <CardTitle>招待をお待ちください</CardTitle>
-            <CardDescription>
-              このアプリは招待制です。管理者があなたのメールアドレスを招待すると、
-              このページを更新するだけで利用できるようになります。
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {error && <p className="text-sm text-red-600">{error}</p>}
+      <AuthShell
+        title="招待をお待ちください"
+        description="このアプリは招待制です。管理者があなたのメールアドレスを招待すると、このページを更新するだけで利用できるようになります。"
+        icon={
+          <div className="w-11 h-11 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+            <MailQuestion className="w-5 h-5 text-primary" />
+          </div>
+        }
+      >
+            {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
             <Button className="w-full" onClick={check}>
               <RefreshCw className="w-4 h-4 mr-2" />
               招待を確認する
@@ -94,39 +91,38 @@ export default function OnboardingPage() {
             >
               別のアカウントでログインする
             </Button>
-          </CardContent>
-        </Card>
-      </div>
+      </AuthShell>
     )
   }
 
   // 最初の管理者のみ: 組織を作成できる
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>組織のセットアップ</CardTitle>
-          <CardDescription>
-            最初の組織を作成します。作成した方がこの組織の<strong>管理者</strong>になり、
-            以降は管理者からの招待を受けた方だけが参加できます。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <AuthShell
+      title="事務所のセットアップ"
+      description={
+        <>
+          最初の事務所（組織）を作成します。作成した方がこの事務所の<strong>管理者</strong>になり、
+          以降は管理者からの招待を受けた方だけが参加できます。
+        </>
+      }
+    >
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="org-name">組織名</Label>
+              <Label htmlFor="org-name">事務所名</Label>
               <Input
                 id="org-name"
                 value={orgName}
                 onChange={e => setOrgName(e.target.value)}
-                placeholder="例: 株式会社セレクト"
+                placeholder="例: 山田司法書士事務所"
                 required
+                maxLength={100}
+                autoFocus
               />
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              組織を作成して始める
+              事務所を作成して始める
             </Button>
           </form>
           <Button
@@ -136,8 +132,6 @@ export default function OnboardingPage() {
           >
             別のアカウントでログインする
           </Button>
-        </CardContent>
-      </Card>
-    </div>
+    </AuthShell>
   )
 }

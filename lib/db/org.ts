@@ -26,9 +26,12 @@ export async function fetchOrgContext(): Promise<OrgContext | null> {
 
   await supabase.rpc('accept_pending_invitations')
 
+  // RLSは「同じ組織のメンバー行」を全て見せるため、自分の行に絞らないと
+  // 組織を作った管理者の行（最も古い行）を拾ってしまい、全員が管理者として表示される
   const { data, error } = await supabase
     .from('memberships')
     .select('org_id, role, organizations(id, name, worker_access_mode)')
+    .eq('user_id', user.id)
     .order('created_at', { ascending: true })
     .limit(1)
 
@@ -46,7 +49,7 @@ export async function fetchOrgContext(): Promise<OrgContext | null> {
     orgId: membership.org_id,
     orgName: org?.name ?? '',
     role: membership.role as OrgRole,
-    workerAccessMode: (org?.worker_access_mode ?? 'all_projects') as WorkerAccessMode,
+    workerAccessMode: (org?.worker_access_mode ?? 'assigned_only') as WorkerAccessMode,
   }
 }
 

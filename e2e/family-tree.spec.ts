@@ -164,7 +164,7 @@ test.describe('PDF書き出しの設定', () => {
   test('分割を選ぶと複数ページになり、警告が出ない', async ({ page }) => {
     await page.getByTestId('paper-a4').click()
     await page.getByTestId('mode-tile').click()
-    await expect(page.getByTestId('pdf-plan')).toContainText('ページ（横')
+    await expect(page.getByTestId('pdf-plan')).toContainText('ページ（縦')
     await expect(page.getByTestId('too-small-warning')).toHaveCount(0)
   })
 

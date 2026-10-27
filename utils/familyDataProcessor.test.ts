@@ -162,3 +162,47 @@ describe('isValidFamilyTreeData', () => {
     expect(isValidFamilyTreeData('json')).toBe(false)
   })
 })
+
+describe('isValidFamilyTreeData: 読み込むファイルの検査', () => {
+  it('people/families の配列があり、各要素に最低限の形があれば妥当', () => {
+    expect(
+      isValidFamilyTreeData({
+        people: [{ id: 'p1', name: { surname: 'a', given_name: 'b' } }],
+        families: [{ id: 'f1', parents: ['p1'], children: [] }],
+      })
+    ).toBe(true)
+    expect(isValidFamilyTreeData({ people: [], families: [] })).toBe(true)
+  })
+
+  it('name の無い人物や配列でない家族は不正（編集画面で例外になるため）', () => {
+    expect(isValidFamilyTreeData({ people: [{ id: 'p1' }], families: [] })).toBe(false)
+    expect(isValidFamilyTreeData({ people: [], families: [{ id: 'f1', parents: 'p1' }] })).toBe(false)
+    expect(isValidFamilyTreeData({ people: 'x', families: [] })).toBe(false)
+    expect(isValidFamilyTreeData(null)).toBe(false)
+  })
+})
+
+describe('結婚・離婚日の原文表記の往復', () => {
+  it('西暦に変換できなかった結婚日の原文が保存データに残る', () => {
+    const data: FamilyTreeData = {
+      people: [
+        { id: 'a', generation: 1, sex: 'male', name: { surname: '甲', given_name: '一' }, birth: { original_date: null, date: null, place: null }, death: { original_date: null, date: null, place: null } },
+        { id: 'b', generation: 1, sex: 'female', name: { surname: '甲', given_name: '花' }, birth: { original_date: null, date: null, place: null }, death: { original_date: null, date: null, place: null } },
+      ],
+      families: [
+        {
+          id: 'f1',
+          parents: ['a', 'b'],
+          children: [],
+          marriage_date: { original_date: '大正九年三月', date: null },
+          divorce_date: { original_date: null, date: null },
+          relation_type: 'blood',
+        },
+      ],
+    }
+    const processed = processFamilyData(data)
+    expect(processed.families[0].marriageOriginalDate).toBe('大正九年三月')
+    const roundTrip = toFamilyTreeData(processed.persons, processed.families)
+    expect(roundTrip.families[0].marriage_date?.original_date).toBe('大正九年三月')
+  })
+})

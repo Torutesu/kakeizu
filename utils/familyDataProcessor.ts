@@ -94,6 +94,9 @@ export interface FamilyGroup {
   children: ProcessedPerson[]
   marriageDate?: string
   divorceDate?: string
+  // 和暦などの原文表記。西暦に変換できなかった日付も、往復で失わないように保持する
+  marriageOriginalDate?: string
+  divorceOriginalDate?: string
   relationType: 'blood' | 'adoption'
   marriageLines: Array<{x1: number, y1: number, x2: number, y2: number}>
   childrenLines: Array<{
@@ -173,6 +176,8 @@ export function processFamilyData(data: FamilyTreeData): {
           children,
           marriageDate: family.marriage_date?.date || undefined,
           divorceDate: family.divorce_date?.date || undefined,
+          marriageOriginalDate: family.marriage_date?.original_date || undefined,
+          divorceOriginalDate: family.divorce_date?.original_date || undefined,
           relationType: family.relation_type,
           marriageLines: [], // レイアウト計算で設定
           childrenLines: []  // レイアウト計算で設定
@@ -213,7 +218,20 @@ export function generateId(prefix: string): string {
 export function isValidFamilyTreeData(data: unknown): data is FamilyTreeData {
   if (!data || typeof data !== 'object') return false
   const record = data as Record<string, unknown>
-  return Array.isArray(record.people) && Array.isArray(record.families)
+  if (!Array.isArray(record.people) || !Array.isArray(record.families)) return false
+  // 要素の形も最低限確かめる。id と name が無い人物は編集画面で例外になるため、
+  // 読み込みの時点で「不正なファイル」として弾く
+  const peopleOk = record.people.every(person => {
+    if (!person || typeof person !== 'object') return false
+    const p = person as Record<string, unknown>
+    return typeof p.id === 'string' && !!p.name && typeof p.name === 'object'
+  })
+  const familiesOk = record.families.every(family => {
+    if (!family || typeof family !== 'object') return false
+    const f = family as Record<string, unknown>
+    return typeof f.id === 'string' && Array.isArray(f.parents) && Array.isArray(f.children)
+  })
+  return peopleOk && familiesOk
 }
 
 /**
@@ -246,11 +264,11 @@ export function toFamilyTreeData(
     parents: family.parents.map(p => p.id),
     children: family.children.map(c => c.id),
     marriage_date: {
-      original_date: null,
+      original_date: family.marriageOriginalDate || null,
       date: family.marriageDate || null,
     },
     divorce_date: {
-      original_date: null,
+      original_date: family.divorceOriginalDate || null,
       date: family.divorceDate || null,
     },
     relation_type: family.relationType,
