@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
@@ -41,8 +41,6 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql postgresql-client
           sudo bash scripts/verify-db.sh
-        env:
-          PG_BIN: /usr/lib/postgresql/16/bin
 
       - name: Build
         run: pnpm build

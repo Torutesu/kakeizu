@@ -174,7 +174,7 @@ export function FamilyTreeLines({
         </g>
       ))}
 
-      {/* 結婚関係線（二重線・離婚済みは破線） */}
+      {/* 結婚関係線（二重線・離婚済みは破線）と婚姻日 */}
       {marriageLines.filter(isRenderableMarriage).map((line, index) => {
         const dashArray = line.divorced ? '6 4' : undefined
         const offset = 2.5
@@ -198,8 +198,28 @@ export function FamilyTreeLines({
               )}`,
             ]
 
+        // 婚姻日・離婚日は、夫婦の中点から下ろす系統線の右脇（カードの下）に添える。
+        // 夫婦のカードの間は線を引く分の幅しかないため、間には書かない
+        const labelX = (line.x1 + line.x2) / 2 + 6
+        const labelTop = Math.max(line.y1, line.y2) + LAYOUT_CONFIG.cardHeight / 2 + 15
+
         return (
           <g key={`marriage-${index}`}>
+            {line.labels.map((label, labelIndex) => (
+              <text
+                key={`label-${labelIndex}`}
+                x={labelX}
+                y={labelTop + labelIndex * 14}
+                fontSize="11"
+                fill="#4b5563"
+                stroke="#ffffff"
+                strokeWidth="3"
+                paintOrder="stroke"
+                data-marriage-label
+              >
+                {label}
+              </text>
+            ))}
             {paths.map((d, pathIndex) => (
               <path
                 key={pathIndex}

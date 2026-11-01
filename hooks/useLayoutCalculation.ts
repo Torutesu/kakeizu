@@ -1,6 +1,7 @@
 import { useMemo, useCallback, useState } from 'react'
-import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
+import { ProcessedPerson, FamilyGroup, familyEventLabels } from '../utils/familyDataProcessor'
 import { calculateTreeLayout } from '../utils/treeLayout'
+import { withDerivedGenerations } from '../utils/generations'
 import { LAYOUT_CONFIG } from '../constants/config'
 
 interface LayoutLine {
@@ -13,6 +14,8 @@ interface LayoutLine {
 // 結婚線。夫婦のカードの内側の端どうしを結ぶ横線（離婚済みは破線）
 export interface MarriageLine extends LayoutLine {
   divorced: boolean
+  /** 線に添える婚姻日・離婚日（例: 「婚姻 1984-01-22」）。記載が無ければ空 */
+  labels: string[]
 }
 
 // 親から子への接続。家系図の慣習に従い
@@ -69,6 +72,9 @@ export function useLayoutCalculation(
 
   const [dragOverride, setDragOverride] = useState<DragOverride | null>(null)
 
+  // 戸籍ごとにずれた世代番号ではなく、親子・夫婦の関係から決めた世代で段を割り当てる
+  const generationPersons = useMemo(() => withDerivedGenerations(persons, families), [persons, families])
+
   // 世代のY座標を計算
   const getGenerationY = useCallback((generation: number) => {
     return LAYOUT_CONFIG.initialY + (generation - 1) * LAYOUT_CONFIG.generationSpacing
@@ -79,7 +85,7 @@ export function useLayoutCalculation(
   //   カードが一番上の行へ飛んでいた）
   const getGenerationFromY = useCallback((y: number) => {
     // 現在存在する世代の範囲（上下に1世代分の余地を持たせる）
-    const existingGenerations = persons.map(p => p.generation)
+    const existingGenerations = generationPersons.map(p => p.generation)
     const minGen = (existingGenerations.length > 0 ? Math.min(...existingGenerations) : 1) - 1
     const maxGen = (existingGenerations.length > 0 ? Math.max(...existingGenerations) : 1) + 1
 
@@ -93,7 +99,7 @@ export function useLayoutCalculation(
       }
     }
     return closestGeneration
-  }, [persons, getGenerationY])
+  }, [generationPersons, getGenerationY])
 
   // Y座標を最も近い世代の高さにスナップ
   const snapToGeneration = useCallback((y: number) => {
@@ -106,11 +112,11 @@ export function useLayoutCalculation(
   // - それ以外は再帰的なサブツリー方式で自動配置する（utils/treeLayout.ts）
   // - ドラッグ中の人物はdragOverrideの一時位置で描画する
   const layoutPersons = useMemo(() => {
-    if (persons.length === 0) return []
+    if (generationPersons.length === 0) return []
 
-    const layoutPositions = calculateTreeLayout(persons, families, getGenerationY)
+    const layoutPositions = calculateTreeLayout(generationPersons, families, getGenerationY)
 
-    return persons.map(person => {
+    return generationPersons.map(person => {
       const isDragged = dragOverride?.id === person.id
       const position = layoutPositions.get(person.id)
       const x = isDragged ? dragOverride.x : position?.x ?? LAYOUT_CONFIG.initialX
@@ -123,7 +129,7 @@ export function useLayoutCalculation(
         y: clampLayoutCoordinate(y, getGenerationY(person.generation))
       }
     })
-  }, [persons, families, dragOverride, getGenerationY])
+  }, [generationPersons, families, dragOverride, getGenerationY])
 
   // 結婚関係線の計算（離婚済みの夫婦は破線で表示する）
   const marriageLines = useMemo(() => {
@@ -144,7 +150,8 @@ export function useLayoutCalculation(
             y1: left.y,
             x2: right.x - halfWidth,
             y2: right.y,
-            divorced: Boolean(family.divorceDate)
+            divorced: Boolean(family.divorceDate || family.divorceOriginalDate),
+            labels: familyEventLabels(family),
           })
         }
       }

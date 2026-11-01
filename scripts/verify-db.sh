@@ -11,12 +11,20 @@
 #
 # 環境変数:
 #   DATABASE_URL  接続先。未指定なら一時的なPostgresを起動する
-#   PG_BIN        Postgresのbinディレクトリ（既定: /usr/lib/postgresql/16/bin）
+#   PG_BIN        Postgresのbinディレクトリ（既定: /usr/lib/postgresql/ にある最も新しい版）
 # ============================================================================
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PG_BIN="${PG_BIN:-/usr/lib/postgresql/16/bin}"
+# 版を決め打ちにすると、OSの既定の版が上がったときに起動できなくなる（CIで16→18に変わった）。
+# 指定が無ければ、入っている中で最も新しい版を使う
+if [[ -z "${PG_BIN:-}" ]]; then
+  PG_BIN="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -n 1)"
+fi
+if [[ -z "$PG_BIN" || ! -x "$PG_BIN/initdb" ]]; then
+  echo "Postgresが見つかりません。PG_BIN にbinディレクトリを指定してください" >&2
+  exit 1
+fi
 TEMP_PG=""
 
 cleanup() {
