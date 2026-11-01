@@ -145,7 +145,8 @@ export function resolveCrossCheckCandidate(
   // 照合のプロバイダ: 明示指定 → モデル名から推定（モデルだけ指定された場合）→ 自動選択
   const configured =
     (env.ANALYSIS_ENSEMBLE_PROVIDER ?? '').trim().toLowerCase() ||
-    (configuredModel ? inferProviderFromModel(configuredModel) ?? '' : '')
+    // 推定できないモデル名は、主と同じプロバイダのモデルとして扱う（従来どおり）
+    (configuredModel ? inferProviderFromModel(configuredModel) ?? primary.provider : '')
   if (configured) {
     const model = configuredModel ?? (isProviderName(configured) ? sameProviderCrossCheckModel(configured, primary) : undefined)
     return differs(resolveOverrideCandidate(env, configured, model))

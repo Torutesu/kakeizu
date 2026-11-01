@@ -7,6 +7,7 @@ import {
   ProviderCandidate,
   TokenUsage,
   UsageLogEntry,
+  ProviderOutputError,
 } from './types'
 import { resolveProviderChain, resolveOverrideCandidate, resolveCrossCheckCandidate } from './chain'
 import { kosekiResultSchema } from './schema'
@@ -88,7 +89,8 @@ function startCrossCheck(
         `戸籍解析の照合に失敗しました（解析結果は有効です）: ${candidate.provider}/${candidate.model}`,
         message
       )
-      return { data: null, usage: null }
+      // 応答は得られたが読めなかった場合も課金されているので、消費量は返す
+      return { data: null, usage: error instanceof ProviderOutputError ? error.usage : null }
     })
 }
 
@@ -143,6 +145,13 @@ export async function runKosekiAnalysis(
   const errors: string[] = []
   // 課金された呼び出しの記録。出力が形式に合わずに次の候補へ進んだ試行も課金されているため残す
   const usageLog: UsageLogEntry[] = []
+  // 照合の消費は1回だけ記録する（照合の後で例外が起きて次の候補へ進んでも、二重に数えない）
+  let crossCheckRecorded = false
+  const recordCrossCheck = (usage: TokenUsage | null) => {
+    if (crossCheckRecorded || !crossCheckCandidate) return
+    crossCheckRecorded = true
+    usageLog.push({ role: 'cross_check', ...crossCheckCandidate, usage })
+  }
 
   for (const candidate of chain) {
     try {
@@ -169,7 +178,7 @@ export async function runKosekiAnalysis(
       if (crossCheckPromise && crossCheckCandidate) {
         const { data: secondaryData, usage: crossCheckUsage } = await crossCheckPromise
         crossCheck = { ...crossCheckCandidate, usage: crossCheckUsage }
-        usageLog.push({ role: 'cross_check', ...crossCheckCandidate, usage: crossCheckUsage })
+        recordCrossCheck(crossCheckUsage)
         if (crossCheckCandidate.provider === candidate.provider && crossCheckCandidate.model === candidate.model) {
           console.warn(
             `戸籍解析の照合: 解析が ${candidate.provider}/${candidate.model} にフォールバックし、照合先と同じモデルになったため照合を省略しました`
@@ -198,15 +207,17 @@ export async function runKosekiAnalysis(
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      // 応答は得られたが読めなかった（課金済み）試行の消費も記録する
+      if (error instanceof ProviderOutputError) usageLog.push({ role: 'primary', ...candidate, usage: error.usage })
       errors.push(`${candidate.provider}/${candidate.model}: ${message}`)
       console.warn(`戸籍解析: ${candidate.provider}/${candidate.model} が失敗、次の候補を試します`, message)
     }
   }
 
   // 全候補が失敗しても、同時に走らせた照合は課金されているので、終わるのを待って記録に含める
-  if (crossCheckPromise && crossCheckCandidate) {
+  if (crossCheckPromise && !crossCheckRecorded) {
     const { usage: crossCheckUsage } = await crossCheckPromise
-    usageLog.push({ role: 'cross_check', ...crossCheckCandidate, usage: crossCheckUsage })
+    recordCrossCheck(crossCheckUsage)
   }
 
   return {

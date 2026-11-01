@@ -133,6 +133,12 @@ describe('resolveCrossCheckCandidate', () => {
     ).toBeNull()
   })
 
+  it('名前からプロバイダを推定できない照合モデルは、主と同じプロバイダのモデルとして扱う', () => {
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'learnlm-2-flash' }, gemini)
+    ).toEqual({ provider: 'gemini', model: 'learnlm-2-flash' })
+  })
+
   it('同じプロバイダの照合モデルを ANALYSIS_ENSEMBLE_MODEL で変えられる', () => {
     expect(
       resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'gemini-3.1-pro-preview' }, gemini)

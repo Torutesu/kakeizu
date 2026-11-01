@@ -33,6 +33,10 @@ create index if not exists analysis_usage_created_at_idx on public.analysis_usag
 alter table public.analysis_usage enable row level security;
 -- ポリシーは意図的に作らない → APIから直接読み書きできない。
 
+-- このマイグレーションの初版にあった、利用者から呼べる版（引数8個）が残っていれば消す。
+-- 引数が変わると create or replace は別の関数を作るため、残すと利用者が記録を偽造できてしまう
+drop function if exists public.record_analysis_usage(uuid, uuid, text, text, integer, integer, integer, numeric);
+
 -- 解析1回分の消費を記録する（サーバーのみ）
 create or replace function public.record_analysis_usage(
   p_user uuid,

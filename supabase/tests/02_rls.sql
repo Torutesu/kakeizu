@@ -111,9 +111,11 @@ select public.record_analysis_usage(
 select public.record_analysis_usage(
   null, 'cccccccc-0000-0000-0000-000000000001', null, 'cross_check', 'gemini-3.8-flash', 6000, 3000, 0, 0.0158
 );
+-- 合計もサービスロールの権限で取得できることを確かめる（集計結果は一時表に退避して比べる）
+create temp table usage_total as select public.analysis_cost_this_month() as total;
 reset role;
 insert into rls_results
-select 'サーバーは当月の解析費用の合計を取得できる', public.analysis_cost_this_month() = 0.0658;
+select 'サーバーは当月の解析費用の合計を取得できる', total = 0.0658 from usage_total;
 -- 利用者による直接の削除・変更は効かない（記録した後に試す）
 set role authenticated;
 set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';

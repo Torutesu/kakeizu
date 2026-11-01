@@ -74,3 +74,14 @@ export interface AnalysisProvider {
  * SDK側の再試行は無効にすること（再試行すると 240秒×2 で関数上限を超える）。
  */
 export const PROVIDER_TIMEOUT_MS = 240_000
+
+/**
+ * モデルの応答は得られた（課金された）が、出力を読めなかった場合の例外。
+ * 消費量を持たせて、費用の記録から漏れないようにする
+ */
+export class ProviderOutputError extends Error {
+  constructor(message: string, readonly usage: TokenUsage | null) {
+    super(message)
+    this.name = 'ProviderOutputError'
+  }
+}
