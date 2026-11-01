@@ -66,18 +66,20 @@ function logTokenUsage(candidate: ProviderCandidate, usage: TokenUsage | null): 
 function startCrossCheck(
   input: AnalysisInput,
   candidate: ProviderCandidate
-): Promise<FamilyTreeData | null> {
+): Promise<{ data: FamilyTreeData | null; usage: TokenUsage | null }> {
   return PROVIDERS[candidate.provider]
     .analyze(input, candidate.model)
-    .then(({ raw }) => {
+    .then(({ raw, usage }) => {
+      logTokenUsage(candidate, usage)
       const parsed = kosekiResultSchema.safeParse(raw)
       if (!parsed.success) {
         console.warn(
           `戸籍解析の照合: ${candidate.provider}/${candidate.model} の出力がスキーマに一致せず、照合を省略しました`
         )
-        return null
+        // 照合には使えないが、課金は発生しているので消費量は返す（月の予算に数えるため）
+        return { data: null, usage }
       }
-      return sanitizeFamilyTreeData(parsed.data as FamilyTreeData)
+      return { data: sanitizeFamilyTreeData(parsed.data as FamilyTreeData), usage }
     })
     .catch(error => {
       const message = error instanceof Error ? error.message : String(error)
@@ -85,7 +87,7 @@ function startCrossCheck(
         `戸籍解析の照合に失敗しました（解析結果は有効です）: ${candidate.provider}/${candidate.model}`,
         message
       )
-      return null
+      return { data: null, usage: null }
     })
 }
 
@@ -128,7 +130,7 @@ export async function runKosekiAnalysis(
   }
 
   // 照合は先頭候補を前提に開始する。primaryがフォールバックして照合側と
-  // 同じプロバイダになった場合は、比較しても意味がないので破棄する。
+  // 同じモデルになった場合は、比較しても意味がないので破棄する。
   // 明示的なモデル指定（ベンチマーク・再解析）時は、結果が混ざらないよう照合しない
   const crossCheckCandidate = override ? null : resolveCrossCheckCandidate(process.env, chain[0])
   const crossCheckPromise = crossCheckCandidate
@@ -157,11 +159,13 @@ export async function runKosekiAnalysis(
 
       // 2モデル照合。primaryの結果は変えず、食い違いを注記として付ける
       let crossCheckIssues: CrossCheckIssue[] = []
+      let crossCheck: { provider: AnalysisProviderName; model: string; usage: TokenUsage | null } | undefined
       if (crossCheckPromise && crossCheckCandidate) {
-        const secondaryData = await crossCheckPromise
-        if (crossCheckCandidate.provider === candidate.provider) {
+        const { data: secondaryData, usage: crossCheckUsage } = await crossCheckPromise
+        crossCheck = { ...crossCheckCandidate, usage: crossCheckUsage }
+        if (crossCheckCandidate.provider === candidate.provider && crossCheckCandidate.model === candidate.model) {
           console.warn(
-            `戸籍解析の照合: 解析が ${candidate.provider} にフォールバックし、照合先と同じプロバイダになったため照合を省略しました`
+            `戸籍解析の照合: 解析が ${candidate.provider}/${candidate.model} にフォールバックし、照合先と同じモデルになったため照合を省略しました`
           )
         } else if (secondaryData) {
           crossCheckIssues = compareExtractions(data, secondaryData, {
@@ -182,6 +186,7 @@ export async function runKosekiAnalysis(
         provider: candidate.provider,
         model: candidate.model,
         usage,
+        ...(crossCheck ? { crossCheck } : {}),
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

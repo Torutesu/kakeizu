@@ -3,6 +3,7 @@ import { runKosekiAnalysis } from '@/lib/analysis'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { validateFileContent, isAllowedKosekiMimeType } from '@/lib/security/fileValidation'
 import { checkAnalysisRateLimit } from '@/lib/security/rateLimit'
+import { budgetExceededMessage, monthlyBudgetUsd, usageRecordsOf } from '@/lib/analysis/budget'
 
 export const runtime = 'nodejs'
 // 大きな戸籍の解析は1〜2分かかるため、Vercelの関数タイムアウトを延長する
@@ -110,6 +111,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 月の予算（設定されている場合）に達していれば、APIを呼ぶ前に止める。
+    // 確認できない場合も止める（予算を超えて課金され続ける事態を避ける）
+    const budgetUsd = monthlyBudgetUsd(process.env)
+    if (budgetUsd !== null) {
+      const { data: spent, error: spentError } = await supabase.rpc('analysis_cost_this_month')
+      if (spentError) {
+        console.error('解析の予算を確認できませんでした:', spentError.message)
+        return NextResponse.json(
+          { success: false, error: '解析の予算を確認できないため解析を中止しました。管理者にお問い合わせください。' },
+          { status: 503 }
+        )
+      }
+      const spentUsd = Number(spent ?? 0)
+      if (spentUsd >= budgetUsd) {
+        return NextResponse.json(
+          { success: false, error: budgetExceededMessage(spentUsd, budgetUsd) },
+          { status: 429 }
+        )
+      }
+    }
+
     // RLSにより、アクセスできない案件のファイルはそもそも取得できない
     const { data: fileRow, error: fileError } = await supabase
       .from('koseki_files')
@@ -181,6 +203,24 @@ export async function POST(request: NextRequest) {
     }
 
     if (result.success) {
+      // 消費トークンと見積もり原価を記録する（月の予算の判定に使う）。
+      // 記録に失敗しても解析結果は返すが、予算の判定が甘くなるのでログに残す
+      for (const record of usageRecordsOf(result)) {
+        const { error: usageError } = await supabase.rpc('record_analysis_usage', {
+          p_project: projectId,
+          p_file: fileId,
+          p_role: record.role,
+          p_model: record.model,
+          p_input_tokens: record.inputTokens,
+          p_output_tokens: record.outputTokens,
+          p_cached_input_tokens: record.cachedInputTokens,
+          p_cost_usd: record.costUsd,
+        })
+        if (usageError) console.error('解析費用を記録できませんでした', usageError.message)
+        if (record.costUsd === null) {
+          console.warn(`解析費用: ${record.model} の単価が未登録のため、月の予算に数えられません（lib/analysis/pricing.ts）`)
+        }
+      }
       return NextResponse.json({ success: true, data: result.data }, { status: 200 })
     }
     return NextResponse.json({ success: false, error: result.error }, { status: 422 })

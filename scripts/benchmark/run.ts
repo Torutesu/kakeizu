@@ -5,7 +5,14 @@
 // 使い方（詳細な運用手順は docs/BENCHMARK_GUIDE.md）:
 //   pnpm benchmark                              # testdata/ を全設定済みプロバイダで
 //   pnpm benchmark -- --dir testdata/basic      # 対象ディレクトリ指定
-//   pnpm benchmark -- --candidates gemini:gemini-3.1-pro,anthropic:claude-opus-5
+//   pnpm benchmark -- --candidates gemini:gemini-4-argon,gemini:gemini-3.1-pro-preview
+//   pnpm benchmark -- --candidates gemini:gemini-4-argon@medium,gemini:gemini-4-argon@high  # 読み取り解像度の比較
+//
+// 対象は2種類:
+//   - 1ファイル単位: <名前>.pdf と <名前>.expected.json を並べて置く
+//   - 案件単位: サブディレクトリに複数の戸籍書類と expected.json を置く。
+//     各書類を解析してアプリと同じ名寄せで統合し、統合した家系図を正解と比べる
+//     （複数の戸籍をまたいだ名寄せ・世代の誤りはここでしか測れない）
 //
 // テストデータ（機微情報）はリポジトリにコミットされない（.gitignore対象）。
 // ============================================================================
@@ -16,6 +23,8 @@ import { geminiProvider } from '../../lib/analysis/providers/gemini'
 import { anthropicProvider } from '../../lib/analysis/providers/anthropic'
 import { openaiProvider } from '../../lib/analysis/providers/openai'
 import { DEFAULT_MODELS } from '../../lib/analysis/chain'
+import { estimateCostUsd } from '../../lib/analysis/pricing'
+import { mergeFamilyTreeData } from '../../utils/mergeFamilyData'
 import { kosekiResultSchema } from '../../lib/analysis/schema'
 import { sanitizeFamilyTreeData } from '../../lib/analysis/sanitize'
 import {
@@ -60,30 +69,30 @@ interface FileResult {
   extraNames?: string[]
   data?: FamilyTreeData
   usage?: TokenUsage | null
+  /** 見積もり原価（円）。単価が分からない場合は null */
+  costYen?: number | null
 }
 
-// 実測トークンから原価を出すための単価（USD / 100万トークン、2026年9月時点）。
-// 未知のモデルは概算できないため原価欄を空にする。
-const PRICING: Record<string, { input: number; output: number; cachedInput: number }> = {
-  'gemini-3.1-pro':   { input: 2.0,   output: 12.0, cachedInput: 0.2 },
-  'gemini-2.5-pro':   { input: 1.25,  output: 10.0, cachedInput: 0.125 },
-  'claude-opus-5':    { input: 5.0,   output: 25.0, cachedInput: 0.5 },
-  'claude-sonnet-5':  { input: 2.0,   output: 10.0, cachedInput: 0.2 },
-  'claude-haiku-4-5': { input: 1.0,   output: 5.0,  cachedInput: 0.1 },
-  'gpt-5.2':          { input: 0.875, output: 7.0,  cachedInput: 0.0875 },
+/** 採点の単位。1ファイル、または複数ファイルを統合する案件 */
+interface BenchmarkItem {
+  name: string
+  files: string[]
+  expected: FamilyTreeData | null
 }
+
+/** 候補の指定。Geminiは「@解像度」を付けると読み取り解像度を変えて比べられる */
+interface BenchmarkCandidate extends ProviderCandidate {
+  resolution?: string
+}
+
+const labelOf = (c: BenchmarkCandidate) => `${c.provider}:${c.model}${c.resolution ? `@${c.resolution}` : ''}`
+
 const USD_TO_JPY = Number(process.env.BENCHMARK_USD_JPY ?? 150)
 
-/** 実測トークンから1ページあたりの原価（円）を求める。単価未登録ならnull */
+/** 実測トークンから原価（円）を求める。単価は lib/analysis/pricing.ts と共通。未登録ならnull */
 function estimateYen(model: string, usage: TokenUsage | null | undefined): number | null {
-  if (!usage) return null
-  const price = PRICING[model]
-  if (!price) return null
-  const cached = usage.cachedInputTokens ?? 0
-  const uncachedInput = Math.max(0, (usage.inputTokens ?? 0) - cached)
-  const usd =
-    (uncachedInput * price.input + cached * price.cachedInput + (usage.outputTokens ?? 0) * price.output) / 1e6
-  return usd * USD_TO_JPY
+  const usd = estimateCostUsd(model, usage)
+  return usd === null ? null : usd * USD_TO_JPY
 }
 
 // ---- .env.local の読み込み（Next外のNode実行のため簡易パーサで読む） ----
@@ -101,7 +110,7 @@ function loadEnvLocal() {
   }
 }
 
-function parseArgs(argv: string[]): { dir: string; candidates: ProviderCandidate[] } {
+function parseArgs(argv: string[]): { dir: string; candidates: BenchmarkCandidate[] } {
   let dir = 'testdata'
   let candidatesArg: string | null = null
 
@@ -110,15 +119,16 @@ function parseArgs(argv: string[]): { dir: string; candidates: ProviderCandidate
     else if (argv[i] === '--candidates' && argv[i + 1]) candidatesArg = argv[++i]
   }
 
-  let candidates: ProviderCandidate[]
+  let candidates: BenchmarkCandidate[]
   if (candidatesArg) {
     candidates = candidatesArg.split(',').map(entry => {
-      const [provider, model] = entry.trim().split(':')
+      const [spec, resolution] = entry.trim().split('@')
+      const [provider, model] = spec.split(':')
       if (!(provider in PROVIDERS)) {
         throw new Error(`不明なプロバイダ: ${provider}（gemini / anthropic / openai）`)
       }
       const p = provider as AnalysisProviderName
-      return { provider: p, model: model || DEFAULT_MODELS[p] }
+      return { provider: p, model: model || DEFAULT_MODELS[p], ...(resolution ? { resolution } : {}) }
     })
   } else {
     // 既定: APIキーが設定されている全プロバイダを既定モデルで
@@ -168,65 +178,96 @@ async function main() {
     process.exit(1)
   }
 
-  const files = fs
-    .readdirSync(dir)
-    .filter(f => MIME_BY_EXT[path.extname(f).toLowerCase()])
-    .sort()
-    .map(f => path.join(dir, f))
+  const isSource = (f: string) => Boolean(MIME_BY_EXT[path.extname(f).toLowerCase()])
+  const items: BenchmarkItem[] = []
+  for (const entry of fs.readdirSync(dir).sort()) {
+    const full = path.join(dir, entry)
+    if (fs.statSync(full).isDirectory()) {
+      // 案件単位: 複数の戸籍書類と expected.json
+      const sources = fs.readdirSync(full).filter(isSource).sort().map(f => path.join(full, f))
+      const expectedPath = path.join(full, 'expected.json')
+      if (sources.length === 0) continue
+      let expected: FamilyTreeData | null = null
+      if (fs.existsSync(expectedPath)) {
+        const parsed = JSON.parse(fs.readFileSync(expectedPath, 'utf8'))
+        if (!isValidFamilyTreeData(parsed)) {
+          throw new Error(`${expectedPath} がFamilyTreeData形式（people/families配列）ではありません`)
+        }
+        expected = parsed
+      }
+      items.push({ name: `${entry}/（${sources.length}ファイルを統合）`, files: sources, expected })
+    } else if (isSource(entry)) {
+      items.push({ name: entry, files: [full], expected: loadExpected(full) })
+    }
+  }
 
-  if (files.length === 0) {
+  if (items.length === 0) {
     console.error(`${dir} に対象ファイル（PDF/JPEG/PNG/WebP）がありません`)
     process.exit(1)
   }
 
-  console.log(`対象ファイル: ${files.length}件 / 候補モデル: ${candidates.map(c => `${c.provider}:${c.model}`).join(', ')}`)
+  console.log(`対象: ${items.length}件 / 候補モデル: ${candidates.map(labelOf).join(', ')}`)
   console.log('')
 
   const results: FileResult[] = []
 
-  for (const file of files) {
-    const mimeType = MIME_BY_EXT[path.extname(file).toLowerCase()]
-    const base64Data = fs.readFileSync(file).toString('base64')
-    const expected = loadExpected(file)
-
+  for (const item of items) {
     for (const candidate of candidates) {
-      const label = `${candidate.provider}:${candidate.model}`
-      process.stdout.write(`▶ ${path.basename(file)} × ${label} ... `)
+      const label = labelOf(candidate)
+      process.stdout.write(`▶ ${item.name} × ${label} ... `)
       const startedAt = Date.now()
+      // 読み取り解像度の比較（Geminiのみ有効）。プロバイダは環境変数を見るため、呼び出しの間だけ差し替える
+      const previousResolution = process.env.GEMINI_MEDIA_RESOLUTION
+      if (candidate.resolution) process.env.GEMINI_MEDIA_RESOLUTION = candidate.resolution
 
       try {
-        const { raw, usage } = await PROVIDERS[candidate.provider].analyze({ base64Data, mimeType }, candidate.model)
-        const parsed = kosekiResultSchema.safeParse(raw)
-        if (!parsed.success) {
-          throw new Error(`スキーマ不一致: ${parsed.error.issues[0]?.message ?? ''}`)
+        // 書類ごとに解析し、アプリの読み込みと同じ名寄せで1つの家系図に統合する
+        let merged: FamilyTreeData = { people: [], families: [] }
+        const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 }
+        let costYen: number | null = 0
+        for (const file of item.files) {
+          const mimeType = MIME_BY_EXT[path.extname(file).toLowerCase()]
+          const base64Data = fs.readFileSync(file).toString('base64')
+          const { raw, usage: fileUsage } = await PROVIDERS[candidate.provider].analyze({ base64Data, mimeType }, candidate.model)
+          const parsed = kosekiResultSchema.safeParse(raw)
+          if (!parsed.success) {
+            throw new Error(`${path.basename(file)}: スキーマ不一致: ${parsed.error.issues[0]?.message ?? ''}`)
+          }
+          const data = sanitizeFamilyTreeData(parsed.data as FamilyTreeData)
+          merged = item.files.length === 1 ? data : mergeFamilyTreeData(merged, data).data
+          usage.inputTokens! += fileUsage?.inputTokens ?? 0
+          usage.outputTokens! += fileUsage?.outputTokens ?? 0
+          usage.cachedInputTokens! += fileUsage?.cachedInputTokens ?? 0
+          const fileYen = estimateYen(candidate.model, fileUsage)
+          costYen = costYen === null || fileYen === null ? null : costYen + fileYen
         }
-        const data = sanitizeFamilyTreeData(parsed.data as FamilyTreeData)
         const durationSeconds = (Date.now() - startedAt) / 1000
 
         const result: FileResult = {
-          file: path.basename(file),
+          file: item.name,
           candidate: label,
           ok: true,
           durationSeconds,
-          personCount: data.people.length,
-          familyCount: data.families.length,
-          data,
+          personCount: merged.people.length,
+          familyCount: merged.families.length,
+          data: merged,
           usage,
+          costYen,
         }
-        if (expected) {
-          result.score = scoreResult(expected, data)
-          const { missing, extra } = matchPeople(expected.people, data.people)
+        if (item.expected) {
+          result.score = scoreResult(item.expected, merged)
+          const { missing, extra } = matchPeople(item.expected.people, merged.people)
           result.missingNames = missing.map(displayName)
           result.extraNames = extra.map(displayName)
         }
         results.push(result)
-        console.log(`OK ${data.people.length}人 / ${data.families.length}家族 (${durationSeconds.toFixed(1)}s)` +
+        console.log(`OK ${merged.people.length}人 / ${merged.families.length}家族 (${durationSeconds.toFixed(1)}s)` +
           (result.score ? ` F1=${formatPercent(result.score.f1)}` : ''))
       } catch (error) {
         const durationSeconds = (Date.now() - startedAt) / 1000
         const message = error instanceof Error ? error.message : String(error)
         results.push({
-          file: path.basename(file),
+          file: item.name,
           candidate: label,
           ok: false,
           error: message,
@@ -235,6 +276,9 @@ async function main() {
           familyCount: 0,
         })
         console.log(`失敗 (${durationSeconds.toFixed(1)}s): ${message}`)
+      } finally {
+        if (previousResolution === undefined) delete process.env.GEMINI_MEDIA_RESOLUTION
+        else process.env.GEMINI_MEDIA_RESOLUTION = previousResolution
       }
     }
   }
@@ -250,8 +294,8 @@ async function main() {
   lines.push(`# 戸籍解析ベンチマーク結果`)
   lines.push('')
   lines.push(`- 実行日時: ${new Date().toLocaleString('ja-JP')}`)
-  lines.push(`- 対象: ${dir}（${files.length}ファイル）`)
-  lines.push(`- 候補: ${candidates.map(c => `${c.provider}:${c.model}`).join(', ')}`)
+  lines.push(`- 対象: ${dir}（${items.length}件）`)
+  lines.push(`- 候補: ${candidates.map(labelOf).join(', ')}`)
   lines.push('')
 
   lines.push('## ファイル別の結果')
@@ -272,10 +316,10 @@ async function main() {
   // 候補別の集計（正解データがあるファイルのみ）
   lines.push('## モデル別の集計（正解データのあるファイルのみ）')
   lines.push('')
-  lines.push('| モデル | 成功/試行 | 平均F1 | 平均再現率 | 平均適合率 | 平均生年一致 | 平均所要 | 平均入力tok | キャッシュ率 | 平均原価/枚 |')
+  lines.push('| モデル | 成功/試行 | 平均F1 | 平均再現率 | 平均適合率 | 平均生年一致 | 平均所要 | 平均入力tok | キャッシュ率 | 平均原価/件 |')
   lines.push('|---|---|---|---|---|---|---|---|---|---|')
   for (const candidate of candidates) {
-    const label = `${candidate.provider}:${candidate.model}`
+    const label = labelOf(candidate)
     const all = results.filter(r => r.candidate === label)
     const scored = all.filter(r => r.ok && r.score)
     const avg = (pick: (s: BenchmarkScore) => number | null): number | null => {
@@ -295,7 +339,7 @@ async function main() {
     const cacheRate = totalInput > 0 ? totalCached / totalInput : null
     const avgYen = mean(
       withUsage
-        .map(r => estimateYen(candidate.model, r.usage))
+        .map(r => r.costYen ?? null)
         .filter((v): v is number => v !== null)
     )
     lines.push(

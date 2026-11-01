@@ -1,5 +1,6 @@
 import '../../server-guard'
 import { GoogleGenAI } from '@google/genai'
+import { geminiResolutionFor } from '../geminiResolution'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT, KOSEKI_RESPONSE_SCHEMA } from '../../koseki-prompt'
 import { AnalysisInput, AnalysisProvider, ProviderResult, PROVIDER_TIMEOUT_MS } from '../types'
 import { withTransientRetry } from '../retry'
@@ -24,7 +25,10 @@ export const geminiProvider: AnalysisProvider = {
           role: 'user',
           parts: [
             { text: KOSEKI_TASK_PROMPT },
-            { inlineData: { mimeType: input.mimeType, data: input.base64Data } },
+            {
+              inlineData: { mimeType: input.mimeType, data: input.base64Data },
+              mediaResolution: { level: geminiResolutionFor(input.mimeType, process.env.GEMINI_MEDIA_RESOLUTION) },
+            },
           ],
         },
       ],
@@ -48,7 +52,12 @@ export const geminiProvider: AnalysisProvider = {
       raw: JSON.parse(text),
       usage: {
         inputTokens: meta?.promptTokenCount ?? null,
-        outputTokens: meta?.candidatesTokenCount ?? null,
+        // 思考（thinking）のトークンも出力として課金されるため、出力に含める
+        // （含めないと費用を少なく見積もり、月の予算の判定が甘くなる）
+        outputTokens:
+          meta?.candidatesTokenCount == null && meta?.thoughtsTokenCount == null
+            ? null
+            : (meta?.candidatesTokenCount ?? 0) + (meta?.thoughtsTokenCount ?? 0),
         cachedInputTokens: meta?.cachedContentTokenCount ?? null,
       },
     }

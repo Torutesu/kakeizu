@@ -75,6 +75,7 @@ service_roleキーはSupabase APIから自動取得してVercelに設定しま�
 | `ANTHROPIC_API_KEY` | 任意（フォールバック/比較用） |
 | `OPENAI_API_KEY` | 任意（同上） |
 | `ANALYSIS_PROVIDER` | 任意（ベンチマーク後に勝者を設定） |
+| `ANALYSIS_MONTHLY_BUDGET_USD` | 任意。当月の解析費用（見積もり）がこの金額（USD）に達したら解析を止める。サブスク枠のクレジットに収めたい場合に設定（例: `10`） |
 | `AI_NO_TRAINING_CONFIRMED` | **`true` 必須**（未設定だと解析が停止。[AI_DATA_POLICY.md](./AI_DATA_POLICY.md) の要件を満たしてから） |
 
 > 解析APIは `maxDuration = 300` を指定済み。HobbyプランでもFluid compute（既定で有効）
@@ -140,3 +141,4 @@ GitHubのリポジトリ設定でデフォルトブランチが `main` になっ
 | 招待は成功するがメールが届かない | `SUPABASE_SERVICE_ROLE_KEY` 未設定。設定後は **Redeploy** が必要 |
 | 「ログインの有効期限が切れました」と出る | 仕様。セッション切れ時にAPIが401を返す。再ログインすれば解消 |
 | 担当外の案件が見えてしまう | `0009` のマイグレーション未適用。SQL Editorで実行 |
+| 解析が「解析の予算を確認できない」 | `0012` のマイグレーション未適用（`ANALYSIS_MONTHLY_BUDGET_USD` を設定した場合のみ必要）。SQL Editorで実行 |

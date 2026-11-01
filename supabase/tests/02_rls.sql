@@ -86,6 +86,23 @@ select '作業者は招待を作成できない', count(*) = 0
 insert into rls_results
 select 'レート制限のカウンタは直接読めない', count(*) = 0 from rate_limits;
 
+-- ---- 11〜13) 解析費用の記録は関数経由でのみ追記でき、直接は読み書きできない ----
+-- 画面から記録を消したり書き換えたりして、月の予算の判定を逃れられないようにする
+select public.record_analysis_usage(
+  'cccccccc-0000-0000-0000-000000000001', null, 'primary', 'gemini-4-argon', 6000, 4000, 3000, 0.05
+);
+select public.record_analysis_usage(
+  'cccccccc-0000-0000-0000-000000000001', null, 'cross_check', 'gemini-3.8-flash', 6000, 3000, 0, 0.0158
+);
+insert into rls_results
+select '解析費用の記録は直接読めない', count(*) = 0 from analysis_usage;
+delete from analysis_usage;
+update analysis_usage set cost_usd = 0;
+insert into rls_results
+select '当月の解析費用の合計を関数で取得できる', public.analysis_cost_this_month() = 0.0658;
+insert into rls_results
+select '解析費用の記録は直接削除・変更できない', public.analysis_cost_this_month() = 0.0658;
+
 reset role;
 
 -- ---- 結果の出力 ----
@@ -104,7 +121,7 @@ from rls_results;
 do $$
 declare
   -- 上の検証の数と一致させること。検証を増やしたらこの値も更新する
-  c_expected constant integer := 10;
+  c_expected constant integer := 13;
   v_failed integer;
   v_total integer;
 begin

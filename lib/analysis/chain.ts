@@ -4,7 +4,8 @@ import { AnalysisProviderName, ProviderCandidate } from './types'
 // 解析プロバイダチェーンの解決（純関数・テスト対象）。
 //
 // 2026年時点のリサーチに基づく既定モデル:
-// - Gemini 3.1 Pro: デコード時に強制される構造化出力、日本語文書に強い → 暫定の既定
+// - Gemini 4 Argon: Geminiの最新の旗艦（2026年11月時点）。運用はGemini 1社で行う方針
+//   （利用者の実地確認でOCRはGeminiが最適と判断。Googleのサブスク枠のクレジットで賄う）
 // - Claude Opus 5: 複雑な構造化抽出・長文手書き文書でベンチマーク最高精度
 // - GPT-5.2: 手書き文字認識CERでSOTA級（ラテン文字ベンチマーク基準）
 //
@@ -15,20 +16,26 @@ import { AnalysisProviderName, ProviderCandidate } from './types'
 // ============================================================================
 
 export const DEFAULT_MODELS: Record<AnalysisProviderName, string> = {
-  gemini: 'gemini-3.1-pro',
+  gemini: 'gemini-4-argon',
   anthropic: 'claude-opus-5',
   openai: 'gpt-5.2',
 }
 
 // プロバイダ内のフォールバック（先頭から順に試す）。
 //
-// Geminiは公式ドキュメント上のエンドポイントが `gemini-3.1-pro-preview` である一方、
-// エイリアス `gemini-3.1-pro` が使えるかはキー・提供状況によって変わる。
-// 素の3.1が解決できないときに一気に2.5 Proまで落ちると、
-// 3.1 Proで動いているつもりで実際は旧世代という状態になり、精度差の原因が見えなくなる。
-// 同世代のpreview IDを間に挟んで、世代を落とすのを最後の手段にする。
+// Gemini 4 Argon が使えない（キーの権限・提供状況・障害）ときは、1世代前のProから順に落とす。
+// どのモデルで解析されたかは koseki_files.analysis_model に残るため、
+// フォールバックで旧世代が使われた場合も後から分かる。
 export const PROVIDER_FALLBACK_MODELS: Partial<Record<AnalysisProviderName, string[]>> = {
   gemini: ['gemini-3.1-pro-preview', 'gemini-2.5-pro'],
+}
+
+// 照合（2つ目の読み取り）に使う、同じプロバイダの別モデル。
+// 別プロバイダのキーが無い（Geminiだけで運用する）場合に使う。
+// 同じモデルを2回呼んでも同じ誤読を再現するだけなので、必ず主モデルと別のモデルにする。
+// Flashは主モデル（Pro級）より大幅に安く、照合のための費用増を小さく抑えられる
+export const SAME_PROVIDER_CROSS_CHECK_MODELS: Partial<Record<AnalysisProviderName, string>> = {
+  gemini: 'gemini-3.8-flash',
 }
 
 const API_KEY_ENV: Record<AnalysisProviderName, string> = {
@@ -115,30 +122,41 @@ export function resolveProviderChain(env: ChainEnv): ProviderCandidate[] {
 }
 
 /**
- * 照合用モデルを選ぶ。primaryと**別プロバイダ**であることが要件。
+ * 照合用モデルを選ぶ。primaryと**別のモデル**であることが要件。
  * 同じモデルを2回呼んでも同じ誤読を再現するだけで、照合の意味がないため。
+ * 別プロバイダのキーがあればそれを優先し（誤読の傾向がより独立している）、
+ * 無ければ同じプロバイダの別モデル（Geminiなら Flash）で照合する。
  *
  * **既定で有効。** 明示的に ANALYSIS_ENSEMBLE=false を設定した場合のみ無効になる。
  * opt-inにすると設定を知らないまま運用が始まり、実装したのに一度も動かないまま
  * 終わる（照合はOCR精度の中核なので、既定で効いているべき）。
- * APIコストは2倍になるが、人手の修正コストより1桁小さい（docs/MODEL_RESEARCH.md）。
- *
- * 2つ目のプロバイダのAPIキーがなければ、静かに無効になる（照合しようがないため）。
  */
 export function resolveCrossCheckCandidate(
   env: ChainEnv,
   primary: ProviderCandidate
 ): ProviderCandidate | null {
   if ((env.ANALYSIS_ENSEMBLE ?? '').trim().toLowerCase() === 'false') return null
+  const differs = (candidate: ProviderCandidate | null) =>
+    candidate && !(candidate.provider === primary.provider && candidate.model === primary.model)
+      ? candidate
+      : null
 
   const configured = (env.ANALYSIS_ENSEMBLE_PROVIDER ?? '').trim().toLowerCase()
   if (configured) {
-    const candidate = resolveOverrideCandidate(env, configured, env.ANALYSIS_ENSEMBLE_MODEL)
-    return candidate && candidate.provider !== primary.provider ? candidate : null
+    // 同じプロバイダを指定した場合は、モデルの指定が無ければ同じプロバイダ用の照合モデルを使う
+    const model =
+      env.ANALYSIS_ENSEMBLE_MODEL?.trim() ||
+      (configured === primary.provider && isProviderName(configured)
+        ? SAME_PROVIDER_CROSS_CHECK_MODELS[configured]
+        : undefined)
+    return differs(resolveOverrideCandidate(env, configured, model))
   }
 
   // 未指定なら、キーのあるプロバイダのうちprimary以外の最優先を使う
-  return (
-    resolveProviderChain(env).find(c => c.provider !== primary.provider) ?? null
-  )
+  const otherProvider = resolveProviderChain(env).find(c => c.provider !== primary.provider)
+  if (otherProvider) return otherProvider
+
+  // 別プロバイダのキーが無ければ、同じプロバイダの照合用モデルを使う
+  const sameProviderModel = env.ANALYSIS_ENSEMBLE_MODEL?.trim() || SAME_PROVIDER_CROSS_CHECK_MODELS[primary.provider]
+  return sameProviderModel ? differs(resolveOverrideCandidate(env, primary.provider, sameProviderModel)) : null
 }

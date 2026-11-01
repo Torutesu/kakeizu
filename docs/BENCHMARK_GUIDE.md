@@ -21,8 +21,8 @@
 
 ```bash
 # .env.local
-GEMINI_API_KEY=...       # Gemini 3.1 Pro
-ANTHROPIC_API_KEY=...    # Claude Opus 5
+GEMINI_API_KEY=...       # Gemini 4 Argon（既定）
+ANTHROPIC_API_KEY=...    # Claude（比較する場合のみ）
 OPENAI_API_KEY=...       # GPT-5.2
 ```
 
@@ -45,6 +45,30 @@ OPENAI_API_KEY=...       # GPT-5.2
 | 難 | 明治・大正の改製原戸籍（旧字体・崩し字・汚損） | モデル差が最も出る |
 | 特殊 | 養子縁組・再婚・複数戸籍連続のもの | 関係抽出の正しさ |
 | 画質 | スマホ撮影・低解像度スキャン | 実運用の入力品質 |
+
+### 案件単位のテストデータ（複数の戸籍を統合した家系図で測る）
+
+2通以上の戸籍を読み込んで統合すると、名寄せ・世代の誤りが出る（1ファイル単位の採点では測れない）。
+サブディレクトリに戸籍書類と `expected.json` をまとめて置くと、書類ごとに解析してアプリと同じ名寄せで統合し、
+統合した家系図を正解と比べる。
+
+```
+testdata/
+└── テスト1/
+    ├── 01_父の戸籍.pdf      ← 番号順に読み込んで統合する
+    ├── 02_本人の戸籍.pdf
+    └── expected.json        ← 人が直した家系図（正解）
+```
+
+**アプリの案件から書き出す:** AIが読み取った案件（例「テスト」）と、人が直した案件（例「テスト1」）があれば、
+次のコマンドで上の形に書き出せる（`.env.local` に `NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` が必要。
+読み取りのみで、データは変更しない）。
+
+```bash
+pnpm benchmark:export -- --source テスト --expected テスト1
+# → testdata/テスト1/ に書類と expected.json が書き出される
+pnpm benchmark -- --dir testdata --candidates gemini:gemini-4-argon,gemini:gemini-3.1-pro-preview,gemini:gemini-3.8-flash
+```
 
 ## 2. 正解データ（期待値）の作成
 
@@ -84,7 +108,10 @@ pnpm benchmark -- --dir testdata/difficult
 pnpm benchmark -- --candidates gemini:gemini-3.1-pro,anthropic:claude-opus-5,openai:gpt-5.2
 
 # 同一プロバイダの新旧比較も可能
-pnpm benchmark -- --candidates gemini:gemini-3.1-pro,gemini:gemini-2.5-pro
+pnpm benchmark -- --candidates gemini:gemini-4-argon,gemini:gemini-3.1-pro-preview
+
+# 読み取り解像度の比較（Geminiのみ。「@解像度」を付ける）
+pnpm benchmark -- --candidates gemini:gemini-4-argon@medium,gemini:gemini-4-argon@high
 ```
 
 - 実行は逐次（ファイル×モデルごとに1リクエスト）。**30ファイル×3モデルで1〜2時間程度**を見込む

@@ -27,6 +27,8 @@ export interface AnalysisSuccess {
   model: string
   /** トークン消費量（プロバイダが返さない場合はnull） */
   usage: TokenUsage | null
+  /** 照合（2つ目の読み取り）に使ったモデルと消費量。照合しなかった場合は省略 */
+  crossCheck?: { provider: AnalysisProviderName; model: string; usage: TokenUsage | null }
 }
 
 export interface AnalysisFailure {
