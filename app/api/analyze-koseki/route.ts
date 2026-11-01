@@ -3,6 +3,9 @@ import { runKosekiAnalysis } from '@/lib/analysis'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { validateFileContent, isAllowedKosekiMimeType } from '@/lib/security/fileValidation'
 import { checkAnalysisRateLimit } from '@/lib/security/rateLimit'
+import { budgetExceededMessage, readMonthlyBudget, usageRecordsOf } from '@/lib/analysis/budget'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 // 大きな戸籍の解析は1〜2分かかるため、Vercelの関数タイムアウトを延長する
@@ -110,6 +113,45 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 解析費用の記録・集計はサーバーだけが行う（利用者が呼べると、架空の記録で予算を枯らせるため）。
+    // サービスロールのキーが無い環境では記録できない
+    let usageClient: SupabaseClient | null = null
+    try {
+      usageClient = createSupabaseAdminClient()
+    } catch {
+      usageClient = null
+    }
+
+    // 月の予算（設定されている場合）に達していれば、APIを呼ぶ前に止める。
+    // 予算の値が読めない・確認できない場合も止める（予算を超えて課金され続ける事態を避ける）
+    const budget = readMonthlyBudget(process.env)
+    if (budget.kind === 'invalid') {
+      console.error(`ANALYSIS_MONTHLY_BUDGET_USD の値を数として読めません: ${budget.raw}`)
+      return NextResponse.json(
+        { success: false, error: '解析の予算の設定が正しくないため解析を中止しました。管理者にお問い合わせください。' },
+        { status: 503 }
+      )
+    }
+    if (budget.kind === 'ok') {
+      const { data: spent, error: spentError } = usageClient
+        ? await usageClient.rpc('analysis_cost_this_month')
+        : { data: null, error: { message: 'SUPABASE_SERVICE_ROLE_KEY が設定されていません' } }
+      if (spentError) {
+        console.error('解析の予算を確認できませんでした:', spentError.message)
+        return NextResponse.json(
+          { success: false, error: '解析の予算を確認できないため解析を中止しました。管理者にお問い合わせください。' },
+          { status: 503 }
+        )
+      }
+      const spentUsd = Number(spent ?? 0)
+      if (spentUsd >= budget.usd) {
+        return NextResponse.json(
+          { success: false, error: budgetExceededMessage(spentUsd, budget.usd) },
+          { status: 429 }
+        )
+      }
+    }
+
     // RLSにより、アクセスできない案件のファイルはそもそも取得できない
     const { data: fileRow, error: fileError } = await supabase
       .from('koseki_files')
@@ -178,6 +220,31 @@ export async function POST(request: NextRequest) {
     if (statusError) {
       // 結果自体は返せるため失敗にはしないが、一覧の表示が古いままになるのでログに残す
       console.error('戸籍ファイルの解析状態を保存できませんでした', statusError.message)
+    }
+
+    // 消費トークンと見積もり原価を記録する（月の予算の判定に使う）。解析が失敗しても、
+    // 課金された呼び出し（出力が形式に合わなかった試行・照合など）は記録する。
+    // 記録に失敗しても解析結果は返すが、予算の判定が甘くなるのでログに残す
+    for (const record of usageRecordsOf(result.usageLog)) {
+      if (!record.priced) {
+        console.warn(`解析費用: ${record.model} の単価が未登録のため、最も高い単価で見積もりました（lib/analysis/pricing.ts）`)
+      }
+      if (!usageClient) {
+        console.warn('解析費用: SUPABASE_SERVICE_ROLE_KEY が無いため記録できません')
+        break
+      }
+      const { error: usageError } = await usageClient.rpc('record_analysis_usage', {
+        p_user: user.id,
+        p_project: projectId,
+        p_file: fileId,
+        p_role: record.role,
+        p_model: record.model,
+        p_input_tokens: record.inputTokens,
+        p_output_tokens: record.outputTokens,
+        p_cached_input_tokens: record.cachedInputTokens,
+        p_cost_usd: record.costUsd,
+      })
+      if (usageError) console.error('解析費用を記録できませんでした', usageError.message)
     }
 
     if (result.success) {

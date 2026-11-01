@@ -12,7 +12,7 @@ describe('resolveProviderChain', () => {
   it('Geminiキーのみ: 最新 → 同世代preview → 旧世代 の順に落ちる', () => {
     const chain = resolveProviderChain({ GEMINI_API_KEY: 'k' })
     expect(chain).toEqual([
-      { provider: 'gemini', model: 'gemini-3.1-pro' },
+      { provider: 'gemini', model: 'gemini-4-argon' },
       { provider: 'gemini', model: 'gemini-3.1-pro-preview' },
       { provider: 'gemini', model: 'gemini-2.5-pro' },
     ])
@@ -41,7 +41,7 @@ describe('resolveProviderChain', () => {
     })
     expect(chain[0]).toEqual({ provider: 'anthropic', model: 'claude-opus-5' })
     // 他プロバイダへのフォールバックも維持される
-    expect(chain).toContainEqual({ provider: 'gemini', model: 'gemini-3.1-pro' })
+    expect(chain).toContainEqual({ provider: 'gemini', model: 'gemini-4-argon' })
   })
 
   it('ANALYSIS_MODELは第一候補プロバイダのモデルを上書きする', () => {
@@ -81,7 +81,7 @@ describe('resolveProviderChain', () => {
 })
 
 describe('resolveCrossCheckCandidate', () => {
-  const gemini = { provider: 'gemini' as const, model: 'gemini-3.1-pro' }
+  const gemini = { provider: 'gemini' as const, model: 'gemini-4-argon' }
 
   it('キーが2つ以上あれば、設定なしでも既定で有効になる', () => {
     // opt-inにすると設定を知らないまま運用が始まり、一度も動かないまま終わるため
@@ -101,11 +101,51 @@ describe('resolveCrossCheckCandidate', () => {
     ).toBeNull()
   })
 
-  it('キーが1つしかなければ照合しようがないので無効になる', () => {
-    expect(resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k' }, gemini)).toBeNull()
+  it('Geminiのキーだけでも、別のモデル（Flash）で照合する', () => {
+    expect(resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k' }, gemini)).toEqual({
+      provider: 'gemini',
+      model: 'gemini-3.8-flash',
+    })
   })
 
-  it('必ずprimaryと別のプロバイダを選ぶ', () => {
+  it('同じプロバイダの照合でも、主モデルと同じモデルは選ばない', () => {
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'gemini-4-argon' }, gemini)
+    ).toBeNull()
+  })
+
+  it('主モデルを照合用のFlashにした場合は、上位モデル（既定）で照合する（照合が消えないように）', () => {
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k' }, { provider: 'gemini', model: 'gemini-3.8-flash' })
+    ).toEqual({ provider: 'gemini', model: 'gemini-4-argon' })
+  })
+
+  it('照合のモデルだけを指定した場合は、モデル名からプロバイダを推定する（他社のキーが残っていても）', () => {
+    expect(
+      resolveCrossCheckCandidate(
+        { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'gemini-3.8-flash' },
+        gemini
+      )
+    ).toEqual({ provider: 'gemini', model: 'gemini-3.8-flash' })
+    // 推定したプロバイダのキーが無ければ照合しない（別社のモデル名をGeminiに送って毎回失敗させない）
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'claude-opus-5-5' }, gemini)
+    ).toBeNull()
+  })
+
+  it('名前からプロバイダを推定できない照合モデルは、主と同じプロバイダのモデルとして扱う', () => {
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'learnlm-2-flash' }, gemini)
+    ).toEqual({ provider: 'gemini', model: 'learnlm-2-flash' })
+  })
+
+  it('同じプロバイダの照合モデルを ANALYSIS_ENSEMBLE_MODEL で変えられる', () => {
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'gemini-3.1-pro-preview' }, gemini)
+    ).toEqual({ provider: 'gemini', model: 'gemini-3.1-pro-preview' })
+  })
+
+  it('別プロバイダのキーがあれば、そちらを優先する', () => {
     // 同じモデルを2回呼んでも同じ誤読を再現するだけで照合にならない
     const candidate = resolveCrossCheckCandidate(
       { GEMINI_API_KEY: 'k', OPENAI_API_KEY: 'k' },
@@ -128,13 +168,13 @@ describe('resolveCrossCheckCandidate', () => {
     expect(candidate).toEqual({ provider: 'openai', model: 'gpt-5.2' })
   })
 
-  it('照合先にprimaryと同じプロバイダを指定した場合は無効になる', () => {
+  it('照合先にprimaryと同じプロバイダを指定した場合は、そのプロバイダの別モデルで照合する', () => {
     expect(
       resolveCrossCheckCandidate(
         { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k', ANALYSIS_ENSEMBLE_PROVIDER: 'gemini' },
         gemini
       )
-    ).toBeNull()
+    ).toEqual({ provider: 'gemini', model: 'gemini-3.8-flash' })
   })
 
   it('照合先に指定したプロバイダのキーがなければ無効になる', () => {

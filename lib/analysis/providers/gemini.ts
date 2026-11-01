@@ -1,7 +1,8 @@
 import '../../server-guard'
 import { GoogleGenAI } from '@google/genai'
+import { geminiResolutionFor, supportsPartResolution } from '../geminiResolution'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT, KOSEKI_RESPONSE_SCHEMA } from '../../koseki-prompt'
-import { AnalysisInput, AnalysisProvider, ProviderResult, PROVIDER_TIMEOUT_MS } from '../types'
+import { AnalysisInput, AnalysisProvider, ProviderOutputError, ProviderResult, PROVIDER_TIMEOUT_MS } from '../types'
 import { withTransientRetry } from '../retry'
 
 /**
@@ -24,7 +25,12 @@ export const geminiProvider: AnalysisProvider = {
           role: 'user',
           parts: [
             { text: KOSEKI_TASK_PROMPT },
-            { inlineData: { mimeType: input.mimeType, data: input.base64Data } },
+            {
+              inlineData: { mimeType: input.mimeType, data: input.base64Data },
+              ...(supportsPartResolution(model)
+                ? { mediaResolution: { level: geminiResolutionFor(input.mimeType, process.env.GEMINI_MEDIA_RESOLUTION) } }
+                : {}),
+            },
           ],
         },
       ],
@@ -44,13 +50,24 @@ export const geminiProvider: AnalysisProvider = {
     // （Gemini 3.x系は4,096トークン、2.5系は2,048トークン）。
     // 現在の固定プロンプトはこの閾値付近のため、効いているかは実測でしか分からない。
     const meta = response.usageMetadata
-    return {
-      raw: JSON.parse(text),
-      usage: {
-        inputTokens: meta?.promptTokenCount ?? null,
-        outputTokens: meta?.candidatesTokenCount ?? null,
-        cachedInputTokens: meta?.cachedContentTokenCount ?? null,
-      },
+    const usage = {
+      inputTokens: meta?.promptTokenCount ?? null,
+      // 思考（thinking）のトークンも出力として課金されるため、出力に含める
+      // （含めないと費用を少なく見積もり、月の予算の判定が甘くなる）
+      outputTokens:
+        meta?.candidatesTokenCount == null && meta?.thoughtsTokenCount == null
+          ? null
+          : (meta?.candidatesTokenCount ?? 0) + (meta?.thoughtsTokenCount ?? 0),
+      cachedInputTokens: meta?.cachedContentTokenCount ?? null,
     }
+
+    // 出力が途中で切れるなどしてJSONとして読めなくても課金はされているため、消費量を付けて投げる
+    let raw: unknown
+    try {
+      raw = JSON.parse(text)
+    } catch {
+      throw new ProviderOutputError('出力をJSONとして読めませんでした（出力が途中で切れた可能性があります）', usage)
+    }
+    return { raw, usage }
   },
 }

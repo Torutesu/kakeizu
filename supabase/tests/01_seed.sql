@@ -11,6 +11,11 @@ grant usage on schema public to authenticated, anon;
 grant all on all tables in schema public to authenticated;
 grant all on all sequences in schema public to authenticated;
 grant execute on all functions in schema public to authenticated;
+-- 本物のSupabaseでは、上の既定の付与は関数を作った時点で行われ、その後マイグレーション内の
+-- revoke が効く。ここではマイグレーションの後に一括で付与しているため、
+-- マイグレーションで意図的に利用者から取り上げた関数は、同じように取り上げ直す
+revoke execute on function public.record_analysis_usage(uuid, uuid, uuid, text, text, integer, integer, integer, numeric) from authenticated;
+revoke execute on function public.analysis_cost_this_month() from authenticated;
 grant usage on schema auth to authenticated;
 grant select on auth.users to authenticated;
 -- 2つの事務所と3人の利用者を用意

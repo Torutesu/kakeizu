@@ -19,6 +19,14 @@ export interface TokenUsage {
   cachedInputTokens: number | null
 }
 
+/** 1回のモデル呼び出しの消費（成否にかかわらず、課金された呼び出しはすべて残す） */
+export interface UsageLogEntry {
+  role: 'primary' | 'cross_check'
+  provider: AnalysisProviderName
+  model: string
+  usage: TokenUsage | null
+}
+
 export interface AnalysisSuccess {
   success: true
   data: FamilyTreeData
@@ -27,11 +35,17 @@ export interface AnalysisSuccess {
   model: string
   /** トークン消費量（プロバイダが返さない場合はnull） */
   usage: TokenUsage | null
+  /** 照合（2つ目の読み取り）に使ったモデルと消費量。照合しなかった場合は省略 */
+  crossCheck?: { provider: AnalysisProviderName; model: string; usage: TokenUsage | null }
+  /** 課金された呼び出しの一覧（失敗してフォールバックした試行・照合を含む）。費用の記録に使う */
+  usageLog: UsageLogEntry[]
 }
 
 export interface AnalysisFailure {
   success: false
   error: string
+  /** 失敗しても課金された呼び出し（出力が形式に合わなかった試行・照合など） */
+  usageLog: UsageLogEntry[]
 }
 
 export type AnalysisOutcome = AnalysisSuccess | AnalysisFailure
@@ -60,3 +74,14 @@ export interface AnalysisProvider {
  * SDK側の再試行は無効にすること（再試行すると 240秒×2 で関数上限を超える）。
  */
 export const PROVIDER_TIMEOUT_MS = 240_000
+
+/**
+ * モデルの応答は得られた（課金された）が、出力を読めなかった場合の例外。
+ * 消費量を持たせて、費用の記録から漏れないようにする
+ */
+export class ProviderOutputError extends Error {
+  constructor(message: string, readonly usage: TokenUsage | null) {
+    super(message)
+    this.name = 'ProviderOutputError'
+  }
+}

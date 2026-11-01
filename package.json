@@ -14,6 +14,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "benchmark": "tsx scripts/benchmark/run.ts",
+    "benchmark:export": "tsx scripts/benchmark/export-case.ts",
     "db:bundle": "bash scripts/bundle-sql.sh",
     "provision": "node scripts/provision.mjs",
     "e2e": "playwright test",

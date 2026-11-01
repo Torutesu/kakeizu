@@ -6,6 +6,8 @@ import {
   AnalysisProviderName,
   ProviderCandidate,
   TokenUsage,
+  UsageLogEntry,
+  ProviderOutputError,
 } from './types'
 import { resolveProviderChain, resolveOverrideCandidate, resolveCrossCheckCandidate } from './chain'
 import { kosekiResultSchema } from './schema'
@@ -66,18 +68,20 @@ function logTokenUsage(candidate: ProviderCandidate, usage: TokenUsage | null): 
 function startCrossCheck(
   input: AnalysisInput,
   candidate: ProviderCandidate
-): Promise<FamilyTreeData | null> {
+): Promise<{ data: FamilyTreeData | null; usage: TokenUsage | null }> {
   return PROVIDERS[candidate.provider]
     .analyze(input, candidate.model)
-    .then(({ raw }) => {
+    .then(({ raw, usage }) => {
+      logTokenUsage(candidate, usage)
       const parsed = kosekiResultSchema.safeParse(raw)
       if (!parsed.success) {
         console.warn(
           `戸籍解析の照合: ${candidate.provider}/${candidate.model} の出力がスキーマに一致せず、照合を省略しました`
         )
-        return null
+        // 照合には使えないが、課金は発生しているので消費量は返す（月の予算に数えるため）
+        return { data: null, usage }
       }
-      return sanitizeFamilyTreeData(parsed.data as FamilyTreeData)
+      return { data: sanitizeFamilyTreeData(parsed.data as FamilyTreeData), usage }
     })
     .catch(error => {
       const message = error instanceof Error ? error.message : String(error)
@@ -85,7 +89,8 @@ function startCrossCheck(
         `戸籍解析の照合に失敗しました（解析結果は有効です）: ${candidate.provider}/${candidate.model}`,
         message
       )
-      return null
+      // 応答は得られたが読めなかった場合も課金されているので、消費量は返す
+      return { data: null, usage: error instanceof ProviderOutputError ? error.usage : null }
     })
 }
 
@@ -103,7 +108,7 @@ export async function runKosekiAnalysis(
   // 機微情報を送る前に、学習不使用の条件が確認済みかを検査する
   const policy = checkDataPolicy(process.env)
   if (!policy.ok) {
-    return { success: false, error: policy.error ?? 'データ利用ポリシーが未確認です' }
+    return { success: false, error: policy.error ?? 'データ利用ポリシーが未確認です', usageLog: [] }
   }
 
   let chain: ProviderCandidate[]
@@ -113,6 +118,7 @@ export async function runKosekiAnalysis(
       return {
         success: false,
         error: `指定されたプロバイダ「${override.provider}」は無効か、APIキーが設定されていません`,
+        usageLog: [],
       }
     }
     chain = [candidate]
@@ -124,11 +130,12 @@ export async function runKosekiAnalysis(
       success: false,
       error:
         '解析用のAPIキーが設定されていません。GEMINI_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY のいずれかを設定してください。',
+      usageLog: [],
     }
   }
 
   // 照合は先頭候補を前提に開始する。primaryがフォールバックして照合側と
-  // 同じプロバイダになった場合は、比較しても意味がないので破棄する。
+  // 同じモデルになった場合は、比較しても意味がないので破棄する。
   // 明示的なモデル指定（ベンチマーク・再解析）時は、結果が混ざらないよう照合しない
   const crossCheckCandidate = override ? null : resolveCrossCheckCandidate(process.env, chain[0])
   const crossCheckPromise = crossCheckCandidate
@@ -136,10 +143,20 @@ export async function runKosekiAnalysis(
     : null
 
   const errors: string[] = []
+  // 課金された呼び出しの記録。出力が形式に合わずに次の候補へ進んだ試行も課金されているため残す
+  const usageLog: UsageLogEntry[] = []
+  // 照合の消費は1回だけ記録する（照合の後で例外が起きて次の候補へ進んでも、二重に数えない）
+  let crossCheckRecorded = false
+  const recordCrossCheck = (usage: TokenUsage | null) => {
+    if (crossCheckRecorded || !crossCheckCandidate) return
+    crossCheckRecorded = true
+    usageLog.push({ role: 'cross_check', ...crossCheckCandidate, usage })
+  }
 
   for (const candidate of chain) {
     try {
       const { raw, usage } = await PROVIDERS[candidate.provider].analyze(input, candidate.model)
+      usageLog.push({ role: 'primary', ...candidate, usage })
 
       // プロバイダ差を吸収するため、必ず共通スキーマで検証する
       const parsed = kosekiResultSchema.safeParse(raw)
@@ -157,11 +174,14 @@ export async function runKosekiAnalysis(
 
       // 2モデル照合。primaryの結果は変えず、食い違いを注記として付ける
       let crossCheckIssues: CrossCheckIssue[] = []
+      let crossCheck: { provider: AnalysisProviderName; model: string; usage: TokenUsage | null } | undefined
       if (crossCheckPromise && crossCheckCandidate) {
-        const secondaryData = await crossCheckPromise
-        if (crossCheckCandidate.provider === candidate.provider) {
+        const { data: secondaryData, usage: crossCheckUsage } = await crossCheckPromise
+        crossCheck = { ...crossCheckCandidate, usage: crossCheckUsage }
+        recordCrossCheck(crossCheckUsage)
+        if (crossCheckCandidate.provider === candidate.provider && crossCheckCandidate.model === candidate.model) {
           console.warn(
-            `戸籍解析の照合: 解析が ${candidate.provider} にフォールバックし、照合先と同じプロバイダになったため照合を省略しました`
+            `戸籍解析の照合: 解析が ${candidate.provider}/${candidate.model} にフォールバックし、照合先と同じモデルになったため照合を省略しました`
           )
         } else if (secondaryData) {
           crossCheckIssues = compareExtractions(data, secondaryData, {
@@ -182,16 +202,27 @@ export async function runKosekiAnalysis(
         provider: candidate.provider,
         model: candidate.model,
         usage,
+        ...(crossCheck ? { crossCheck } : {}),
+        usageLog,
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      // 応答は得られたが読めなかった（課金済み）試行の消費も記録する
+      if (error instanceof ProviderOutputError) usageLog.push({ role: 'primary', ...candidate, usage: error.usage })
       errors.push(`${candidate.provider}/${candidate.model}: ${message}`)
       console.warn(`戸籍解析: ${candidate.provider}/${candidate.model} が失敗、次の候補を試します`, message)
     }
   }
 
+  // 全候補が失敗しても、同時に走らせた照合は課金されているので、終わるのを待って記録に含める
+  if (crossCheckPromise && !crossCheckRecorded) {
+    const { usage: crossCheckUsage } = await crossCheckPromise
+    recordCrossCheck(crossCheckUsage)
+  }
+
   return {
     success: false,
     error: `すべての解析プロバイダが失敗しました: ${errors.join(' | ')}`,
+    usageLog,
   }
 }
