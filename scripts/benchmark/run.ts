@@ -33,7 +33,7 @@ import {
   ProviderCandidate,
   TokenUsage,
 } from '../../lib/analysis/types'
-import { FamilyTreeData, isValidFamilyTreeData } from '../../utils/familyDataProcessor'
+import { FamilyTreeData, isValidFamilyTreeData, processFamilyData, toFamilyTreeData } from '../../utils/familyDataProcessor'
 import { scoreResult, matchPeople, formatPercent, BenchmarkScore } from './metrics'
 
 const PROVIDERS: Record<AnalysisProviderName, AnalysisProvider> = {
@@ -128,6 +128,9 @@ function parseArgs(argv: string[]): { dir: string; candidates: BenchmarkCandidat
         throw new Error(`不明なプロバイダ: ${provider}（gemini / anthropic / openai）`)
       }
       const p = provider as AnalysisProviderName
+      if (resolution && (p !== 'gemini' || !['low', 'medium', 'high', 'ultra_high'].includes(resolution))) {
+        throw new Error(`解像度の指定「@${resolution}」は Gemini の low / medium / high / ultra_high のみ使えます（${entry.trim()}）`)
+      }
       return { provider: p, model: model || DEFAULT_MODELS[p], ...(resolution ? { resolution } : {}) }
     })
   } else {
@@ -182,6 +185,8 @@ async function main() {
   const items: BenchmarkItem[] = []
   for (const entry of fs.readdirSync(dir).sort()) {
     const full = path.join(dir, entry)
+    // 書き出し途中（benchmark:export が中断した）のディレクトリは対象にしない
+    if (entry.includes('.partial-')) continue
     if (fs.statSync(full).isDirectory()) {
       // 案件単位: 複数の戸籍書類と expected.json
       const sources = fs.readdirSync(full).filter(isSource).sort().map(f => path.join(full, f))
@@ -234,7 +239,11 @@ async function main() {
             throw new Error(`${path.basename(file)}: スキーマ不一致: ${parsed.error.issues[0]?.message ?? ''}`)
           }
           const data = sanitizeFamilyTreeData(parsed.data as FamilyTreeData)
-          merged = item.files.length === 1 ? data : mergeFamilyTreeData(merged, data).data
+          // アプリの読み込み（useFamilyData の importFamilyTreeData）と同じく、
+          // 名寄せで統合したあと画面のデータ形式を一度通す（正規化の差で結果がずれないように）
+          const mergedRaw = mergeFamilyTreeData(merged, data).data
+          const processed = processFamilyData(mergedRaw)
+          merged = toFamilyTreeData(processed.persons, processed.families, mergedRaw.crossCheckIssues, mergedRaw.registries)
           usage.inputTokens! += fileUsage?.inputTokens ?? 0
           usage.outputTokens! += fileUsage?.outputTokens ?? 0
           usage.cachedInputTokens! += fileUsage?.cachedInputTokens ?? 0

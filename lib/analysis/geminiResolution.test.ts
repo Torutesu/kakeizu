@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { PartMediaResolutionLevel } from '@google/genai'
-import { geminiResolutionFor } from './geminiResolution'
+import { geminiResolutionFor, supportsPartResolution } from './geminiResolution'
 
 describe('geminiResolutionFor', () => {
   it('指定が無ければ high で読む（手書きの細かい字画を読み落とさないため）', () => {
@@ -19,5 +19,14 @@ describe('geminiResolutionFor', () => {
 
   it('不明な値は high として扱う', () => {
     expect(geminiResolutionFor('application/pdf', 'maximum')).toBe(PartMediaResolutionLevel.MEDIA_RESOLUTION_HIGH)
+  })
+})
+
+describe('supportsPartResolution', () => {
+  it('Gemini 3 以降には送り、2.x 系（最後のフォールバック先）には送らない', () => {
+    expect(supportsPartResolution('gemini-4-argon')).toBe(true)
+    expect(supportsPartResolution('gemini-3.1-pro-preview')).toBe(true)
+    expect(supportsPartResolution('gemini-3.8-flash')).toBe(true)
+    expect(supportsPartResolution('gemini-2.5-pro')).toBe(false)
   })
 })

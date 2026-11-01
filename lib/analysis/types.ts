@@ -19,6 +19,14 @@ export interface TokenUsage {
   cachedInputTokens: number | null
 }
 
+/** 1回のモデル呼び出しの消費（成否にかかわらず、課金された呼び出しはすべて残す） */
+export interface UsageLogEntry {
+  role: 'primary' | 'cross_check'
+  provider: AnalysisProviderName
+  model: string
+  usage: TokenUsage | null
+}
+
 export interface AnalysisSuccess {
   success: true
   data: FamilyTreeData
@@ -29,11 +37,15 @@ export interface AnalysisSuccess {
   usage: TokenUsage | null
   /** 照合（2つ目の読み取り）に使ったモデルと消費量。照合しなかった場合は省略 */
   crossCheck?: { provider: AnalysisProviderName; model: string; usage: TokenUsage | null }
+  /** 課金された呼び出しの一覧（失敗してフォールバックした試行・照合を含む）。費用の記録に使う */
+  usageLog: UsageLogEntry[]
 }
 
 export interface AnalysisFailure {
   success: false
   error: string
+  /** 失敗しても課金された呼び出し（出力が形式に合わなかった試行・照合など） */
+  usageLog: UsageLogEntry[]
 }
 
 export type AnalysisOutcome = AnalysisSuccess | AnalysisFailure

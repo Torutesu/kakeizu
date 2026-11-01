@@ -1,6 +1,6 @@
 import '../../server-guard'
 import { GoogleGenAI } from '@google/genai'
-import { geminiResolutionFor } from '../geminiResolution'
+import { geminiResolutionFor, supportsPartResolution } from '../geminiResolution'
 import { KOSEKI_SYSTEM_INSTRUCTION, KOSEKI_TASK_PROMPT, KOSEKI_RESPONSE_SCHEMA } from '../../koseki-prompt'
 import { AnalysisInput, AnalysisProvider, ProviderResult, PROVIDER_TIMEOUT_MS } from '../types'
 import { withTransientRetry } from '../retry'
@@ -27,7 +27,9 @@ export const geminiProvider: AnalysisProvider = {
             { text: KOSEKI_TASK_PROMPT },
             {
               inlineData: { mimeType: input.mimeType, data: input.base64Data },
-              mediaResolution: { level: geminiResolutionFor(input.mimeType, process.env.GEMINI_MEDIA_RESOLUTION) },
+              ...(supportsPartResolution(model)
+                ? { mediaResolution: { level: geminiResolutionFor(input.mimeType, process.env.GEMINI_MEDIA_RESOLUTION) } }
+                : {}),
             },
           ],
         },

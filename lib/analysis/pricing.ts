@@ -65,3 +65,31 @@ export function estimateCostUsd(model: string, usage: TokenUsage | null | undefi
   const cachedPrice = price.cachedInput ?? price.input * 0.1
   return (uncachedInput * price.input + cached * cachedPrice + (usage.outputTokens ?? 0) * price.output) / 1e6
 }
+
+/**
+ * 予算の判定用の原価（USD）。単価が分からないモデルは、登録済みで最も高い単価で見積もる。
+ * 不明なモデルを「0円」や「数えない」扱いにすると、そのモデルを指定するだけで予算をすり抜けられるため。
+ * トークン数が分からない場合は null（記録はするが金額は数えられない）
+ */
+export function estimateBudgetCostUsd(
+  model: string,
+  usage: TokenUsage | null | undefined,
+  date: Date = new Date()
+): { usd: number | null; priced: boolean } {
+  const usd = estimateCostUsd(model, usage, date)
+  if (usd !== null || !usage || (usage.inputTokens == null && usage.outputTokens == null)) {
+    return { usd, priced: usd !== null }
+  }
+  let maxInput = 0
+  let maxOutput = 0
+  for (const name of Object.keys(MODEL_PRICES)) {
+    const price = priceFor(name, date)
+    if (!price) continue
+    maxInput = Math.max(maxInput, price.input)
+    maxOutput = Math.max(maxOutput, price.output)
+  }
+  return {
+    usd: ((usage.inputTokens ?? 0) * maxInput + (usage.outputTokens ?? 0) * maxOutput) / 1e6,
+    priced: false,
+  }
+}

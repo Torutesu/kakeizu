@@ -39,6 +39,13 @@ function argValue(argv: string[], name: string): string | undefined {
   return index >= 0 ? argv[index + 1] : undefined
 }
 
+const EXTENSION_BY_MIME: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 async function findProject(supabase: SupabaseClient, nameOrId: string): Promise<{ id: string; name: string }> {
@@ -59,7 +66,7 @@ async function findProject(supabase: SupabaseClient, nameOrId: string): Promise<
 async function downloadKosekiFiles(supabase: SupabaseClient, projectId: string, outDir: string): Promise<number> {
   const { data: files, error } = await supabase
     .from('koseki_files')
-    .select('storage_path, file_name, created_at')
+    .select('storage_path, file_name, mime_type, created_at')
     .eq('project_id', projectId)
     .order('created_at', { ascending: true })
   if (error) throw new Error(`戸籍書類の一覧を取得できませんでした: ${error.message}`)
@@ -71,9 +78,12 @@ async function downloadKosekiFiles(supabase: SupabaseClient, projectId: string, 
       throw new Error(`${file.file_name} をダウンロードできませんでした: ${downloadError?.message ?? ''}`)
     }
     index++
-    // 読み込んだ順に統合するため、アップロード順の番号を先頭に付ける
-    const safeName = String(file.file_name).replace(/[\\/:*?"<>|]/g, '_')
-    const target = path.join(outDir, `${String(index).padStart(2, '0')}_${safeName}`)
+    // 読み込んだ順に統合するため、アップロード順の番号を先頭に付ける。
+    // ベンチマークは拡張子で書類を見分けるので、元のファイル名に関係なく形式から拡張子を付ける
+    const extension = EXTENSION_BY_MIME[String(file.mime_type)]
+    if (!extension) throw new Error(`${file.file_name}: 対応していない形式です（${file.mime_type}）`)
+    const baseName = String(file.file_name).replace(/\.[^.]*$/, '').replace(/[\\/:*?"<>|]/g, '_')
+    const target = path.join(outDir, `${String(index).padStart(3, '0')}_${baseName}${extension}`)
     fs.writeFileSync(target, Buffer.from(await blob.arrayBuffer()))
     console.log(`  書類: ${path.basename(target)}`)
   }
@@ -105,8 +115,31 @@ async function main() {
     console.error(`${outDir} は空ではありません。上書きしないよう、別の --out を指定するか中身を確認してください`)
     process.exit(1)
   }
-  fs.mkdirSync(outDir, { recursive: true })
+  // 途中で失敗したときに書きかけの案件が残らないよう、一時ディレクトリに書いてから最後に移す
+  const workDir = `${outDir}.partial-${process.pid}`
+  fs.rmSync(workDir, { recursive: true, force: true })
+  fs.mkdirSync(workDir, { recursive: true })
+  try {
+    await exportCase(supabase, sourceProject, expectedProject, workDir)
+    fs.rmSync(outDir, { recursive: true, force: true }) // 空であることは上で確かめている
+    fs.renameSync(workDir, outDir)
+  } catch (error) {
+    fs.rmSync(workDir, { recursive: true, force: true })
+    throw error
+  }
 
+  console.log('')
+  console.log(`✅ ${outDir} に書き出しました`)
+  console.log(`   次に: pnpm benchmark -- --dir ${path.dirname(outDir)} --candidates gemini:gemini-4-argon,gemini:gemini-3.1-pro-preview`)
+  console.log('   ⚠ 実在の戸籍です。コミットせず、使い終わったら削除してください（testdata/ はgitignore済み）')
+}
+
+async function exportCase(
+  supabase: SupabaseClient,
+  sourceProject: { id: string; name: string },
+  expectedProject: { id: string; name: string },
+  outDir: string
+) {
   console.log(`正解: ${expectedProject.name}（${expectedProject.id}）`)
   const { data: revision, error: revisionError } = await supabase
     .from('tree_revisions')
@@ -125,11 +158,7 @@ async function main() {
     count = await downloadKosekiFiles(supabase, expectedProject.id, outDir)
   }
   if (count === 0) throw new Error('戸籍書類が1件もありません')
-
-  console.log('')
-  console.log(`✅ ${outDir} に書き出しました（書類${count}件＋expected.json）`)
-  console.log(`   次に: pnpm benchmark -- --dir ${path.dirname(outDir)} --candidates gemini:gemini-4-argon,gemini:gemini-3.1-pro-preview`)
-  console.log('   ⚠ 実在の戸籍です。コミットせず、使い終わったら削除してください（testdata/ はgitignore済み）')
+  console.log(`  書類${count}件＋expected.json`)
 }
 
 main().catch(error => {

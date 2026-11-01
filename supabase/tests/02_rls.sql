@@ -86,24 +86,42 @@ select '作業者は招待を作成できない', count(*) = 0
 insert into rls_results
 select 'レート制限のカウンタは直接読めない', count(*) = 0 from rate_limits;
 
--- ---- 11〜13) 解析費用の記録は関数経由でのみ追記でき、直接は読み書きできない ----
--- 画面から記録を消したり書き換えたりして、月の予算の判定を逃れられないようにする
-select public.record_analysis_usage(
-  'cccccccc-0000-0000-0000-000000000001', null, 'primary', 'gemini-4-argon', 6000, 4000, 3000, 0.05
-);
-select public.record_analysis_usage(
-  'cccccccc-0000-0000-0000-000000000001', null, 'cross_check', 'gemini-3.8-flash', 6000, 3000, 0, 0.0158
-);
+-- ---- 11〜13) 解析費用の記録と集計は利用者からは一切できない ----
+-- 利用者が呼べると、架空の高額な記録で全事務所の解析を止めたり、他事務所の利用額を覗いたりできるため
+insert into rls_results
+select '解析費用を記録する関数は利用者から呼べない',
+  not has_function_privilege('authenticated',
+    'public.record_analysis_usage(uuid, uuid, uuid, text, text, integer, integer, integer, numeric)', 'execute');
+insert into rls_results
+select '当月の解析費用の合計は利用者から取得できない',
+  not has_function_privilege('authenticated', 'public.analysis_cost_this_month()', 'execute');
 insert into rls_results
 select '解析費用の記録は直接読めない', count(*) = 0 from analysis_usage;
+-- 直接の削除・変更を試みる（ポリシーが無いので何も起きないはず。下でサーバー側の合計が変わらないことを確かめる）
 delete from analysis_usage;
 update analysis_usage set cost_usd = 0;
-insert into rls_results
-select '当月の解析費用の合計を関数で取得できる', public.analysis_cost_this_month() = 0.0658;
-insert into rls_results
-select '解析費用の記録は直接削除・変更できない', public.analysis_cost_this_month() = 0.0658;
 
 reset role;
+
+-- ---- 14〜15) サーバー（サービスロール）は記録・集計できる ----
+set role service_role;
+select public.record_analysis_usage(
+  null, 'cccccccc-0000-0000-0000-000000000001', null, 'primary', 'gemini-4-argon', 6000, 4000, 3000, 0.05
+);
+select public.record_analysis_usage(
+  null, 'cccccccc-0000-0000-0000-000000000001', null, 'cross_check', 'gemini-3.8-flash', 6000, 3000, 0, 0.0158
+);
+reset role;
+insert into rls_results
+select 'サーバーは当月の解析費用の合計を取得できる', public.analysis_cost_this_month() = 0.0658;
+-- 利用者による直接の削除・変更は効かない（記録した後に試す）
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+delete from analysis_usage;
+update analysis_usage set cost_usd = 0;
+reset role;
+insert into rls_results
+select '解析費用の記録は利用者が直接削除・変更できない', public.analysis_cost_this_month() = 0.0658;
 
 -- ---- 結果の出力 ----
 \echo ''
@@ -121,7 +139,7 @@ from rls_results;
 do $$
 declare
   -- 上の検証の数と一致させること。検証を増やしたらこの値も更新する
-  c_expected constant integer := 13;
+  c_expected constant integer := 15;
   v_failed integer;
   v_total integer;
 begin

@@ -140,15 +140,14 @@ export function resolveCrossCheckCandidate(
     candidate && !(candidate.provider === primary.provider && candidate.model === primary.model)
       ? candidate
       : null
+  const configuredModel = env.ANALYSIS_ENSEMBLE_MODEL?.trim() || undefined
 
-  const configured = (env.ANALYSIS_ENSEMBLE_PROVIDER ?? '').trim().toLowerCase()
+  // 照合のプロバイダ: 明示指定 → モデル名から推定（モデルだけ指定された場合）→ 自動選択
+  const configured =
+    (env.ANALYSIS_ENSEMBLE_PROVIDER ?? '').trim().toLowerCase() ||
+    (configuredModel ? inferProviderFromModel(configuredModel) ?? '' : '')
   if (configured) {
-    // 同じプロバイダを指定した場合は、モデルの指定が無ければ同じプロバイダ用の照合モデルを使う
-    const model =
-      env.ANALYSIS_ENSEMBLE_MODEL?.trim() ||
-      (configured === primary.provider && isProviderName(configured)
-        ? SAME_PROVIDER_CROSS_CHECK_MODELS[configured]
-        : undefined)
+    const model = configuredModel ?? (isProviderName(configured) ? sameProviderCrossCheckModel(configured, primary) : undefined)
     return differs(resolveOverrideCandidate(env, configured, model))
   }
 
@@ -157,6 +156,26 @@ export function resolveCrossCheckCandidate(
   if (otherProvider) return otherProvider
 
   // 別プロバイダのキーが無ければ、同じプロバイダの照合用モデルを使う
-  const sameProviderModel = env.ANALYSIS_ENSEMBLE_MODEL?.trim() || SAME_PROVIDER_CROSS_CHECK_MODELS[primary.provider]
+  const sameProviderModel = sameProviderCrossCheckModel(primary.provider, primary)
   return sameProviderModel ? differs(resolveOverrideCandidate(env, primary.provider, sameProviderModel)) : null
+}
+
+/**
+ * 同じプロバイダで照合に使うモデル。主モデルが照合用モデルそのもの（例: 費用を抑えるため主をFlashにした）
+ * の場合は、照合が消えないよう、そのプロバイダの既定（上位）モデルで照合する
+ */
+function sameProviderCrossCheckModel(provider: AnalysisProviderName, primary: ProviderCandidate): string | undefined {
+  const crossModel = SAME_PROVIDER_CROSS_CHECK_MODELS[provider]
+  if (provider === primary.provider && crossModel === primary.model) {
+    return DEFAULT_MODELS[provider] !== primary.model ? DEFAULT_MODELS[provider] : undefined
+  }
+  return crossModel
+}
+
+/** モデル名からプロバイダを推定する（照合のモデルだけが指定された場合に使う）。分からなければ null */
+export function inferProviderFromModel(model: string): AnalysisProviderName | null {
+  if (/^gemini-/i.test(model)) return 'gemini'
+  if (/^claude-/i.test(model)) return 'anthropic'
+  if (/^(gpt-|o\d)/i.test(model)) return 'openai'
+  return null
 }

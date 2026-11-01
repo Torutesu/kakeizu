@@ -110,10 +110,26 @@ describe('resolveCrossCheckCandidate', () => {
 
   it('同じプロバイダの照合でも、主モデルと同じモデルは選ばない', () => {
     expect(
-      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k' }, { provider: 'gemini', model: 'gemini-3.8-flash' })
-    ).toBeNull()
-    expect(
       resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'gemini-4-argon' }, gemini)
+    ).toBeNull()
+  })
+
+  it('主モデルを照合用のFlashにした場合は、上位モデル（既定）で照合する（照合が消えないように）', () => {
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k' }, { provider: 'gemini', model: 'gemini-3.8-flash' })
+    ).toEqual({ provider: 'gemini', model: 'gemini-4-argon' })
+  })
+
+  it('照合のモデルだけを指定した場合は、モデル名からプロバイダを推定する（他社のキーが残っていても）', () => {
+    expect(
+      resolveCrossCheckCandidate(
+        { GEMINI_API_KEY: 'k', ANTHROPIC_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'gemini-3.8-flash' },
+        gemini
+      )
+    ).toEqual({ provider: 'gemini', model: 'gemini-3.8-flash' })
+    // 推定したプロバイダのキーが無ければ照合しない（別社のモデル名をGeminiに送って毎回失敗させない）
+    expect(
+      resolveCrossCheckCandidate({ GEMINI_API_KEY: 'k', ANALYSIS_ENSEMBLE_MODEL: 'claude-opus-5-5' }, gemini)
     ).toBeNull()
   })
 

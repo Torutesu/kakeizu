@@ -15,6 +15,14 @@ const RESOLUTION_LEVELS: Record<string, PartMediaResolutionLevel> = {
  * 増える費用は1ページあたり約560トークン分（Gemini 4 Argonで約0.3円）にとどまる。
  * ultra_high は画像でのみ有効で、PDFに指定した場合は high で読む。
  */
+/**
+ * 書類ごとの解像度の指定に対応するモデルか（Gemini 3 以降）。
+ * 2.x 系（最後のフォールバック先）に送ると要求ごと拒否されうるため、送らない
+ */
+export function supportsPartResolution(model: string): boolean {
+  return !/^gemini-(1|2)\./.test(model)
+}
+
 export function geminiResolutionFor(mimeType: string, setting: string | undefined): PartMediaResolutionLevel {
   const requested = (setting ?? 'high').trim().toLowerCase()
   const level = RESOLUTION_LEVELS[requested] ?? RESOLUTION_LEVELS.high
