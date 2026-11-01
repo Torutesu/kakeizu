@@ -13,30 +13,35 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
   PAPER_SIZES,
+  TEXT_SIZES,
   PaperSizeId,
   OrientationSetting,
   PdfFitMode,
+  PdfTextSize,
   PdfExportOptions,
+  PdfGeometry,
   DEFAULT_PDF_OPTIONS,
   planPdfPages,
   describePlan,
   fitScaleFor,
+  formatPt,
   READABLE_SCALE_THRESHOLD,
 } from '../utils/pdfLayout'
 
 // ============================================================================
 // PDF出力の設定ダイアログ。
 //
-// 従来はA4 1ページ固定で、人数が増えるほど縮小されて文字が読めなくなっていた。
-// 出力してみるまで結果が分からないのが問題なので、
-// 設定を変えるたびに「何ページ・何%の大きさになるか」をその場で示す。
+// 1枚に収めると人数が増えるほど縮小されて文字が読めなくなるため、
+// 既定は「印刷したときの文字の大きさを決めて、必要な枚数に分割する」。
+// 設定を変えるたびに「何ページ・本文が何ptになるか」をその場で示し、
+// 用紙ごとのページ数も並べて、どの用紙で刷るかを選びやすくする。
 // ============================================================================
 
 interface PdfExportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** 家系図の描画サイズ（pt相当）。倍率とページ数の計算に使う */
-  contentSize: { width: number; height: number }
+  /** 家系図の描画サイズと、ページの境目を決めるためのカードの位置（px）。倍率とページ数の計算に使う */
+  contentSize: PdfGeometry
   onExport: (options: PdfExportOptions) => Promise<void>
 }
 
@@ -46,7 +51,7 @@ const ORIENTATION_OPTIONS: Array<{ id: OrientationSetting; label: string }> = [
   { id: 'landscape', label: '横' },
   { id: 'portrait', label: '縦' },
 ]
-const TILE_SCALES = [0.75, 1, 1.5]
+const TEXT_SIZE_OPTIONS: PdfTextSize[] = ['standard', 'large', 'xlarge']
 
 function OptionRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -94,14 +99,24 @@ export function PdfExportDialog({
   const [paperSize, setPaperSize] = useState<PaperSizeId>(DEFAULT_PDF_OPTIONS.paperSize)
   const [orientation, setOrientation] = useState<OrientationSetting>(DEFAULT_PDF_OPTIONS.orientation)
   const [mode, setMode] = useState<PdfFitMode>(DEFAULT_PDF_OPTIONS.mode)
-  const [tileScale, setTileScale] = useState(DEFAULT_PDF_OPTIONS.tileScale)
+  const [textSize, setTextSize] = useState<PdfTextSize>(DEFAULT_PDF_OPTIONS.textSize)
   const [isExporting, setIsExporting] = useState(false)
 
   const options: PdfExportOptions = useMemo(
-    () => ({ ...DEFAULT_PDF_OPTIONS, paperSize, orientation, mode, tileScale }),
-    [paperSize, orientation, mode, tileScale]
+    () => ({ ...DEFAULT_PDF_OPTIONS, paperSize, orientation, mode, textSize }),
+    [paperSize, orientation, mode, textSize]
   )
   const plan = useMemo(() => planPdfPages(contentSize, options), [contentSize, options])
+
+  // 分割するとき、用紙ごとに何ページになるか（同じ文字の大きさで比べる）
+  const pageCountByPaper = useMemo(
+    () =>
+      PAPER_OPTIONS.map(id => ({
+        id,
+        pageCount: planPdfPages(contentSize, { ...options, paperSize: id }).pageCount,
+      })),
+    [contentSize, options]
+  )
 
   // 1枚に収めた場合に読める大きさを保てる最小の用紙を勧める。
   // 「A4だと小さすぎる」とだけ言われても、どうすればよいか分からないため
@@ -161,24 +176,24 @@ export function PdfExportDialog({
           </OptionRow>
 
           <OptionRow label="収め方">
+            <Choice testId="mode-tile" selected={mode === 'tile'} onClick={() => setMode('tile')}>
+              読みやすく分割（おすすめ）
+            </Choice>
             <Choice testId="mode-fit" selected={mode === 'fit'} onClick={() => setMode('fit')}>
               1枚に収める
-            </Choice>
-            <Choice testId="mode-tile" selected={mode === 'tile'} onClick={() => setMode('tile')}>
-              分割する
             </Choice>
           </OptionRow>
 
           {mode === 'tile' && (
-            <OptionRow label="大きさ">
-              {TILE_SCALES.map(scale => (
+            <OptionRow label="文字の大きさ">
+              {TEXT_SIZE_OPTIONS.map(size => (
                 <Choice
-                  key={scale}
-                  testId={`scale-${scale}`}
-                  selected={tileScale === scale}
-                  onClick={() => setTileScale(scale)}
+                  key={size}
+                  testId={`text-${size}`}
+                  selected={textSize === size}
+                  onClick={() => setTextSize(size)}
                 >
-                  {Math.round(scale * 100)}%
+                  {TEXT_SIZES[size].label}（{formatPt(TEXT_SIZES[size].bodyPt)}）
                 </Choice>
               ))}
             </OptionRow>
@@ -190,8 +205,27 @@ export function PdfExportDialog({
             <p className="mt-0.5 text-xs text-gray-500">
               {PAPER_SIZES[paperSize].label}
               {plan.orientation === 'landscape' ? '横' : '縦'}
-              {mode === 'tile' && plan.pageCount > 1 && '・貼り合わせて1枚の図になります'}
+              {mode === 'tile' && plan.pageCount > 1 &&
+                '・人物カードの途中では切りません。先頭の全体図に、貼り合わせる並びとページ番号が載ります'}
             </p>
+            {mode === 'tile' && (
+              <p className="mt-2 text-xs text-gray-600" data-testid="pages-by-paper">
+                用紙ごとのページ数:{' '}
+                {pageCountByPaper.map(({ id, pageCount }, index) => (
+                  <span key={id}>
+                    {index > 0 && '／'}
+                    <button
+                      type="button"
+                      className={`underline-offset-2 ${id === paperSize ? 'font-semibold text-gray-900' : 'text-blue-700 underline'}`}
+                      onClick={() => setPaperSize(id)}
+                      data-testid={`pages-${id}`}
+                    >
+                      {PAPER_SIZES[id].label} {pageCount}ページ
+                    </button>
+                  </span>
+                ))}
+              </p>
+            )}
 
             {plan.isTooSmall && (
               <div
@@ -218,7 +252,7 @@ export function PdfExportDialog({
                         className="text-blue-700 underline underline-offset-2"
                         onClick={() => setMode('tile')}
                       >
-                        分割して書き出す
+                        読みやすく分割して書き出す
                       </button>
                     )}
                   </p>

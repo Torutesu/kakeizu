@@ -161,19 +161,27 @@ test.describe('PDF書き出しの設定', () => {
     await expect(page.getByTestId('pdf-plan')).not.toHaveText(a4 ?? '')
   })
 
-  test('分割を選ぶと複数ページになり、警告が出ない', async ({ page }) => {
-    await page.getByTestId('paper-a4').click()
-    await page.getByTestId('mode-tile').click()
-    await expect(page.getByTestId('pdf-plan')).toContainText('ページ（縦')
+  test('既定は「読みやすく分割」で、全体図付きの複数ページになり警告が出ない', async ({ page }) => {
+    await expect(page.getByTestId('mode-tile')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('pdf-plan')).toContainText('全体図1枚')
+    await expect(page.getByTestId('pdf-plan')).toContainText('本文 約11pt')
     await expect(page.getByTestId('too-small-warning')).toHaveCount(0)
   })
 
-  test('分割の大きさを変えるとページ数が変わる', async ({ page }) => {
-    await page.getByTestId('mode-tile').click()
-    await page.getByTestId('scale-0.75').click()
-    const small = await page.getByTestId('pdf-plan').textContent()
-    await page.getByTestId('scale-1.5').click()
-    await expect(page.getByTestId('pdf-plan')).not.toHaveText(small ?? '')
+  test('文字の大きさを変えると、本文の大きさとページ数が変わる', async ({ page }) => {
+    await page.getByTestId('text-standard').click()
+    await expect(page.getByTestId('pdf-plan')).toContainText('本文 約9pt')
+    const standard = await page.getByTestId('pdf-plan').textContent()
+    await page.getByTestId('text-xlarge').click()
+    await expect(page.getByTestId('pdf-plan')).toContainText('本文 約13pt')
+    await expect(page.getByTestId('pdf-plan')).not.toHaveText(standard ?? '')
+  })
+
+  test('用紙ごとのページ数が並び、押すとその用紙に切り替わる', async ({ page }) => {
+    await expect(page.getByTestId('pages-by-paper')).toContainText('A4')
+    await expect(page.getByTestId('pages-by-paper')).toContainText('A3')
+    await page.getByTestId('pages-a3').click()
+    await expect(page.getByTestId('paper-a3')).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('選んだ設定で書き出される', async ({ page }) => {

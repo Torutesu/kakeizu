@@ -371,8 +371,9 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
   // 図全体を組み立てるため、PDFダイアログを開いているときだけ計算する
   const pdfContentSize = useMemo(() => {
     if (!isPdfDialogOpen || persons.length === 0) return { width: 0, height: 0 }
-    const { width, height } = buildTreeSvg(persons, families, project?.name || '家系図')
-    return { width, height }
+    // ページの境目をカードの間に置くため、カードと線の位置も渡す
+    const { width, height, boxes, ink } = buildTreeSvg(persons, families, project?.name || '家系図')
+    return { width, height, boxes, ink }
   }, [isPdfDialogOpen, persons, families, project?.name])
 
   // JSON読み込みハンドラー

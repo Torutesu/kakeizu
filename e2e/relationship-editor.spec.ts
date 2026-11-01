@@ -87,6 +87,28 @@ test.describe('2通の戸籍を統合した家系図の表示', () => {
   })
 })
 
+test.describe('PDFの書き出し（読みやすく分割）', () => {
+  test('既定の設定でA4のPDFが作られ、全体図と分割ページが入る', async ({ page }) => {
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'PDFを書き出す' }).click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toBe('e2e-kakeizu.pdf')
+
+    const path = await download.path()
+    const pdf = (await import('node:fs')).readFileSync(path!, 'latin1')
+    expect(pdf.startsWith('%PDF-')).toBe(true)
+    // ページ数（/Type /Pages を除く）。この家系図はA4に収まらないため、全体図＋分割で2ページ以上になる
+    const pageCount = (pdf.match(/\/Type \/Page\b(?!s)/g) ?? []).length
+    expect(pageCount).toBeGreaterThanOrEqual(3)
+    // A4（595.28 × 841.89pt）。向きは自動なので縦横どちらでもよい
+    const mediaBox = /\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(pdf)
+    expect(mediaBox).not.toBeNull()
+    const [w, h] = [Number(mediaBox![1]), Number(mediaBox![2])].sort((a, b) => a - b)
+    expect(w).toBeCloseTo(595.28, 0)
+    expect(h).toBeCloseTo(841.89, 0)
+  })
+})
+
 test.describe('親と姓・性別が合わない記載の指摘', () => {
   test('親と姓が違う子がエラーとして指摘され、カードに要確認の印が付く', async ({ page }) => {
     const issue = page.locator('[data-issue][data-issue-severity="error"]', {

@@ -15,7 +15,8 @@ import {
   moveChildIn,
   updateFamilyIn,
 } from '@/utils/familyMutations'
-import { buildTreeSvg } from '@/utils/exportPdf'
+import { buildTreeSvg, exportTreePdf } from '@/utils/exportPdf'
+import { DEFAULT_PDF_OPTIONS } from '@/utils/pdfLayout'
 
 // ============================================================================
 // 2通の戸籍を読み込んで統合した家系図を、関係の編集まで含めて操作できるE2E用画面。
@@ -128,6 +129,14 @@ export function E2EEditorFixtureClient() {
           </Button>
           <Button size="sm" variant="outline" onClick={() => setShowPdf(v => !v)}>
             PDFの図を表示
+          </Button>
+          {/* 既定の設定（A4・読みやすく分割）で実際にPDFを作ってダウンロードする */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => exportTreePdf(persons, tree.families, 'E2E確認', 'e2e-kakeizu', DEFAULT_PDF_OPTIONS)}
+          >
+            PDFを書き出す
           </Button>
           <div className="text-xs text-gray-500" data-testid="family-count">{tree.families.length}</div>
           {/* 画面外のカードもクリックせずに選べるようにする（E2Eの操作を表示位置に依存させない） */}
