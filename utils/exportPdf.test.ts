@@ -96,9 +96,10 @@ describe('buildTreeSvg: 婚姻日と文字の大きさ', () => {
     ],
   }
 
-  it('夫婦の婚姻日が図に書かれる', () => {
+  it('夫婦の婚姻日がそれぞれの人物カードに書かれる', () => {
     const { persons, families } = processFamilyData(couple)
-    expect(buildTreeSvg(persons, families, '案件', NOW).svg).toContain('婚姻 1984-01-22')
+    // 夫婦それぞれのカードに「婚」として書く
+    expect(buildTreeSvg(persons, families, '案件', NOW).svg.split('婚 1984-01-22').length - 1).toBe(2)
   })
 
   it('西暦に変換できなかった婚姻日は原文で書かれる', () => {
@@ -106,7 +107,7 @@ describe('buildTreeSvg: 婚姻日と文字の大きさ', () => {
       ...couple,
       families: [{ ...couple.families[0], marriage_date: { original_date: '昭和59年1月22日', date: null } }],
     })
-    expect(buildTreeSvg(persons, families, '案件', NOW).svg).toContain('婚姻 昭和59年1月22日')
+    expect(buildTreeSvg(persons, families, '案件', NOW).svg).toContain('婚 昭和59年1月22日')
   })
 
   it('人物名・日付は印刷で読める大きさ（名前20px・日付15px以上）で描く', () => {

@@ -5,6 +5,9 @@ import {
   toFamilyTreeData,
   searchPersons,
   isValidFamilyTreeData,
+  marriagesByPerson,
+  marriageCardText,
+  compactJapaneseDate,
   FamilyTreeData,
   PersonData,
 } from './familyDataProcessor'
@@ -204,5 +207,68 @@ describe('結婚・離婚日の原文表記の往復', () => {
     expect(processed.families[0].marriageOriginalDate).toBe('大正九年三月')
     const roundTrip = toFamilyTreeData(processed.persons, processed.families)
     expect(roundTrip.families[0].marriage_date?.original_date).toBe('大正九年三月')
+  })
+})
+
+describe('marriagesByPerson', () => {
+  const people = ['h', 'w1', 'w2', 'single'].map(id => ({
+    id, generation: 1, sex: null, name: { surname: '森本', given_name: id },
+    birth: { original_date: null, date: null, place: null },
+    death: { original_date: null, date: null, place: null },
+  }))
+  const fam = (id: string, parents: string[], marriage: { date?: string; original?: string }, divorce?: string) => ({
+    id, parents, children: [],
+    marriage_date: { original_date: marriage.original ?? null, date: marriage.date ?? null },
+    divorce_date: { original_date: null, date: divorce ?? null },
+    relation_type: 'blood' as const,
+  })
+
+  it('夫婦のそれぞれに、配偶者と婚姻日を婚姻日の古い順でまとめる', () => {
+    const { families } = processFamilyData({
+      people,
+      families: [
+        fam('f2', ['h', 'w2'], { date: '1990-05-05' }),
+        fam('f1', ['h', 'w1'], { date: '1980-01-01' }, '1985-02-02'),
+      ],
+    })
+    const map = marriagesByPerson(families)
+    expect(map.get('h')).toEqual([
+      { spouseName: '森本 w1', marriage: '1980-01-01', divorce: '1985-02-02' },
+      { spouseName: '森本 w2', marriage: '1990-05-05', divorce: null },
+    ])
+    expect(map.get('w2')).toEqual([{ spouseName: '森本 h', marriage: '1990-05-05', divorce: null }])
+    expect(map.has('single')).toBe(false)
+  })
+
+  it('西暦に変換できなかった婚姻日は原文を使い、日付の記載が無い夫婦は含めない', () => {
+    const { families } = processFamilyData({
+      people,
+      families: [fam('f1', ['h', 'w1'], { original: '昭和五拾九年壱月弐拾弐日' }), fam('f2', ['w2', 'single'], {})],
+    })
+    const map = marriagesByPerson(families)
+    // 原文の漢数字は算用数字に直して短くする（カードの幅で途中が切れないように）
+    expect(map.get('h')?.[0].marriage).toBe('昭和59年1月22日')
+    expect(map.has('w2')).toBe(false)
+  })
+
+  it('カードの表示は「婚 日付」、離婚していれば「・離 日付」を続ける', () => {
+    expect(marriageCardText({ spouseName: null, marriage: '1980-01-01', divorce: null })).toBe('婚 1980-01-01')
+    expect(marriageCardText({ spouseName: null, marriage: '1980-01-01', divorce: '1985-02-02' })).toBe('婚 1980-01-01・離 1985-02-02')
+    expect(marriageCardText({ spouseName: null, marriage: null, divorce: '1985-02-02' })).toBe('離 1985-02-02')
+  })
+})
+
+describe('compactJapaneseDate', () => {
+  it('戸籍の原文の和暦の漢数字を算用数字に直す', () => {
+    expect(compactJapaneseDate('昭和五拾九年壱月弐拾弐日')).toBe('昭和59年1月22日')
+    expect(compactJapaneseDate('明治三十年六月二十九日')).toBe('明治30年6月29日')
+    expect(compactJapaneseDate('平成元年拾弐月参日')).toBe('平成1年12月3日')
+    expect(compactJapaneseDate('大正九年')).toBe('大正9年')
+    expect(compactJapaneseDate('昭和二〇年一〇月一日')).toBe('昭和20年10月1日')
+  })
+
+  it('漢数字でない部分や、すでに算用数字の日付は変えない', () => {
+    expect(compactJapaneseDate('昭和59年1月22日')).toBe('昭和59年1月22日')
+    expect(compactJapaneseDate('不詳')).toBe('不詳')
   })
 })

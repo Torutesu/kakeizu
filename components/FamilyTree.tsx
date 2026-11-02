@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { ZoomIn, ZoomOut, RotateCcw, Maximize } from "lucide-react"
 import { PersonNode, RelationEmphasis } from './PersonNode'
 import { FamilyTreeLines } from './FamilyTreeLines'
-import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
+import { ProcessedPerson, FamilyGroup, marriagesByPerson } from '../utils/familyDataProcessor'
 import { useLayoutCalculation } from '../hooks/useLayoutCalculation'
 import { LAYOUT_CONFIG, UI_CONFIG, DEFAULT_ZOOM_SETTINGS, ZoomSettings } from '../constants/config'
 
@@ -72,6 +72,9 @@ export function FamilyTree({
     snapToGeneration,
     getGenerationY
   } = useLayoutCalculation(persons, families)
+
+  // 人物ごとの婚姻日（カードに「婚」として書く）
+  const marriagesById = useMemo(() => marriagesByPerson(families), [families])
 
   // 選択中の人物と直接つながる人物（配偶者・親・子）のID。
   // 大きな家系図でも「誰とつながっているか」が一目で分かるようにする。
@@ -651,6 +654,7 @@ export function FamilyTree({
               <PersonNode
                 key={person.id}
                 person={person}
+                marriages={marriagesById.get(person.id)}
                 isSelected={selectedPerson?.id === person.id}
                 isDragging={isDragging && draggedPerson?.id === person.id}
                 emphasis={emphasisFor(person.id)}

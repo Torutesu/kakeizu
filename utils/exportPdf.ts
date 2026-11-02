@@ -1,4 +1,4 @@
-import { ProcessedPerson, FamilyGroup, familyEventLabels, formatDate } from './familyDataProcessor'
+import { ProcessedPerson, FamilyGroup, formatDate, marriagesByPerson, marriageCardText } from './familyDataProcessor'
 import { calculateTreeLayout, Point } from './treeLayout'
 import { withDerivedGenerations } from './generations'
 import { LAYOUT_CONFIG } from '../constants/config'
@@ -40,7 +40,6 @@ const PADDING = 60
 const FONT_NAME = 20
 const FONT_DETAIL = PDF_BODY_FONT_PX
 const FONT_RELATION = 12
-const FONT_EVENT = 13
 const TEXT_LEFT = 14
 
 /** 1行に収まる幅を超える名前は、文字間を詰めてカードからはみ出さないようにする */
@@ -153,17 +152,6 @@ export function buildTreeSvg(
         `<line x1="${p1.x}" y1="${p1.y - 2.5}" x2="${p2.x}" y2="${p2.y - 2.5}" stroke="#dc2626" stroke-width="2" opacity="0.85"${dash}/>`,
         `<line x1="${p1.x}" y1="${p1.y + 2.5}" x2="${p2.x}" y2="${p2.y + 2.5}" stroke="#dc2626" stroke-width="2" opacity="0.85"${dash}/>`
       )
-
-      // 婚姻日・離婚日は夫婦の中点から下ろす線の右脇（カードの下）に書く
-      const labelX = (p1.x + p2.x) / 2 + 7
-      const labelTop = Math.max(p1.y, p2.y) + CARD_H / 2 + FONT_EVENT + 4
-      familyEventLabels(family).forEach((label, index) => {
-        const baseline = labelTop + index * (FONT_EVENT + 4)
-        boxes.push(rect(labelX, baseline - FONT_EVENT, labelX + estimateTextWidth(label, FONT_EVENT), baseline + 4, 2))
-        parts.push(
-          `<text x="${labelX}" y="${labelTop + index * (FONT_EVENT + 4)}" font-size="${FONT_EVENT}" fill="#374151" stroke="#ffffff" stroke-width="4" paint-order="stroke">${escapeXml(label)}</text>`
-        )
-      })
     }
 
     if (parentPositions.length > 0 && family.children.length > 0) {
@@ -191,6 +179,7 @@ export function buildTreeSvg(
   })
 
   // 人物カード
+  const marriagesById = marriagesByPerson(families)
   persons.forEach(person => {
     const pos = positions.get(person.id)
     if (!pos) return
@@ -219,6 +208,14 @@ export function buildTreeSvg(
 
     const details: Array<[string, string]> = []
     if (person.birth?.date) details.push([`生 ${formatDate(person.birth.date)}`, '#374151'])
+    // 婚姻日は人物の記載として書く（相続関係説明図などと同じ）。複数の婚姻は件数を添える
+    const marriages = marriagesById.get(person.id) ?? []
+    if (marriages.length > 0) {
+      details.push([
+        marriageCardText(marriages[0]) + (marriages.length > 1 ? ` 他${marriages.length - 1}件` : ''),
+        '#374151',
+      ])
+    }
     if (person.death?.date) details.push([`没 ${formatDate(person.death.date)}`, '#374151'])
     if (age) details.push([age, '#4b5563'])
     // 日付・年齢はカードの下端から積む（続柄の有無で位置がぶれないように）

@@ -45,7 +45,7 @@ import { RegistriesPanel } from "./RegistriesPanel"
 import { PdfExportDialog } from "./PdfExportDialog"
 import { PdfExportOptions } from "../utils/pdfLayout"
 import { fetchProject, ProjectSummary } from "../lib/db/projects"
-import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData } from "../utils/familyDataProcessor"
+import { ProcessedPerson, searchPersons, FamilyTreeData, isValidFamilyTreeData, marriagesByPerson } from "../utils/familyDataProcessor"
 import { formatKazoeAge } from "../utils/age"
 import { deriveGenerations } from "../utils/generations"
 import { buildTreeSvg } from "../utils/exportPdf"
@@ -162,6 +162,8 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
 
   // 表示する世代は家系図の段と同じく、親子・夫婦の関係から決めたもの
   const generationById = useMemo(() => deriveGenerations(persons, families), [persons, families])
+  // 人物ごとの婚姻日（詳細欄に配偶者とあわせて示す）
+  const marriagesById = useMemo(() => marriagesByPerson(families), [families])
 
   const [searchQuery, setSearchQuery] = useState("")
   const [focusPerson, setFocusPerson] = useState<FocusPersonRequest | null>(null)
@@ -843,6 +845,23 @@ export default function FamilyTreeApp({ projectId }: FamilyTreeAppProps) {
                         </div>
                       </div>
                     </div>
+
+                    {(marriagesById.get(selectedPerson.id) ?? []).length > 0 && (
+                      <div data-testid="person-marriages">
+                        <label className="text-sm font-medium text-gray-700">婚姻</label>
+                        <ul className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded text-sm space-y-1">
+                          {(marriagesById.get(selectedPerson.id) ?? []).map((marriage, index) => (
+                            <li key={index}>
+                              {marriage.marriage ? `${marriage.marriage} 婚姻` : '婚姻日不明'}
+                              {marriage.divorce && `・${marriage.divorce} 離婚`}
+                              {marriage.spouseName && (
+                                <span className="text-gray-500">（{marriage.spouseName}）</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
                     <div>
                       <label className="text-sm font-medium text-gray-700">世代</label>

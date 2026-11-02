@@ -15,6 +15,8 @@ test.beforeEach(async ({ page }) => {
 })
 
 const card = (page: Page, id: string) => page.locator(`[data-person-card][data-person-id="${id}"]`)
+/** 人物カードの婚姻の行 */
+const marriageOf = (page: Page, id: string) => card(page, id).locator('[data-marriage]')
 
 /** カードの家系図上の座標（ズームや表示位置に左右されないモデル座標） */
 async function positionOf(page: Page, id: string): Promise<{ x: number; y: number }> {
@@ -68,17 +70,23 @@ test.describe('2通の戸籍を統合した家系図の表示', () => {
     expect(me.x).toBeGreaterThan(yumi.x)
   })
 
-  test('婚姻日が夫婦の線に添えて表示される（読めなかった日付は原文のまま）', async ({ page }) => {
-    const labels = page.locator('[data-marriage-label]')
-    await expect(labels.filter({ hasText: '婚姻 1930-03-01' })).toHaveCount(1)
-    await expect(labels.filter({ hasText: '婚姻 1958-04-10' })).toHaveCount(1)
-    await expect(labels.filter({ hasText: '婚姻 昭和五拾九年壱月弐拾弐日' })).toHaveCount(1)
+  test('婚姻日が夫婦それぞれの人物カードに「婚」として書かれる（読めなかった日付は原文の和暦を算用数字で）', async ({ page }) => {
+    await expect(marriageOf(page, 'gf')).toHaveText('婚 1930-03-01')
+    await expect(marriageOf(page, 'gm')).toHaveText('婚 1930-03-01')
+    await expect(marriageOf(page, 'kenichi')).toHaveText('婚 1958-04-10')
+    await expect(marriageOf(page, 'aiko')).toHaveText('婚 1958-04-10')
+    await expect(marriageOf(page, 'me')).toHaveText('婚 昭和59年1月22日')
+    // 結婚していない人・婚姻日の記載が無い夫婦には行を出さない
+    await expect(marriageOf(page, 'misaki')).toHaveCount(0)
+    await expect(marriageOf(page, 'jiro')).toHaveCount(0)
+    // 生 → 婚 → 没 の順（年代順）に並ぶ
+    await expect(card(page, 'kenichi')).toContainText(/生 1931-05-05\s*婚 1958-04-10/)
   })
 
   test('PDFの図にも婚姻日が入り、名前は読める大きさで描かれる', async ({ page }) => {
     await page.getByRole('button', { name: 'PDFの図を表示' }).click()
     const svg = page.getByTestId('pdf-svg').locator('svg')
-    await expect(svg).toContainText('婚姻 1958-04-10')
+    await expect(svg.locator('text', { hasText: '婚 1958-04-10' })).toHaveCount(2)
     const nameSize = await svg
       .locator('text', { hasText: '丙山 健一' })
       .first()
@@ -173,8 +181,11 @@ test.describe('家族関係の編集', () => {
     await page.keyboard.press('Escape')
 
     await expect(page.getByTestId('family-count')).toHaveText(String(before + 1))
-    await expect(page.locator('[data-person-card]', { hasText: '森本 京子' })).toHaveCount(1)
-    await expect(page.locator('[data-marriage-label]', { hasText: '婚姻 2001-02-03' })).toHaveCount(1)
+    const newSpouse = page.locator('[data-person-card]', { hasText: '森本 京子' })
+    await expect(newSpouse).toHaveCount(1)
+    await expect(newSpouse.locator('[data-marriage]')).toHaveText('婚 2001-02-03')
+    // 2回目の婚姻をした本人のカードは、婚姻日の古い順の1件目と件数を示す
+    await expect(marriageOf(page, 'me')).toHaveText('婚 2001-02-03 他1件')
   })
 
   test('結婚日の形式が誤っていると理由が示され、追加されない', async ({ page }) => {
@@ -195,7 +206,8 @@ test.describe('家族関係の編集', () => {
     await dateInput.fill('1984-01-22')
     await dialog(page).getByRole('button', { name: '保存', exact: true }).click()
     await page.keyboard.press('Escape')
-    await expect(page.locator('[data-marriage-label]', { hasText: '婚姻 1984-01-22' })).toHaveCount(1)
+    await expect(marriageOf(page, 'yumi')).toHaveText('婚 1984-01-22')
+    await expect(marriageOf(page, 'me')).toHaveText('婚 1984-01-22')
   })
 
   test('片親だけの家族に親を足すと、両親として同じ家族にまとまる', async ({ page }) => {
@@ -232,11 +244,11 @@ test.describe('家族関係の編集', () => {
   })
 
   test('原文しかない婚姻日を空欄のまま保存すると、婚姻日の表示が消える', async ({ page }) => {
-    await expect(page.locator('[data-marriage-label]', { hasText: '昭和五拾九年' })).toHaveCount(1)
+    await expect(marriageOf(page, 'yumi')).toHaveText('婚 昭和59年1月22日')
     await openRelationEditor(page, 'yumi')
     await dialog(page).getByRole('button', { name: '保存', exact: true }).click()
     await page.keyboard.press('Escape')
-    await expect(page.locator('[data-marriage-label]', { hasText: '昭和五拾九年' })).toHaveCount(0)
+    await expect(marriageOf(page, 'yumi')).toHaveCount(0)
   })
 })
 

@@ -301,16 +301,89 @@ export function formatDate(date: string | null): string {
   
   return date
 } 
+/** 人物の婚姻の記載（1件の結婚ごと） */
+export interface PersonMarriage {
+  /** 配偶者の表示名（分からなければ null） */
+  spouseName: string | null
+  /** 婚姻日の表示（西暦に変換できなかった日付は原文の和暦を算用数字にしたもの）。記載が無ければ null */
+  marriage: string | null
+  /** 離婚日の表示。記載が無ければ null */
+  divorce: string | null
+}
+
 /**
- * 夫婦の線に添える婚姻・離婚の表示（例: 「婚姻 1984-01-22」）。
- * 西暦に変換できなかった日付は原文（和暦など）をそのまま出す。記載が無ければ空配列
+ * 人物ごとの婚姻の記載を、婚姻日の古い順にまとめる。
+ * 相続関係説明図などと同じく、婚姻日は夫婦それぞれの人物の記載として示す
+ * （夫婦の線に添えるだけでは、どの人物の婚姻か読み取りにくいため）。
+ * 婚姻日も離婚日も記載の無い夫婦は含めない
  */
-export function familyEventLabels(family: Pick<FamilyGroup,
-  'marriageDate' | 'marriageOriginalDate' | 'divorceDate' | 'divorceOriginalDate'>): string[] {
-  const labels: string[] = []
-  const marriage = family.marriageDate ? formatDate(family.marriageDate) : family.marriageOriginalDate
-  if (marriage) labels.push(`婚姻 ${marriage}`)
-  const divorce = family.divorceDate ? formatDate(family.divorceDate) : family.divorceOriginalDate
-  if (divorce) labels.push(`離婚 ${divorce}`)
-  return labels
+export function marriagesByPerson(families: FamilyGroup[]): Map<string, PersonMarriage[]> {
+  const result = new Map<string, Array<PersonMarriage & { sortKey: string }>>()
+  for (const family of families) {
+    if (family.parents.length !== 2) continue
+    // 西暦に変換できなかった日付は原文（和暦）を、漢数字を算用数字に直して使う
+    const original = (text: string | undefined) => (text ? compactJapaneseDate(text) : null)
+    const marriage = family.marriageDate ? formatDate(family.marriageDate) : original(family.marriageOriginalDate)
+    const divorce = family.divorceDate ? formatDate(family.divorceDate) : original(family.divorceOriginalDate)
+    if (!marriage && !divorce) continue
+    for (const person of family.parents) {
+      const spouse = family.parents.find(p => p.id !== person.id)
+      const list = result.get(person.id) ?? []
+      list.push({
+        spouseName: spouse?.displayName ?? null,
+        marriage,
+        divorce,
+        sortKey: family.marriageDate ?? '9999',
+      })
+      result.set(person.id, list)
+    }
+  }
+  const sorted = new Map<string, PersonMarriage[]>()
+  result.forEach((list, id) => {
+    sorted.set(id, list.sort((a, b) => a.sortKey.localeCompare(b.sortKey)).map(({ sortKey: _sortKey, ...rest }) => rest))
+  })
+  return sorted
+}
+
+/** 人物カードの1行分の婚姻の表示（例: 「婚 1984-01-22」「婚 1958-04-10・離 1970-01-01」） */
+export function marriageCardText(marriage: PersonMarriage): string {
+  return [marriage.marriage ? `婚 ${marriage.marriage}` : null, marriage.divorce ? `離 ${marriage.divorce}` : null]
+    .filter(Boolean)
+    .join('・')
+}
+
+const KANJI_DIGITS: Record<string, number> = {
+  〇: 0, 零: 0, 一: 1, 壱: 1, 壹: 1, 二: 2, 弐: 2, 貳: 2, 三: 3, 参: 3, 參: 3,
+  四: 4, 五: 5, 伍: 5, 六: 6, 七: 7, 八: 8, 九: 9,
+}
+const KANJI_UNITS: Record<string, number> = { 十: 10, 拾: 10, 百: 100, 千: 1000 }
+
+/** 漢数字の並び（例: 「五拾九」「弐拾弐」「元」）を数に直す。読めなければ null */
+function kanjiNumberToInt(text: string): number | null {
+  if (text === '元') return 1
+  let total = 0
+  let current = 0
+  for (const ch of text) {
+    if (ch in KANJI_DIGITS) {
+      current = current * 10 + KANJI_DIGITS[ch]
+    } else if (ch in KANJI_UNITS) {
+      total += (current === 0 ? 1 : current) * KANJI_UNITS[ch]
+      current = 0
+    } else {
+      return null
+    }
+  }
+  return total + current
+}
+
+/**
+ * 戸籍の原文の和暦（例: 「昭和五拾九年壱月弐拾弐日」）の漢数字を算用数字に直して短くする（例: 「昭和59年1月22日」）。
+ * 人物カードのように幅の限られた場所で、原文のままでは途中で切れて日付が読めなくなるため。
+ * 元号・年月日の区切りはそのまま残し、漢数字として読めない部分は変えない
+ */
+export function compactJapaneseDate(text: string): string {
+  return text.replace(/[〇零一壱壹二弐貳三参參四五伍六七八九十拾百千元]+(?=[年月日])/g, match => {
+    const value = kanjiNumberToInt(match)
+    return value === null ? match : String(value)
+  })
 }
