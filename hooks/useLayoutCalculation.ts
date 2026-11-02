@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useState } from 'react'
-import { ProcessedPerson, FamilyGroup, familyEventLabels } from '../utils/familyDataProcessor'
+import { ProcessedPerson, FamilyGroup } from '../utils/familyDataProcessor'
 import { calculateTreeLayout } from '../utils/treeLayout'
 import { withDerivedGenerations } from '../utils/generations'
 import { LAYOUT_CONFIG } from '../constants/config'
@@ -14,8 +14,6 @@ interface LayoutLine {
 // 結婚線。夫婦のカードの内側の端どうしを結ぶ横線（離婚済みは破線）
 export interface MarriageLine extends LayoutLine {
   divorced: boolean
-  /** 線に添える婚姻日・離婚日（例: 「婚姻 1984-01-22」）。記載が無ければ空 */
-  labels: string[]
 }
 
 // 親から子への接続。家系図の慣習に従い
@@ -151,7 +149,6 @@ export function useLayoutCalculation(
             x2: right.x - halfWidth,
             y2: right.y,
             divorced: Boolean(family.divorceDate || family.divorceOriginalDate),
-            labels: familyEventLabels(family),
           })
         }
       }

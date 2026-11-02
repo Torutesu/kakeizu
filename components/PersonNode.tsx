@@ -1,6 +1,5 @@
 import { AlertCircle } from "lucide-react"
-import { ProcessedPerson } from '../utils/familyDataProcessor'
-import { formatDate } from '../utils/familyDataProcessor'
+import { ProcessedPerson, PersonMarriage, formatDate, marriageCardText } from '../utils/familyDataProcessor'
 import { formatKazoeAge } from '../utils/age'
 import { COLORS, LAYOUT_CONFIG } from '../constants/config'
 import { useCallback, useMemo, useRef } from 'react'
@@ -18,6 +17,8 @@ interface PersonNodeProps {
   onDragStart?: (person: ProcessedPerson, e: React.PointerEvent) => void
   // ダブルクリック（ダブルタップ）で編集ダイアログを開く。未指定なら何もしない
   onEdit?: (person: ProcessedPerson) => void
+  /** この人物の婚姻（婚姻日の古い順）。カードには最初の1件を書き、残りは件数で示す */
+  marriages?: PersonMarriage[]
 }
 
 const ACCENT_COLORS: Record<string, string> = {
@@ -32,7 +33,8 @@ export function PersonNode({
   isDragging = false,
   emphasis = 'none',
   onDragStart,
-  onEdit
+  onEdit,
+  marriages = [],
 }: PersonNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null)
 
@@ -139,6 +141,21 @@ export function PersonNode({
             {person.birth?.date && (
               <div className="truncate">
                 <span className="text-gray-400">生</span> {formatDate(person.birth.date)}
+              </div>
+            )}
+            {marriages.length > 0 && (
+              <div
+                className="truncate"
+                data-marriage
+                title={marriages
+                  .map(m => `${marriageCardText(m)}${m.spouseName ? `（${m.spouseName}）` : ''}`)
+                  .join('\n')}
+              >
+                <span className="text-gray-400">{marriages[0].marriage ? '婚' : '離'}</span>{' '}
+                {marriages[0].marriage
+                  ? `${marriages[0].marriage}${marriages[0].divorce ? `・離 ${marriages[0].divorce}` : ''}`
+                  : marriages[0].divorce}
+                {marriages.length > 1 && <span className="text-gray-400"> 他{marriages.length - 1}件</span>}
               </div>
             )}
             {person.death?.date && (
