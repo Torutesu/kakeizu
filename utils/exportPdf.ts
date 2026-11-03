@@ -1,4 +1,4 @@
-import { ProcessedPerson, FamilyGroup } from './familyDataProcessor'
+import { ProcessedPerson, FamilyGroup, marriageLabels } from './familyDataProcessor'
 import { calculateTreeLayout, Point } from './treeLayout'
 import { LAYOUT_CONFIG } from '../constants/config'
 import { formatKyonen } from './age'
@@ -43,6 +43,32 @@ export function estimateTitleWidth(text: string): number {
   return Math.ceil(width * TITLE_FONT_SIZE * 1.05)
 }
 
+// 夫婦の線に添える婚姻日・離婚日。画面と同じく、夫婦の中央の真下（カードのすぐ下）に置く
+const MARRIAGE_LABEL_FONT_SIZE = 10
+const MARRIAGE_LABEL_LINE_HEIGHT = 13
+const MARRIAGE_LABEL_GAP = 4
+const MARRIAGE_LABEL_PAD = 3
+
+/** 婚姻日の表記の位置と大きさ。寸法の見積もり（measureTreePdf）と描画で同じものを使う */
+function marriageLabelBox(family: FamilyGroup, positions: Map<string, Point>) {
+  if (family.parents.length !== 2) return null
+  const labels = marriageLabels(family)
+  if (labels.length === 0) return null
+  const [p1, p2] = family.parents.map(p => positions.get(p.id))
+  if (!p1 || !p2) return null
+  let longest = 0
+  for (const label of labels) {
+    let width = 0
+    for (const char of label) width += char.charCodeAt(0) > 0xff ? 1 : 0.6
+    longest = Math.max(longest, width)
+  }
+  const width = Math.ceil(longest * MARRIAGE_LABEL_FONT_SIZE) + MARRIAGE_LABEL_PAD * 2
+  const height = labels.length * MARRIAGE_LABEL_LINE_HEIGHT + MARRIAGE_LABEL_PAD * 2
+  const centerX = (p1.x + p2.x) / 2
+  const top = Math.max(p1.y, p2.y) + CARD_H / 2 + MARRIAGE_LABEL_GAP
+  return { labels, left: centerX - width / 2, top, width, height, centerX }
+}
+
 interface TreeGeometry {
   svg: string
   width: number
@@ -62,6 +88,15 @@ export function measureTreePdf(persons: ProcessedPerson[], families: FamilyGroup
     maxX = Math.max(maxX, pos.x + CARD_W / 2)
     minY = Math.min(minY, pos.y - CARD_H / 2)
     maxY = Math.max(maxY, pos.y + CARD_H / 2)
+  })
+  // 婚姻日の表記も図の範囲に含める。いちばん下の世代の夫婦では、カードの下端より下に出るため、
+  // 含めないと余白（無描画の保証領域）に描いてしまい、分割の白紙判定や切り出しと食い違う
+  families.forEach(family => {
+    const box = marriageLabelBox(family, positions)
+    if (!box) return
+    minX = Math.min(minX, box.left)
+    maxX = Math.max(maxX, box.left + box.width)
+    maxY = Math.max(maxY, box.top + box.height)
   })
   if (!Number.isFinite(minX)) {
     minX = 0; maxX = 400; minY = 0; maxY = 300
@@ -120,6 +155,23 @@ export function buildTreeSvg(
         )
       })
     }
+  })
+
+  // 婚姻日・離婚日（線の上に重ねるため、関係線のあと・カードの前に描く）
+  families.forEach(family => {
+    const box = marriageLabelBox(family, positions)
+    if (!box) return
+    const left = box.left + offsetX
+    const top = box.top + offsetY
+    parts.push(
+      `<rect x="${left}" y="${top}" width="${box.width}" height="${box.height}" rx="3" fill="#ffffff" stroke="#d7e1dc"/>`
+    )
+    box.labels.forEach((label, index) => {
+      const baseline = top + MARRIAGE_LABEL_PAD + (index + 1) * MARRIAGE_LABEL_LINE_HEIGHT - 3
+      parts.push(
+        `<text data-marriage-label x="${box.centerX + offsetX}" y="${baseline}" font-size="${MARRIAGE_LABEL_FONT_SIZE}" text-anchor="middle" fill="#4b5563">${escapeXml(label)}</text>`
+      )
+    })
   })
 
   // 人物カード

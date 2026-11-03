@@ -33,6 +33,34 @@ test('人物をクリックすると選択される', async ({ page }) => {
   await expect(page.getByTestId('selected-person')).toHaveText('選択中: 阿吹 美則')
 })
 
+// 依頼元の確認で「婚姻日は家族の編集画面には出るが、家系図の中には出ない」と指摘された
+test('夫婦の婚姻日が家系図の中に出て、カードに重ならない', async ({ page }) => {
+  const label = page.locator('[data-marriage-label][data-family-id="f1"]')
+  await expect(label).toBeVisible()
+  await expect(label).toHaveText('婚姻 1924-04-01')
+
+  // 読み込み直後は全体表示への寄せ（拡大・移動のアニメーション）が続く。
+  // 動いている途中に測ると、表記とカードを別々の瞬間で比べてしまうため、止まるのを待つ
+  let previous = ''
+  for (let i = 0; i < 50; i++) {
+    const box = await label.boundingBox()
+    const current = box ? `${box.x.toFixed(1)},${box.y.toFixed(1)},${box.width.toFixed(1)}` : ''
+    if (box && current === previous) break
+    previous = current
+    await page.waitForTimeout(100)
+  }
+
+  const labelBox = await label.boundingBox()
+  for (const id of ['oya', 'haha']) {
+    const cardBox = await card(page, id).boundingBox()
+    // 夫婦のカードの下端より下にある（カードの文字を隠さない）
+    expect(labelBox!.y).toBeGreaterThanOrEqual(cardBox!.y + cardBox!.height - 0.5)
+  }
+  // 子のカードには届かない
+  const childBox = await card(page, 'ko1').boundingBox()
+  expect(labelBox!.y + labelBox!.height).toBeLessThan(childBox!.y)
+})
+
 test.describe('要確認の指摘', () => {
   test('元号の読み違いによる矛盾が指摘として表示される', async ({ page }) => {
     // 親(1955年生)が子(1925年生)より後に生まれている

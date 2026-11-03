@@ -13,6 +13,9 @@ import { LAYOUT_CONFIG, UI_CONFIG, DEFAULT_ZOOM_SETTINGS, ZoomSettings } from '.
 // OSのダブルクリック判定の許容範囲（数ピクセル）と同程度にする
 const DRAG_THRESHOLD_PX = 5
 
+// 婚姻日の表記とカードの下端との間隔（モデル座標）
+const MARRIAGE_LABEL_GAP = 6
+
 interface DragPosition {
   id: string
   x: number
@@ -695,6 +698,23 @@ export function FamilyTree({
               descentConnections={descentConnections}
               bounds={contentBounds}
             />
+
+            {/* 婚姻日・離婚日。夫婦のカードの間（56px）には日付が収まらないため、
+                夫婦の線の中央の真下、カードのすぐ下に置く。子への線はこの下で兄弟の線に分かれるため重ならない */}
+            {marriageLines.filter(line => line.labels.length > 0).map(line => (
+              <div
+                key={`marriage-label-${line.familyId}`}
+                data-marriage-label
+                data-family-id={line.familyId}
+                className="absolute -translate-x-1/2 pointer-events-none rounded border border-border bg-white/95 px-1.5 py-0.5 text-[10px] leading-tight text-muted-foreground whitespace-nowrap text-center"
+                style={{
+                  left: (line.x1 + line.x2) / 2,
+                  top: Math.max(line.y1, line.y2) + LAYOUT_CONFIG.cardHeight / 2 + MARRIAGE_LABEL_GAP,
+                }}
+              >
+                {line.labels.map(label => <div key={label}>{label}</div>)}
+              </div>
+            ))}
 
             {/* 人物ノード */}
             {displayPersons.map((person) => {

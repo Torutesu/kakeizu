@@ -71,7 +71,8 @@ const FIXTURE: FamilyTreeData = {
   families: [
     {
       id: 'f1', parents: ['oya', 'haha'], children: ['ko1', 'ko2'],
-      marriage_date: { original_date: null, date: null },
+      // 家系図の夫婦の線に婚姻日が出ることを確かめる（和暦と西暦は一致させ、指摘を増やさない）
+      marriage_date: { original_date: '大正十三年四月一日', date: '1924-04-01' },
       divorce_date: { original_date: null, date: null },
       relation_type: 'blood',
     },

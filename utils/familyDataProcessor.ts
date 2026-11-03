@@ -329,3 +329,20 @@ export function formatDate(date: string | null): string {
   
   return date
 } 
+
+/**
+ * 家系図の夫婦の線に添える婚姻日・離婚日の表記（例: ["婚姻 1955-06-01"]）。
+ * カードの生没年月日と同じ書き方にそろえる。西暦に直せなかった日付は原文（和暦）で出す
+ * （日付が無いことにしない。原文が読めていれば、それ自体が手掛かりになるため）。
+ * 画面とPDFで同じ表記にするため、両方からここを呼ぶ。
+ */
+export function marriageLabels(
+  family: Pick<FamilyGroup, 'marriageDate' | 'marriageOriginalDate' | 'divorceDate' | 'divorceOriginalDate'>
+): string[] {
+  const labels: string[] = []
+  const marriage = formatDate(family.marriageDate ?? null) || family.marriageOriginalDate
+  if (marriage) labels.push(`婚姻 ${marriage}`)
+  const divorce = formatDate(family.divorceDate ?? null) || family.divorceOriginalDate
+  if (divorce) labels.push(`離婚 ${divorce}`)
+  return labels
+}

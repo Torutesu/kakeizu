@@ -96,3 +96,37 @@ it('人数の少ない家系図でも、長い案件名が右端で切れない�
   // 予告（ダイアログ）と出力で同じ寸法になる
   expect(measureTreePdf(persons, families, longName).width).toBe(long.width)
 })
+
+describe('婚姻日をPDFの家系図に出す', () => {
+  const couple = (marriage: { original_date: string | null; date: string | null }, divorce = { original_date: null, date: null } as { original_date: string | null; date: string | null }): FamilyTreeData => ({
+    people: [
+      { id: 'h', generation: 1, sex: 'male', name: { surname: '甲野', given_name: '太郎' }, birth: { original_date: null, date: '1927-10-06', place: null }, death: { original_date: null, date: null, place: null } },
+      { id: 'w', generation: 1, sex: 'female', name: { surname: '甲野', given_name: '春子' }, birth: { original_date: null, date: '1930-01-20', place: null }, death: { original_date: null, date: null, place: null } },
+    ],
+    families: [{ id: 'f', parents: ['h', 'w'], children: [], marriage_date: marriage, divorce_date: divorce, relation_type: 'blood' }],
+  })
+
+  it('夫婦の婚姻日・離婚日が図の中に出る', () => {
+    const { persons, families } = processFamilyData(couple(
+      { original_date: '昭和30年6月1日', date: '1955-06-01' },
+      { original_date: '昭和40年1月1日', date: '1965-01-01' }
+    ))
+    const { svg } = buildTreeSvg(persons, families, '案件', NOW)
+    expect(svg).toContain('婚姻 1955-06-01')
+    expect(svg).toContain('離婚 1965-01-01')
+  })
+
+  it('婚姻日がなければ何も出さない', () => {
+    const { persons, families } = processFamilyData(couple({ original_date: null, date: null }))
+    expect(buildTreeSvg(persons, families, '案件', NOW).svg).not.toContain('data-marriage-label')
+  })
+
+  it('いちばん下の世代の夫婦の婚姻日も、図の範囲（余白より内側）に収める', () => {
+    const without = processFamilyData(couple({ original_date: null, date: null }))
+    const withDate = processFamilyData(couple({ original_date: null, date: '1955-06-01' }))
+    const a = measureTreePdf(without.persons, without.families, '案件')
+    const b = measureTreePdf(withDate.persons, withDate.families, '案件')
+    // 表記の分だけ図が下に伸びる。伸びなければ、表記は下の余白（無描画の保証領域）に描かれている
+    expect(b.height).toBeGreaterThan(a.height)
+  })
+})

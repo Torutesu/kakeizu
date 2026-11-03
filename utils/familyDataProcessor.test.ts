@@ -5,6 +5,7 @@ import {
   toFamilyTreeData,
   searchPersons,
   isValidFamilyTreeData,
+  marriageLabels,
   FamilyTreeData,
   PersonData,
 } from './familyDataProcessor'
@@ -195,5 +196,27 @@ describe('婚姻日・離婚日の原文表記（要件4.4）', () => {
 
     expect(back.families[0].marriage_date.original_date).toBe('大正九年一月十日')
     expect(back.families[0].divorce_date.original_date).toBe('昭和十年三月三日')
+  })
+})
+
+describe('marriageLabels（家系図に添える婚姻日・離婚日）', () => {
+  it('西暦に直せた日付はカードと同じ書き方で出す', () => {
+    expect(marriageLabels({ marriageDate: '1955-06-01', marriageOriginalDate: '昭和30年6月1日' })).toEqual(['婚姻 1955-06-01'])
+  })
+
+  it('西暦に直せなかった日付は原文で出す（日付が無いことにしない）', () => {
+    expect(marriageLabels({ marriageOriginalDate: '大正拾五年参月拾日' })).toEqual(['婚姻 大正拾五年参月拾日'])
+  })
+
+  it('離婚日があれば並べて出す', () => {
+    expect(marriageLabels({ marriageDate: '1955-06-01', divorceDate: '1965-01-01' })).toEqual([
+      '婚姻 1955-06-01',
+      '離婚 1965-01-01',
+    ])
+  })
+
+  it('どちらも無ければ何も出さない', () => {
+    expect(marriageLabels({})).toEqual([])
+    expect(marriageLabels({ marriageDate: undefined, marriageOriginalDate: null })).toEqual([])
   })
 })
