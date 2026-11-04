@@ -169,7 +169,7 @@ export function buildTreeSvg(
     box.labels.forEach((label, index) => {
       const baseline = top + MARRIAGE_LABEL_PAD + (index + 1) * MARRIAGE_LABEL_LINE_HEIGHT - 3
       parts.push(
-        `<text data-marriage-label x="${box.centerX + offsetX}" y="${baseline}" font-size="${MARRIAGE_LABEL_FONT_SIZE}" text-anchor="middle" fill="#4b5563">${escapeXml(label)}</text>`
+        `<text data-marriage-label="true" x="${box.centerX + offsetX}" y="${baseline}" font-size="${MARRIAGE_LABEL_FONT_SIZE}" text-anchor="middle" fill="#4b5563">${escapeXml(label)}</text>`
       )
     })
   })

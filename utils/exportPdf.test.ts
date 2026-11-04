@@ -116,6 +116,19 @@ describe('婚姻日をPDFの家系図に出す', () => {
     expect(svg).toContain('離婚 1965-01-01')
   })
 
+  it('婚姻日・離婚日を含むSVGを画像として読めるXMLで出力する', () => {
+    const { persons, families } = processFamilyData(couple(
+      { original_date: null, date: '2000-04-15' },
+      { original_date: null, date: '2010-04-15' }
+    ))
+    const { svg } = buildTreeSvg(persons, families, '確認用', NOW)
+    // HTMLとしての文字列検査では、値のない属性によるSVG画像の読み込み失敗を見逃す。
+    const document = new DOMParser().parseFromString(svg, 'image/svg+xml')
+    expect(document.querySelector('parsererror')).toBeNull()
+    expect(Array.from(document.querySelectorAll('[data-marriage-label]'), node => node.textContent))
+      .toEqual(['婚姻 2000-04-15', '離婚 2010-04-15'])
+  })
+
   it('婚姻日がなければ何も出さない', () => {
     const { persons, families } = processFamilyData(couple({ original_date: null, date: null }))
     expect(buildTreeSvg(persons, families, '案件', NOW).svg).not.toContain('data-marriage-label')
