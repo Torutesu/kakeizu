@@ -443,3 +443,12 @@ describe('続柄の定義が、指示・各社のスキーマで食い違わな�
     expect(KOSEKI_SYSTEM_INSTRUCTION).toContain('**relation_to_family_head**: 父母との続柄')
   })
 })
+
+describe('子のいない夫婦の婚姻日を落とさない', () => {
+  // 家族を「親とその子の組み合わせ」とだけ定義していたため、子のいない夫婦（見本Aの愛子と丙山健一）の
+  // 婚姻日（昭和60年4月1日）が、関係の編集にも家系図にも出なかった
+  it('子のいない夫婦も family にすること、婚姻日をどちらの身分事項からも読むことを指示している', () => {
+    expect(KOSEKI_SYSTEM_INSTRUCTION).toContain('子のいない夫婦も、婚姻の記載があれば family を作る')
+    expect(KOSEKI_SYSTEM_INSTRUCTION).toContain('婚姻日・離婚日は、夫婦どちらの身分事項に書かれていても読み取り')
+  })
+})
