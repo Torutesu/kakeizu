@@ -204,3 +204,55 @@ export function checkWarekiConversion(
 
   return null
 }
+
+// 西暦から元号への換算（表示用）。各元号の初日。これ以後はその元号になる
+const ERA_STARTS: Array<{ era: EraName; year: number; month: number; day: number }> = [
+  { era: '令和', year: 2019, month: 5, day: 1 },
+  { era: '平成', year: 1989, month: 1, day: 8 },
+  { era: '昭和', year: 1926, month: 12, day: 25 },
+  { era: '大正', year: 1912, month: 7, day: 30 },
+  // 明治5年12月2日以前は旧暦。西暦の日付から元号の日付を作ると、原本と違う月日になるため扱わない
+  { era: '明治', year: 1873, month: 1, day: 1 },
+]
+
+/**
+ * 西暦の日付（"1927-10-06"、月日不明は "1927-XX-XX" や "1927"）を元号表記にする（"昭和2年10月6日"）。
+ *
+ * 依頼元の求めで、家系図には西暦と並べて元号も出す。戸籍は元号で書かれており、
+ * 原本と見比べるときに読み替えずに済むようにするため。
+ * 元号の切り替わる年・月で日付が分からないと、どちらの元号か決められないため null を返す
+ * （例: "1926" は大正15年か昭和元年か分からない）。推測で片方を出すと誤りになる。
+ */
+export function toWarekiLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const match = /^(\d{4})(?:-(\d{2}|XX))?(?:-(\d{2}|XX))?$/.exec(iso.trim())
+  if (!match) return null
+  const year = Number(match[1])
+  const month = match[2] && match[2] !== 'XX' ? Number(match[2]) : null
+  const day = month !== null && match[3] && match[3] !== 'XX' ? Number(match[3]) : null
+  if (month !== null && (month < 1 || month > 12)) return null
+  if (day !== null && (day < 1 || day > 31)) return null
+
+  const start = ERA_STARTS.find(candidate => {
+    // 明治は新暦になった年の元日から数える。1873年はまるごと明治6年
+    if (candidate.era === '明治') return year >= candidate.year
+    if (year !== candidate.year) return year > candidate.year
+    if (month === null) return false
+    if (month !== candidate.month) return month > candidate.month
+    return day !== null && day >= candidate.day
+  })
+  if (!start) return null
+
+  // 切り替わりの年・月で、日付が足りずに決められない場合
+  const nextStart = ERA_STARTS[ERA_STARTS.indexOf(start) - 1]
+  const ambiguous = (boundary: { year: number; month: number; day: number }) =>
+    year === boundary.year && (month === null || (month === boundary.month && day === null))
+  if ((start.era !== '明治' && ambiguous(start)) || (nextStart && ambiguous(nextStart))) return null
+
+  // 年は元年（ERAS の baseYear）から数える。明治の表示の起点（1873年）とは別
+  const eraYear = year - ERAS[start.era].baseYear + 1
+  let label = `${start.era}${eraYear === 1 ? '元' : eraYear}年`
+  if (month !== null) label += `${month}月`
+  if (day !== null) label += `${day}日`
+  return label
+}

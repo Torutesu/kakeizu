@@ -37,7 +37,7 @@ test('人物をクリックすると選択される', async ({ page }) => {
 test('夫婦の婚姻日が家系図の中に出て、カードに重ならない', async ({ page }) => {
   const label = page.locator('[data-marriage-label][data-family-id="f1"]')
   await expect(label).toBeVisible()
-  await expect(label).toHaveText('婚姻 1924-04-01')
+  await expect(label).toHaveText('婚姻 大正13年4月1日（1924-04-01）')
 
   // 読み込み直後は全体表示への寄せ（拡大・移動のアニメーション）が続く。
   // 動いている途中に測ると、表記とカードを別々の瞬間で比べてしまうため、止まるのを待つ
@@ -59,6 +59,18 @@ test('夫婦の婚姻日が家系図の中に出て、カードに重ならな�
   // 子のカードには届かない
   const childBox = await card(page, 'ko1').boundingBox()
   expect(labelBox!.y + labelBox!.height).toBeLessThan(childBox!.y)
+})
+
+// 依頼元の求め。生年月日・没年月日は西暦だけでなく元号でも出す（原本と見比べるため）
+test('人物カードの生年月日・没年月日が元号と西暦の両方で出る', async ({ page }) => {
+  const birth = card(page, 'haha').locator('[data-person-date="birth"]')
+  await expect(birth).toContainText('生 明治33年6月1日')
+  await expect(birth).toContainText('1900-06-01')
+  const death = card(page, 'haha').locator('[data-person-date="death"]')
+  await expect(death).toContainText('没 昭和44年2月16日')
+  await expect(death).toContainText('1969-02-16')
+  // 西暦に直せなかった日付は原文のまま出す（空欄にしない）
+  await expect(card(page, 'ko2').locator('[data-person-date="birth"]')).toContainText('生 大正九年')
 })
 
 test.describe('要確認の指摘', () => {

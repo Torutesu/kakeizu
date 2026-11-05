@@ -1,4 +1,4 @@
-import { ProcessedPerson, FamilyGroup, marriageLabels } from './familyDataProcessor'
+import { ProcessedPerson, FamilyGroup, marriageLabels, dateDisplay } from './familyDataProcessor'
 import { calculateTreeLayout, Point } from './treeLayout'
 import { LAYOUT_CONFIG } from '../constants/config'
 import { formatKyonen } from './age'
@@ -13,7 +13,8 @@ const MAX_CANVAS_EDGE = 8000
 // ラスタライズされるため、PDFへのフォント埋め込みが不要になる。
 
 const CARD_W = LAYOUT_CONFIG.cardWidth
-const CARD_H = 96
+// 生年月日・没年月日を元号と西暦の2行ずつで出すため、享年まで収まる高さにする（画面のカードと同じ並び）
+const CARD_H = 128
 const PADDING = 80
 
 // PDF標準フォントは日本語を持たないため、貼り合わせ位置はASCIIで記す。
@@ -189,22 +190,25 @@ export function buildTreeSvg(
       `<rect x="${left}" y="${top}" width="${CARD_W}" height="${CARD_H}" rx="8" fill="${fill}" stroke="#d7e1dc"/>`,
       `<text x="${left + 12}" y="${top + 24}" font-size="13" font-weight="bold" fill="#172e2b">${escapeXml(person.displayName)}</text>`
     )
-    let line = 0
-    if (person.birth?.date) {
+    // 元号と西暦の両方（画面のカードと同じく、元号の下に西暦を小さく）
+    let lineY = top + 44
+    for (const [mark, field] of [['生', person.birth], ['没', person.death]] as const) {
+      const { wareki, western } = dateDisplay(field?.date, field?.original_date)
+      if (!wareki && !western) continue
       parts.push(
-        `<text x="${left + 12}" y="${top + 44 + line * 16}" font-size="10" fill="#4b5563">生 ${escapeXml(person.birth.date)}</text>`
+        `<text x="${left + 12}" y="${lineY}" font-size="10" fill="#4b5563">${mark} ${escapeXml(wareki ?? western ?? '')}</text>`
       )
-      line++
-    }
-    if (person.death?.date) {
-      parts.push(
-        `<text x="${left + 12}" y="${top + 44 + line * 16}" font-size="10" fill="#4b5563">没 ${escapeXml(person.death.date)}</text>`
-      )
-      line++
+      lineY += 14
+      if (wareki && western) {
+        parts.push(
+          `<text x="${left + 22}" y="${lineY - 1}" font-size="9" fill="#687a75">${escapeXml(western)}</text>`
+        )
+        lineY += 14
+      }
     }
     if (age) {
       parts.push(
-        `<text x="${left + 12}" y="${top + 44 + line * 16}" font-size="10" fill="#687a75">${escapeXml(age)}</text>`
+        `<text x="${left + 12}" y="${lineY}" font-size="10" fill="#687a75">${escapeXml(age)}</text>`
       )
     }
   })

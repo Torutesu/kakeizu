@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseJapaneseNumber, parseWareki, checkWarekiConversion } from './wareki'
+import { parseJapaneseNumber, parseWareki, checkWarekiConversion, toWarekiLabel } from './wareki'
 
 describe('parseJapaneseNumber', () => {
   it('漢数字・算用数字・元年を読む', () => {
@@ -89,5 +89,47 @@ describe('checkWarekiConversion', () => {
   it('原文に元号が無ければ対象外', () => {
     expect(checkWarekiConversion('不詳', null)).toBeNull()
     expect(checkWarekiConversion(null, '1910-01-10')).toBeNull()
+  })
+})
+
+describe('toWarekiLabel（家系図に西暦と並べて出す元号）', () => {
+  it('西暦の日付を元号にする', () => {
+    expect(toWarekiLabel('1927-10-06')).toBe('昭和2年10月6日')
+    expect(toWarekiLabel('1985-04-01')).toBe('昭和60年4月1日')
+    expect(toWarekiLabel('1902-05-10')).toBe('明治35年5月10日')
+    expect(toWarekiLabel('2008-03-03')).toBe('平成20年3月3日')
+    expect(toWarekiLabel('2024-01-15')).toBe('令和6年1月15日')
+  })
+
+  it('元号の切り替わりの日をまたいで正しく分ける', () => {
+    expect(toWarekiLabel('1912-07-29')).toBe('明治45年7月29日')
+    expect(toWarekiLabel('1912-07-30')).toBe('大正元年7月30日')
+    expect(toWarekiLabel('1926-12-24')).toBe('大正15年12月24日')
+    expect(toWarekiLabel('1926-12-25')).toBe('昭和元年12月25日')
+    expect(toWarekiLabel('1989-01-07')).toBe('昭和64年1月7日')
+    expect(toWarekiLabel('1989-01-08')).toBe('平成元年1月8日')
+    expect(toWarekiLabel('2019-04-30')).toBe('平成31年4月30日')
+    expect(toWarekiLabel('2019-05-01')).toBe('令和元年5月1日')
+  })
+
+  it('月日が分からなくても、元号が決まる年なら年だけ出す', () => {
+    expect(toWarekiLabel('1930-XX-XX')).toBe('昭和5年')
+    expect(toWarekiLabel('1930')).toBe('昭和5年')
+    expect(toWarekiLabel('1930-04-XX')).toBe('昭和5年4月')
+    expect(toWarekiLabel('1873')).toBe('明治6年')
+  })
+
+  it('切り替わりの年・月で日付が足りないときは、推測せずに出さない', () => {
+    expect(toWarekiLabel('1926')).toBeNull()
+    expect(toWarekiLabel('1926-12-XX')).toBeNull()
+    expect(toWarekiLabel('1989-01-XX')).toBeNull()
+    expect(toWarekiLabel('1912-XX-XX')).toBeNull()
+  })
+
+  it('旧暦の時期（明治5年以前）と、日付として読めないものは出さない', () => {
+    expect(toWarekiLabel('1870-03-01')).toBeNull()
+    expect(toWarekiLabel('昭和2年')).toBeNull()
+    expect(toWarekiLabel('')).toBeNull()
+    expect(toWarekiLabel(null)).toBeNull()
   })
 })

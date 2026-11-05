@@ -112,8 +112,8 @@ describe('婚姻日をPDFの家系図に出す', () => {
       { original_date: '昭和40年1月1日', date: '1965-01-01' }
     ))
     const { svg } = buildTreeSvg(persons, families, '案件', NOW)
-    expect(svg).toContain('婚姻 1955-06-01')
-    expect(svg).toContain('離婚 1965-01-01')
+    expect(svg).toContain('婚姻 昭和30年6月1日（1955-06-01）')
+    expect(svg).toContain('離婚 昭和40年1月1日（1965-01-01）')
   })
 
   it('婚姻日・離婚日を含むSVGを画像として読めるXMLで出力する', () => {
@@ -126,7 +126,7 @@ describe('婚姻日をPDFの家系図に出す', () => {
     const document = new DOMParser().parseFromString(svg, 'image/svg+xml')
     expect(document.querySelector('parsererror')).toBeNull()
     expect(Array.from(document.querySelectorAll('[data-marriage-label]'), node => node.textContent))
-      .toEqual(['婚姻 2000-04-15', '離婚 2010-04-15'])
+      .toEqual(['婚姻 平成12年4月15日（2000-04-15）', '離婚 平成22年4月15日（2010-04-15）'])
   })
 
   it('婚姻日がなければ何も出さない', () => {
@@ -141,5 +141,24 @@ describe('婚姻日をPDFの家系図に出す', () => {
     const b = measureTreePdf(withDate.persons, withDate.families, '案件')
     // 表記の分だけ図が下に伸びる。伸びなければ、表記は下の余白（無描画の保証領域）に描かれている
     expect(b.height).toBeGreaterThan(a.height)
+  })
+})
+
+describe('PDFの人物カードに元号と西暦の両方を出す', () => {
+  it('生年月日・没年月日を元号と西暦で出す', () => {
+    const { persons, families } = processFamilyData(data)
+    const { svg } = buildTreeSvg(persons, families, '案件', NOW)
+    expect(svg).toContain('生 明治14年6月29日')
+    expect(svg).toContain('1881-06-29')
+    expect(svg).toContain('没 昭和43年1月15日')
+    expect(svg).toContain('1968-01-15')
+  })
+
+  it('西暦に直せなかった日付は原文で出す（空欄にしない）', () => {
+    const { persons, families } = processFamilyData({
+      people: [{ id: 'x', generation: 1, sex: null, name: { surname: '甲野', given_name: '一' }, birth: { original_date: '大正九年', date: null, place: null }, death: { original_date: null, date: null, place: null } }],
+      families: [],
+    })
+    expect(buildTreeSvg(persons, families, '案件', NOW).svg).toContain('生 大正九年')
   })
 })

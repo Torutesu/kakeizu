@@ -10,7 +10,8 @@ export const LAYOUT_CONFIG = {
   cardWidth: 160,             // カードの幅
   // カードの高さ。関係線はこの値を基準にカードの上端・下端へ接続するため、
   // 実際の描画高さと必ず一致させること（PersonNodeで固定している）
-  cardHeight: 122,
+  // 生年月日・没年月日を元号と西暦の2行ずつで出すため、2行の氏名・続柄・享年まで収まる高さにする
+  cardHeight: 160,
   cornerRadius: 10,           // 線の角の丸み
   // 親から下ろした線が兄弟をつなぐ水平線の、子カード上端からの距離
   siblingBusOffset: 44,

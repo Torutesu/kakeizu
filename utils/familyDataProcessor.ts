@@ -1,4 +1,5 @@
 import { DATA_CONFIG } from '../constants/config'
+import { toWarekiLabel } from './wareki'
 import { checkConsistency, buildUncertaintyMap, ConsistencyIssue } from './consistency'
 
 // family-info-sep.jsonのデータ構造に対応する型定義
@@ -331,18 +332,39 @@ export function formatDate(date: string | null): string {
 } 
 
 /**
- * 家系図の夫婦の線に添える婚姻日・離婚日の表記（例: ["婚姻 1955-06-01"]）。
- * カードの生没年月日と同じ書き方にそろえる。西暦に直せなかった日付は原文（和暦）で出す
- * （日付が無いことにしない。原文が読めていれば、それ自体が手掛かりになるため）。
+ * 家系図に出す日付。元号と西暦の両方（依頼元の求め。戸籍は元号で書かれており、
+ * 原本と見比べるときに読み替えずに済むようにする）。
+ * - 元号は西暦から換算する（書き方をそろえるため。原文の漢数字「昭和弐年」などはそのまま出さない）
+ * - 西暦から元号が決まらないとき（旧暦の時期、切り替わりの年で月日不明）や、
+ *   西暦に直せなかった日付は、原文をそのまま元号の欄に出す（日付が無いことにしない）
+ */
+export function dateDisplay(
+  date: string | null | undefined,
+  original: string | null | undefined
+): { wareki: string | null; western: string | null } {
+  const western = formatDate(date ?? null) || null
+  const wareki = toWarekiLabel(date) ?? (original?.trim() || null)
+  return { wareki, western }
+}
+
+/** 1行にまとめる書き方（"昭和2年10月6日（1927-10-06）"）。片方しか無ければその片方 */
+export function dateDisplayInline(date: string | null | undefined, original: string | null | undefined): string {
+  const { wareki, western } = dateDisplay(date, original)
+  if (wareki && western) return `${wareki}（${western}）`
+  return wareki ?? western ?? ''
+}
+
+/**
+ * 家系図の夫婦の線に添える婚姻日・離婚日の表記（例: ["婚姻 昭和30年6月1日（1955-06-01）"]）。
  * 画面とPDFで同じ表記にするため、両方からここを呼ぶ。
  */
 export function marriageLabels(
   family: Pick<FamilyGroup, 'marriageDate' | 'marriageOriginalDate' | 'divorceDate' | 'divorceOriginalDate'>
 ): string[] {
   const labels: string[] = []
-  const marriage = formatDate(family.marriageDate ?? null) || family.marriageOriginalDate
+  const marriage = dateDisplayInline(family.marriageDate, family.marriageOriginalDate)
   if (marriage) labels.push(`婚姻 ${marriage}`)
-  const divorce = formatDate(family.divorceDate ?? null) || family.divorceOriginalDate
+  const divorce = dateDisplayInline(family.divorceDate, family.divorceOriginalDate)
   if (divorce) labels.push(`離婚 ${divorce}`)
   return labels
 }

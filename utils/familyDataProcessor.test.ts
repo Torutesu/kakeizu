@@ -200,8 +200,10 @@ describe('婚姻日・離婚日の原文表記（要件4.4）', () => {
 })
 
 describe('marriageLabels（家系図に添える婚姻日・離婚日）', () => {
-  it('西暦に直せた日付はカードと同じ書き方で出す', () => {
-    expect(marriageLabels({ marriageDate: '1955-06-01', marriageOriginalDate: '昭和30年6月1日' })).toEqual(['婚姻 1955-06-01'])
+  it('元号と西暦を並べて出す（元号は西暦から換算し、書き方をそろえる）', () => {
+    expect(marriageLabels({ marriageDate: '1955-06-01', marriageOriginalDate: '昭和参拾年六月壱日' })).toEqual([
+      '婚姻 昭和30年6月1日（1955-06-01）',
+    ])
   })
 
   it('西暦に直せなかった日付は原文で出す（日付が無いことにしない）', () => {
@@ -210,8 +212,8 @@ describe('marriageLabels（家系図に添える婚姻日・離婚日）', () =>
 
   it('離婚日があれば並べて出す', () => {
     expect(marriageLabels({ marriageDate: '1955-06-01', divorceDate: '1965-01-01' })).toEqual([
-      '婚姻 1955-06-01',
-      '離婚 1965-01-01',
+      '婚姻 昭和30年6月1日（1955-06-01）',
+      '離婚 昭和40年1月1日（1965-01-01）',
     ])
   })
 

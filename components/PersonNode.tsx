@@ -1,6 +1,6 @@
 import { AlertCircle } from "lucide-react"
 import { ProcessedPerson } from '../utils/familyDataProcessor'
-import { formatDate } from '../utils/familyDataProcessor'
+import { dateDisplay } from '../utils/familyDataProcessor'
 import { formatKyonen } from '../utils/age'
 import { UNREADABLE_FIELD_LABELS } from '../utils/familyDataProcessor'
 import { COLORS, LAYOUT_CONFIG } from '../constants/config'
@@ -136,16 +136,24 @@ export function PersonNode({
 
           {/* 日付・年齢は下寄せにして、カードの高さが揃っても間延びしないようにする */}
           <div className="mt-auto text-[11px] leading-tight text-muted-foreground space-y-0.5">
-            {person.birth?.date && (
-              <div className="truncate">
-                <span className="text-muted-foreground">生</span> {formatDate(person.birth.date)}
-              </div>
-            )}
-            {person.death?.date && (
-              <div className="truncate">
-                <span className="text-muted-foreground">没</span> {formatDate(person.death.date)}
-              </div>
-            )}
+            {/* 元号と西暦の両方を出す（依頼元の求め）。1行には収まらないため、西暦は小さく次の行に */}
+            {([
+              ['生', 'birth', person.birth],
+              ['没', 'death', person.death],
+            ] as const).map(([mark, kind, field]) => {
+              const { wareki, western } = dateDisplay(field?.date, field?.original_date)
+              if (!wareki && !western) return null
+              return (
+                <div key={kind} data-person-date={kind}>
+                  <div className="truncate">
+                    <span className="text-muted-foreground">{mark}</span> {wareki ?? western}
+                  </div>
+                  {wareki && western && (
+                    <div className="truncate pl-3.5 text-[10px] leading-tight text-muted-foreground/80">{western}</div>
+                  )}
+                </div>
+              )
+            })}
             {age && <div className="text-muted-foreground truncate">{age}</div>}
             {unreadableLabels.length > 0 && (
               <div
