@@ -9,3 +9,10 @@ it('見本限定など、利用条件の拒否理由を隠さない', () => {
   const reason = '確認用環境では同梱の見本の戸籍だけを解析できます。'
   expect(analysisUserMessage(reason)).toBe(reason)
 })
+
+it('出力上限と利用回数上限を区別し、部分結果を採用していないことを伝える', () => {
+  const message = analysisUserMessage('すべての解析プロバイダが失敗しました: MAX_TOKENS: private detail')
+  expect(message).toContain('不完全な結果は取り込んでいません')
+  expect(message).not.toContain('private detail')
+  expect(message).not.toContain('利用上限')
+})

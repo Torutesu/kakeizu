@@ -1,5 +1,8 @@
 // プロバイダの内部応答を利用者へ露出せず、次に取れる操作を伝える。
 export function analysisUserMessage(message: string): string {
+  if (/MAX_TOKENS/.test(message)) {
+    return 'AIの回答が長くなり、読み取りを完了できませんでした。不完全な結果は取り込んでいません。保存済みファイルの「再解析」をお試しください。繰り返す場合は管理者にご連絡ください。'
+  }
   if (/429|RESOURCE_EXHAUSTED|quota|rate.limit/i.test(message)) {
     return 'AIの利用上限に達しました。時間をおいて、保存済みファイルの「再解析」をお試しください。続く場合は管理者にご連絡ください。'
   }

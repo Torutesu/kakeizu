@@ -6,7 +6,8 @@ import { resolveGeminiThinkingLevel } from '../thinking'
 
 /**
  * Google Gemini プロバイダ。
- * responseSchemaによりデコード時に出力形式が強制されるため、整形崩れが構造的に起きない。
+ * responseSchemaを使っても、思考と回答の上限に達するとJSONの途中で打ち切られる。
+ * 終了理由を先に検査し、閉じたJSONでも部分結果は採用しない。
  * 日本語文書の読み取りとコスト効率に優れ、既定のプロバイダとして使用する。
  */
 export const geminiProvider: AnalysisProvider = {
@@ -47,7 +48,27 @@ export const geminiProvider: AnalysisProvider = {
       },
     })
 
-    const text = response.text ?? ''
+    const finishReason = response.candidates?.[0]?.finishReason
+    if (finishReason !== 'STOP') {
+      // 応答本文やプロバイダの自由文は個人情報を含み得る。件数と終了区分だけを残す。
+      const meta = response.usageMetadata
+      console.warn('戸籍解析: Geminiの回答が未完了', {
+        reason: finishReason === 'MAX_TOKENS' ? 'MAX_TOKENS' : 'NOT_STOPPED',
+        thinkingTokens: meta?.thoughtsTokenCount ?? null,
+        answerTokens: meta?.candidatesTokenCount ?? null,
+      })
+      throw new Error(finishReason === 'MAX_TOKENS'
+        ? 'MAX_TOKENS: AIの回答が上限に達し、読み取りが完了しませんでした'
+        : 'AIの回答が正常に完了しませんでした')
+    }
+
+    let raw: unknown
+    try {
+      raw = JSON.parse(response.text ?? '')
+    } catch {
+      // JSON.parseの例外は入力本文の一部を含むことがあるため、そのままログへ渡さない。
+      throw new Error('AIの回答をJSONとして読み取れませんでした')
+    }
 
     // Geminiのキャッシュは暗黙的（2.5以降は自動、コード側の指定は不要）。
     // ただし共通プレフィックスが最小トークン数に届かないと無効になる
@@ -59,7 +80,7 @@ export const geminiProvider: AnalysisProvider = {
     const thinkingTokens = meta?.thoughtsTokenCount ?? null
     const answerTokens = meta?.candidatesTokenCount ?? null
     return {
-      raw: JSON.parse(text),
+      raw,
       usage: {
         inputTokens: meta?.promptTokenCount ?? null,
         outputTokens:
