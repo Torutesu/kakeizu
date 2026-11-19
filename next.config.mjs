@@ -4,7 +4,10 @@ const nextConfig = {
     unoptimized: true,
   },
   // 読み取り前の画像処理に使うネイティブモジュール。バンドルせず実行時に読み込む
-  serverExternalPackages: ['sharp'],
+  serverExternalPackages: ['sharp', 'pdfjs-dist', '@napi-rs/canvas'],
+  outputFileTracingIncludes: {
+    '/api/analyze-koseki': ['./node_modules/pdfjs-dist/{cmaps,standard_fonts,wasm,legacy/build}/**/*', './node_modules/@napi-rs/canvas*/**/*'],
+  },
   // 戸籍という機微情報を扱うため、防御的なセキュリティヘッダーを全レスポンスに付与する
   async headers() {
     return [

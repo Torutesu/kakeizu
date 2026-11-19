@@ -29,6 +29,18 @@ describe('見本限定モードの外部送信境界', () => {
     await runKosekiAnalysis({ parts: [part] }, { provider: 'gemini', model: 'gemini-3.1-pro' }, true)
     expect(analyze).toHaveBeenCalledExactlyOnceWith({ parts: [part] }, 'gemini-3-flash-preview')
   })
+  it('見本PDFの前処理後も全ページを同じモデルへ一度に渡す', async () => {
+    vi.stubEnv('AI_SAMPLE_ONLY', 'true')
+    vi.stubEnv('GEMINI_API_KEY', 'test-key')
+    vi.stubEnv('KOSEKI_PDF_PREPROCESS', 'render')
+    const part = { base64Data: readFileSync('e2e/live/fixtures/koseki-sample/b_kaisei.pdf').toString('base64'), mimeType: 'application/pdf' }
+    await runKosekiAnalysis({ parts: [part] }, undefined, true)
+    expect(analyze).toHaveBeenCalledTimes(1)
+    const [input, model] = analyze.mock.calls[0] as unknown as [{ parts: Array<{ mimeType: string }> }, string]
+    expect(input.parts).toHaveLength(3)
+    expect(input.parts.every(page => page.mimeType === 'image/png')).toBe(true)
+    expect(model).toBe('gemini-3-flash-preview')
+  })
   it('見本モードを指定しなければ従来の学習不使用の確認が必須', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('VERCEL_ENV', 'production')

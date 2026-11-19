@@ -26,7 +26,8 @@ import {
   ProviderCandidate,
   TokenUsage,
 } from '../../lib/analysis/types'
-import { preprocessPart, resolvePreprocessMode, PreprocessMode } from '../../lib/analysis/preprocess'
+import { preprocessParts, resolvePreprocessMode, PreprocessMode } from '../../lib/analysis/preprocess'
+import { resolvePdfPreprocessMode, type PdfPreprocessMode } from '../../lib/analysis/pdfPreprocess'
 import { FamilyTreeData, isValidFamilyTreeData } from '../../utils/familyDataProcessor'
 import { scoreResult, matchPeople, formatPercent, BenchmarkScore } from './metrics'
 
@@ -113,14 +114,17 @@ function parseArgs(argv: string[]): {
   dir: string
   candidates: ProviderCandidate[]
   preprocess: PreprocessMode
+  pdfPreprocess: PdfPreprocessMode
 } {
   let dir = 'testdata'
   let candidatesArg: string | null = null
   let preprocessArg: string | undefined
+  let pdfPreprocessArg: string | undefined
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--dir' && argv[i + 1]) dir = argv[++i]
     else if (argv[i] === '--candidates' && argv[i + 1]) candidatesArg = argv[++i]
+    else if (argv[i] === '--pdf-preprocess' && argv[i + 1]) pdfPreprocessArg = argv[++i]
     else if (argv[i] === '--preprocess' && argv[i + 1]) preprocessArg = argv[++i]
   }
 
@@ -150,7 +154,7 @@ function parseArgs(argv: string[]): {
     return true
   })
 
-  return { dir, candidates, preprocess: resolvePreprocessMode(preprocessArg) }
+  return { dir, candidates, preprocess: resolvePreprocessMode(preprocessArg), pdfPreprocess: resolvePdfPreprocessMode(pdfPreprocessArg ?? process.env.KOSEKI_PDF_PREPROCESS) }
 }
 
 function loadExpected(filePath: string): FamilyTreeData | null {
@@ -170,7 +174,7 @@ function displayName(p: { name: { surname: string; given_name: string } }): stri
 
 async function main() {
   loadEnvLocal()
-  const { dir, candidates, preprocess } = parseArgs(process.argv.slice(2))
+  const { dir, candidates, preprocess, pdfPreprocess } = parseArgs(process.argv.slice(2))
 
   if (candidates.length === 0) {
     console.error('実行できる候補がありません。GEMINI_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY のいずれかを .env.local に設定してください。')
@@ -203,9 +207,10 @@ async function main() {
     const mimeType = MIME_BY_EXT[path.extname(file).toLowerCase()]
     const rawBase64 = fs.readFileSync(file).toString('base64')
     // 本番と同じ前処理を通す。off / basic / enhanced を切り替えて効果を実測する
-    const part = await preprocessPart({ base64Data: rawBase64, mimeType }, preprocess)
-    if (part.applied.length > 0) {
-      console.log(`  前処理 ${path.basename(file)}: ${part.applied.join(' + ')}`)
+    const parts = await preprocessParts([{ base64Data: rawBase64, mimeType }], preprocess, pdfPreprocess)
+    const applied = parts.flatMap(part => part.applied)
+    if (applied.length > 0) {
+      console.log(`  前処理 ${path.basename(file)}: ${applied.join(' + ')}`)
     }
     const expected = loadExpected(file)
 
@@ -216,7 +221,7 @@ async function main() {
 
       try {
         const { raw, usage } = await PROVIDERS[candidate.provider].analyze(
-          { parts: [{ base64Data: part.base64Data, mimeType: part.mimeType }] },
+          { parts: parts.map(({ base64Data, mimeType }) => ({ base64Data, mimeType })) },
           candidate.model
         )
         const parsed = kosekiResultSchema.safeParse(raw)
@@ -278,6 +283,7 @@ async function main() {
   // 思考の深さは費用に直結する（思考は出力として課金される）。比べるときは条件を揃える
   lines.push(`- 思考の深さ（Gemini 3.x）: ${process.env.ANALYSIS_THINKING_LEVEL || '既定（high）'}`)
   lines.push(`- 読み取り前の画像処理: ${preprocess}`)
+  lines.push(`- PDF前処理: ${pdfPreprocess}`)
   lines.push('')
 
   lines.push('## ファイル別の結果')
@@ -293,6 +299,18 @@ async function main() {
       `${s ? formatPercent(s.sexAccuracy) : '-'} | ${s ? formatPercent(s.relationAccuracy) : '-'} |`
     )
   }
+  lines.push('')
+
+  lines.push('## 家族関係の精度（親・子・実親子/養子の構成を比較）')
+  lines.push('')
+  lines.push('| ファイル | モデル | 家族再現率 | 家族適合率 | 家族F1 | 婚姻日一致 | 離婚日一致 |')
+  lines.push('|---|---|---|---|---|---|---|')
+  for (const r of results) {
+    const s = r.score
+    lines.push(`| ${r.file} | ${r.candidate} | ${s ? formatPercent(s.familyRecall) : '-'} | ${s ? formatPercent(s.familyPrecision) : '-'} | ${s ? formatPercent(s.familyF1) : '-'} | ${s ? formatPercent(s.marriageDateAccuracy) : '-'} | ${s ? formatPercent(s.divorceDateAccuracy) : '-'} |`)
+  }
+  lines.push('')
+  lines.push('家族の日付は、正解に日付のある全家族を母数とし、構成の不一致・家族の取りこぼしも不正解とする。正解のない指標は未評価（-）。')
   lines.push('')
 
   // 候補別の集計（正解データがあるファイルのみ）

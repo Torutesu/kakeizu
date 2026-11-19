@@ -1,5 +1,6 @@
 import { FamilyTreeData, PersonData } from '../../utils/familyDataProcessor'
 import { extractYear } from '../../utils/age'
+import { canonicalJson } from '../../utils/mergeTreeChanges'
 
 // ============================================================================
 // ベンチマークの評価指標（純関数）。
@@ -82,6 +83,14 @@ export interface BenchmarkScore {
   relationAccuracy: number | null
   expectedFamilyCount: number
   actualFamilyCount: number
+  /** 親・子・実親子/養子の組が一致した家族。IDや配列順の違いは無視する */
+  matchedFamilyCount: number
+  familyPrecision: number | null
+  familyRecall: number | null
+  familyF1: number | null
+  /** 正解に日付がある全家族が母数。家族自体の取りこぼしも不正解とする */
+  marriageDateAccuracy: number | null
+  divorceDateAccuracy: number | null
 }
 
 function ratio(hit: number, total: number): number | null {
@@ -120,6 +129,42 @@ export function scoreResult(expected: FamilyTreeData, actual: FamilyTreeData): B
     }
   }
 
+  // 人物数が同じでも、親子の接続が違えば別の家系図。人物対応を使ってIDを揃え、
+  // 家族の構成を採点する。未知人物を既知人物と取り違えないよう識別区分もキーに含める。
+  const actualToExpected = new Map(matched.map(pair => [pair.actual.id, pair.expected.id]))
+  const familyKey = (family: FamilyTreeData['families'][number], actualSide: boolean) => {
+    const members = (ids: string[]) => ids.map(id => {
+      const mapped = actualSide ? actualToExpected.get(id) : id
+      return canonicalJson(mapped === undefined ? ['unmatched', id] : ['matched', mapped])
+    }).sort()
+    return canonicalJson({ parents: members(family.parents), children: members(family.children), relation: family.relation_type ?? 'blood' })
+  }
+  const usedFamilies = new Set<number>()
+  let matchedFamilyCount = 0
+  let marriageTotal = 0, marriageHit = 0
+  let divorceTotal = 0, divorceHit = 0
+  for (const family of expected.families) {
+    const key = familyKey(family, false)
+    const index = actual.families.findIndex((candidate, i) => !usedFamilies.has(i) && familyKey(candidate, true) === key)
+    const found = index < 0 ? undefined : actual.families[index]
+    if (found) { usedFamilies.add(index); matchedFamilyCount++ }
+    if (family.marriage_date?.date) {
+      marriageTotal++
+      if (found?.marriage_date?.date === family.marriage_date.date) marriageHit++
+    }
+    if (family.divorce_date?.date) {
+      divorceTotal++
+      if (found?.divorce_date?.date === family.divorce_date.date) divorceHit++
+    }
+  }
+  const familyPrecision = actual.families.length === 0
+    ? (expected.families.length === 0 ? null : 0)
+    : matchedFamilyCount / actual.families.length
+  const familyRecall = ratio(matchedFamilyCount, expected.families.length)
+  const familyF1 = familyPrecision === null || familyRecall === null ? null
+    : familyPrecision + familyRecall === 0 ? 0
+    : 2 * familyPrecision * familyRecall / (familyPrecision + familyRecall)
+
   // 参考: missing/extraの内訳はレポート側で使う
   void missing
   void extra
@@ -137,6 +182,9 @@ export function scoreResult(expected: FamilyTreeData, actual: FamilyTreeData): B
     relationAccuracy: ratio(relationHit, relationTotal),
     expectedFamilyCount: expected.families.length,
     actualFamilyCount: actual.families.length,
+    matchedFamilyCount, familyPrecision, familyRecall, familyF1,
+    marriageDateAccuracy: ratio(marriageHit, marriageTotal),
+    divorceDateAccuracy: ratio(divorceHit, divorceTotal),
   }
 }
 

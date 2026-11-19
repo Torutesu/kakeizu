@@ -1,6 +1,7 @@
 import '../server-guard'
 import sharp from 'sharp'
 import { AnalysisPart } from './types'
+import { renderPdfPages, resolvePdfPreprocessMode, MAX_RENDERED_PAGES, MAX_RENDERED_BYTES, type PdfPreprocessMode } from './pdfPreprocess'
 
 // ============================================================================
 // 読み取り前の画像処理（要件v1.2 6章「実施する事項」）。
@@ -134,7 +135,33 @@ export async function preprocessPart(
 /** 1通ぶん（複数枚）をまとめて前処理する */
 export async function preprocessParts(
   parts: AnalysisPart[],
-  mode: PreprocessMode
+  mode: PreprocessMode,
+  pdfMode: PdfPreprocessMode = resolvePdfPreprocessMode(process.env.KOSEKI_PDF_PREPROCESS)
 ): Promise<PreprocessedPart[]> {
-  return Promise.all(parts.map(part => preprocessPart(part, mode)))
+  const original = () => parts.map(part => ({ ...part, applied: [] }))
+  if (mode === 'off') return original()
+  try {
+    const processed: PreprocessedPart[] = []
+    // 複数PDFを同時展開せず、ページ順とメモリ使用量を保つ。
+    for (const part of parts) {
+      if (part.mimeType === 'application/pdf' && pdfMode === 'render') {
+        const pages = await renderPdfPages(part, MAX_IMAGE_EDGE_PX)
+        for (const [index, page] of pages.entries()) {
+          const result = await preprocessPart(page, mode)
+          processed.push({ ...result, applied: [`pdf-page:${index + 1}/${pages.length}`, ...result.applied] })
+        }
+      } else {
+        processed.push(await preprocessPart(part, mode))
+      }
+      if (pdfMode === 'render' && (processed.length > MAX_RENDERED_PAGES ||
+          processed.reduce((sum, item) => sum + Buffer.byteLength(item.base64Data, 'base64'), 0) > MAX_RENDERED_BYTES)) {
+        throw new Error('PDF_DOCUMENT_LIMIT')
+      }
+    }
+    return processed
+  } catch {
+    // エラー本文にはPDF内の文字やパスが含まれ得る。部分結果を送らず書類全体を原本へ戻す。
+    console.warn('戸籍解析: PDF前処理を完了できなかったため、書類全体を原本で読み取ります')
+    return original()
+  }
 }
